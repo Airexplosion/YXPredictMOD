@@ -7,3 +7,5 @@ dist/
 vendor/
 sdk-download-test.txt
 data/elo-cache/
+__pycache__/
+*.pyc

@@ -28,38 +28,13 @@ jobs:
         id: package
         shell: bash
         run: |
-          python3 - <<'PY'
-          import hashlib, json, os, re, zipfile
-          from pathlib import Path
-          meta = json.loads(Path('.github/releases/latest.json').read_text(encoding='utf-8'))
-          version = meta['version']
-          assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid release version'
-          assert meta['tag'] == 'v' + version, 'Tag/version mismatch'
-          assert re.fullmatch(r'[0-9a-f]{64}', meta['sha256']), 'Invalid package checksum'
-          for key in ('artifact', 'notes'):
-              path = Path(meta[key])
-              assert not path.is_absolute() and '..' not in path.parts and path.is_file(), 'Invalid release file'
-              assert '\n' not in meta[key] and '\r' not in meta[key], 'Invalid release path'
-          artifact = Path(meta['artifact'])
-          assert artifact.name == 'local.yxp.predictionpoints-' + version + '.zip', 'Unexpected package name'
-          assert hashlib.sha256(artifact.read_bytes()).hexdigest() == meta['sha256'], 'Package checksum mismatch'
-          manifest = json.loads(Path('mod/manifest.json').read_text(encoding='utf-8-sig'))
-          root = 'local.yxp.predictionpoints/'
-          with zipfile.ZipFile(artifact) as archive:
-              assert set(archive.namelist()) == {root + 'manifest.json', root + 'plugins/PredictionPoints.dll', root + 'README.md'}, 'Unexpected ZIP contents'
-              packed = json.loads(archive.read(root + 'manifest.json').decode('utf-8-sig'))
-          assert packed == manifest, 'Source and packaged manifests differ'
-          assert manifest['id'] == 'local.yxp.predictionpoints' and manifest['version'] == version, 'Manifest/version mismatch'
-          assert manifest['updateUrl'] == 'https://github.com/' + os.environ['GITHUB_REPOSITORY'], 'Wrong update repository'
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              for key in ('version', 'tag', 'artifact', 'notes', 'sha256'):
-                  output.write(key + '=' + meta[key] + '\n')
-              output.write('name=' + artifact.name + '\n')
-          PY
+          python3 -m unittest discover -s tests -p 'test_release_package.py'
+          python3 scripts/verify-release.py
       - name: Upload draft, verify attachment and publish
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.package.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.package.outputs.title }}
           PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
@@ -79,7 +54,7 @@ jobs:
             fi
             gh release upload "$RELEASE_TAG" "$PACKAGE_PATH" --clobber
           else
-            gh release create "$RELEASE_TAG" "$PACKAGE_PATH" --draft --target "$GITHUB_SHA" --title "$RELEASE_TAG - 修复淘汰奖励结算" --notes-file "$RELEASE_NOTES"
+            gh release create "$RELEASE_TAG" "$PACKAGE_PATH" --draft --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES"
           fi
           mkdir -p .release-verify
           gh release download "$RELEASE_TAG" --pattern "$PACKAGE_NAME" --dir .release-verify

@@ -1,7 +1,8 @@
 {
-  "version": "0.2.9",
-  "tag": "v0.2.9",
-  "artifact": "dist/local.yxp.predictionpoints-0.2.9.zip",
-  "sha256": "251d486c3a11ae2acbee18e9ca132f3f2049947e47c44decd7d0a47bddd00e36",
-  "notes": ".github/releases/v0.2.9.md"
+  "version": "0.3.6",
+  "tag": "v0.3.6",
+  "title": "v0.3.6 - 天机赌马",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.6.zip",
+  "sha256": "5baef0a0b55dc3ca6f4afb1cd5a941ed443710385b355e67c0acf7d5f582d069",
+  "notes": ".github/releases/v0.3.6.md"
 }
