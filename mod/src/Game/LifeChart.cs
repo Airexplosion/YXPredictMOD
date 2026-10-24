@@ -102,7 +102,7 @@ namespace YxPrediction
                 Mark(used++, x, y, 5, 5, 0, line);
             }
             for (int i = used; i < _marks.Count; i++) _marks[i].gameObject.SetActive(false);
-            _title.transform.SetAsLastSibling(); _empty.transform.SetAsLastSibling();
+            UiTextBox.BringToFront(_title); UiTextBox.BringToFront(_empty);
         }
     }
 }

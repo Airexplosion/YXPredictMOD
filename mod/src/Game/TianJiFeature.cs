@@ -214,7 +214,9 @@ namespace YxPrediction
             Rect nameRect = plate.Name.rectTransform.rect;
             var root = plate.Root.transform as RectTransform;
             float bottom = bounds.size.y > 0 ? bounds.min.y : nameRect.yMin;
-            float captionTop = caption.size.y > 0 ? caption.max.y : 0;
+            // TMP是SDK布局框的内层子节点，字形坐标须先转换回挂签根节点。
+            float captionTop = caption.size.y > 0
+                ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
             root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - 1 - captionTop);
             // 图标中心贴头像右缘、稍低于中线。转换坐标而非固定屏幕像素，跟随头像排序与缩放。
             Rect avatar = plate.Avatar.rectTransform.rect;

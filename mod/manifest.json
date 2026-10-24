@@ -1,7 +1,7 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "观战名次预测（积分）",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "author": "Local",
   "description": "观战动态积分预测、命元与占比走势、简洁八人总表；整合田忌赛马趣味称号与马图小图标。认证时长未接入。",
   "sdkVersion": ">=1.0.0 <2.0.0",
