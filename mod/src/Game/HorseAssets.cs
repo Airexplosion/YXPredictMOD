@@ -7,9 +7,9 @@ namespace YxPrediction
 {
     public sealed class HorseAssets
     {
-        readonly Sprite[] _sprites = new Sprite[6];
-        readonly Texture2D[] _textures = new Texture2D[6];
-        readonly bool[] _attempted = new bool[6];
+        readonly Sprite[] _sprites = new Sprite[7];
+        readonly Texture2D[] _textures = new Texture2D[7];
+        readonly bool[] _attempted = new bool[7];
         static int Index(string title)
         {
             switch (title)
@@ -20,6 +20,7 @@ namespace YxPrediction
                 case "牛马": return 3;
                 case "海马": return 4;
                 case "黑马": return 5;
+                case "机械马": return 6;
                 default: return -1;
             }
         }
@@ -35,7 +36,7 @@ namespace YxPrediction
                 byte[] data = Convert.FromBase64String(HorseImageData.Get(index));
                 texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 if (!ImageConversion.LoadImage(texture, data, true)) throw new FormatException("马图无法解码");
-                // 使用原图的小图标；不在ILRuntime主线程逐像素处理大图，不改游戏头像。
+                // 构建前已将素材缩至128px；不在ILRuntime主线程逐像素处理，不改游戏头像。
                 int width = texture.width, height = texture.height;
                 _sprites[index] = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
                 _textures[index] = texture;
@@ -49,7 +50,7 @@ namespace YxPrediction
         }
         public void Destroy()
         {
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < _sprites.Length; i++)
             {
                 if (_sprites[i] != null) UnityEngine.Object.Destroy(_sprites[i]);
                 if (_textures[i] != null) UnityEngine.Object.Destroy(_textures[i]);

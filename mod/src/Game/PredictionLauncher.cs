@@ -44,8 +44,7 @@ namespace YxPrediction
 
         public void Update()
         {
-            bool inMatch = BattleManager.Instance != null && SceneLoader.currentSceneName == "Battle";
-            if (!inMatch)
+            if (!PredictionVisibility.CanShow())
             {
                 FinishGesture();
                 if (_root != null) _root.SetActive(false);
@@ -142,6 +141,7 @@ namespace YxPrediction
 
         void Click()
         {
+            if (!PredictionVisibility.CanShow()) { _panel.Hide(); return; }
             if (GameBridge.IsPlayingBattle()) return;
             Vector3 mouse = Input.mousePosition;
             var screen = new Vector2(mouse.x, mouse.y);

@@ -281,6 +281,46 @@ namespace YxPrediction
             }
         }
 
+        public static void SetTopLeft(RectTransform rect, float x, float y, float width, float height)
+        {
+            if (rect == null) return;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = new Vector2(x, y);
+            rect.sizeDelta = new Vector2(width, height);
+        }
+
+        public NativeButton CreateButtonTopLeft(Transform parent, string name, string text, float x, float y, float width, float height, NativeBtnStyle style, Action onClick, int fontSize = 15)
+        {
+            Harvest();
+            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            SetTopLeft(rect, x, y, width, height);
+
+            var img = go.GetComponent<Image>();
+            var btn = go.GetComponent<Button>();
+
+            var labelGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            labelGo.transform.SetParent(go.transform, false);
+            var labelRect = labelGo.GetComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.sizeDelta = Vector2.zero;
+            labelRect.anchoredPosition = Vector2.zero;
+
+            var label = labelGo.GetComponent<TextMeshProUGUI>();
+            ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
+            label.text = text;
+            label.raycastTarget = false;
+
+            ApplyBtnVisual(img, btn, label, style);
+
+            return new NativeButton(go, btn, label, img, onClick, _ctx);
+        }
+
         public NativeButton CreateButton(Transform parent, string name, string text, Vector2 pos, Vector2 size, NativeBtnStyle style, Action onClick, int fontSize = 16)
         {
             Harvest();

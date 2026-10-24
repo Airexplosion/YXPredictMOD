@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Yx.Shared;
 
 namespace YxPrediction
@@ -54,20 +55,45 @@ namespace YxPrediction
     public sealed class HorseMember
     {
         public readonly string Uid;
+        public readonly bool IsAi;
+        readonly string _aiTitle;
         public string Name, BaseTitle = "";
         public HorseProfile Profile;
         public bool DarkHorse;
         public int ConsecutiveWins { get; private set; }
         int _round, _wins, _losses, _lastResultRound;
         bool _baseline;
-        public HorseMember(Player player) { Uid = player.Uid; Name = player.Name; }
-        public string Title { get { return DarkHorse ? "黑马" : BaseTitle; } }
-        public string Tags { get { return Profile != null && Profile.Spinning ? "旋转木马" : ""; } }
+        public HorseMember(Player player, string matchId)
+        {
+            Uid = player.Uid; Name = player.Name; IsAi = player.IsAi;
+            if (IsAi) _aiTitle = AiTitle(matchId, player.Uid);
+        }
+        // 有界的稳定伪随机：同局同UID不随刷新、排序、重载而改变，不参与赔率或真实难度识别。
+        static string AiTitle(string matchId, string uid)
+        {
+            string seed = (matchId ?? "") + ":" + uid;
+            int value = 17;
+            for (int i = 0; i < seed.Length; i++) value = (value * 31 + seed[i]) % 1000003;
+            switch (value % 5)
+            {
+                case 0: return "傀儡·地狱";
+                case 1: return "傀儡·极难";
+                case 2: return "傀儡·困难";
+                case 3: return "傀儡·中等";
+                default: return "傀儡·简单";
+            }
+        }
+        public string Title { get { return IsAi ? _aiTitle : (DarkHorse ? "黑马" : BaseTitle); } }
+        public string IconTitle { get { return IsAi ? "机械马" : Title; } }
+        public string PlateCaption
+        { get { return Title + (!IsAi && Profile != null && Profile.Rating.Found ? " " + Profile.Rating.Score.ToString("0", CultureInfo.InvariantCulture) : ""); } }
+        public string Tags { get { return !IsAi && Profile != null && Profile.Spinning ? "旋转木马" : ""; } }
         public string Caption { get { return Title + (Tags.Length > 0 ? " · " + Tags : ""); } }
         public string Explanation
         {
             get
             {
+                if (IsAi) return "AI随机装饰称号，同局保持不变；不代表实际难度，不参与Elo分档或赔率计算";
                 if (DarkHorse) return "本局Elo后半，已观察到连续两胜";
                 switch (BaseTitle)
                 {
@@ -82,6 +108,7 @@ namespace YxPrediction
         }
         internal void Observe(int round, PlayerState state)
         {
+            if (IsAi) return;
             if (state == null || round < 1 || (_baseline && (round < _round || state.Wins < _wins || state.Losses < _losses))) return;
             if (!_baseline)
             {
@@ -117,7 +144,7 @@ namespace YxPrediction
             if (reset)
             {
                 MatchId = snapshot.Id; Members = new HorseMember[8];
-                for (int i = 0; i < 8; i++) Members[i] = new HorseMember(snapshot.Players[i]);
+                for (int i = 0; i < 8; i++) Members[i] = new HorseMember(snapshot.Players[i], snapshot.Id);
             }
             for (int i = 0; i < 8; i++)
             {
@@ -135,24 +162,24 @@ namespace YxPrediction
             for (int i = 0; i < 8; i++)
             {
                 HorseProfile p = Members[i].Profile;
-                if (p == null || !p.Rating.Found) continue;
+                if (Members[i].IsAi || p == null || !p.Rating.Found) continue;
                 double score = p.Rating.Score;
                 rated++; minimum = Math.Min(minimum, score); maximum = Math.Max(maximum, score);
             }
             for (int i = 0; i < 8; i++)
             {
                 HorseProfile p = Members[i].Profile;
-                if (p != null && p.Rating.Found && p.Rating.Score > minimum) aboveMinimum = Math.Min(aboveMinimum, p.Rating.Score);
+                if (!Members[i].IsAi && p != null && p.Rating.Found && p.Rating.Score > minimum) aboveMinimum = Math.Min(aboveMinimum, p.Rating.Score);
             }
             for (int i = 0; i < 8; i++)
             {
                 HorseMember member = Members[i];
                 member.BaseTitle = ""; member.DarkHorse = false;
-                if (member.Profile == null || !member.Profile.Rating.Found) continue;
+                if (member.IsAi || member.Profile == null || !member.Profile.Rating.Found) continue;
                 double score = member.Profile.Rating.Score;
                 int higher = 0;
                 for (int j = 0; j < 8; j++)
-                    if (Members[j].Profile != null && Members[j].Profile.Rating.Found && Members[j].Profile.Rating.Score > score) higher++;
+                    if (!Members[j].IsAi && Members[j].Profile != null && Members[j].Profile.Rating.Found && Members[j].Profile.Rating.Score > score) higher++;
                 member.BaseTitle = "中等马";
                 if (rated >= 2 && maximum > minimum)
                 {
