@@ -56,7 +56,13 @@ def verify(root, repository="Teraen/YXPredictMOD"):
         require(packed == manifest, "Source and packaged manifests differ")
         require(archive.read(prefix + "plugins/PredictionPoints.dll").startswith(b"MZ"), "Missing MOD assembly")
         for name in files - {"manifest.json", "plugins/PredictionPoints.dll"}:
-            require(archive.read(prefix + name) == (root / "mod" / name).read_bytes(), "Stale packaged file: " + name)
+            packaged = archive.read(prefix + name)
+            source = (root / "mod" / name).read_bytes()
+            if name.endswith(".md"):
+                # Git checks text out as LF on Linux; the tested Windows ZIP may contain CRLF.
+                packaged = packaged.decode("utf-8-sig").replace("\r\n", "\n")
+                source = source.decode("utf-8-sig").replace("\r\n", "\n")
+            require(packaged == source, "Stale packaged file: " + name)
     catalog = read_json(root / "mods.json")
     require(catalog["schema"] == 1 and len(catalog["mods"]) == 1, "Invalid manager catalog")
     entry = catalog["mods"][0]

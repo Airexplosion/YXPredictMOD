@@ -102,6 +102,13 @@ class ReleasePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Stale packaged file"):
             RELEASE.verify(self.root)
 
+    def test_windows_package_and_linux_checkout_text_line_endings_are_equivalent(self):
+        for relative in ("mod/README.md", "mod/assets/horse/NOTICE.md"):
+            path = self.root / relative
+            contents = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+            path.write_bytes(contents.encode("utf-8"))
+        self.assertEqual(RELEASE.verify(self.root)["sha256"], self.meta["sha256"])
+
     def test_unexpected_user_data_cannot_enter_release(self):
         self.rewrite_archive(lambda entries: entries + [(RELEASE.MOD_ID + "/data/book.json", b"{}")])
         with self.assertRaisesRegex(ValueError, "ZIP contents"):
