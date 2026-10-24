@@ -36,7 +36,33 @@ namespace YxPrediction
             LifeFlow(players, ratings);
             SharedTrendsFlow(players, ratings);
             RankSelectionFlow(players, ratings);
+            ProtocolRankFlow(players, ratings);
             return "INTERPRETER PASS";
+        }
+
+        static void ProtocolRankFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8]; var ranks = new int[8];
+            for (int i = 0; i < 8; i++) states[i] = GameRanks.ReadState(100, 0, 0, i);
+            var s = new MatchSnapshot { Id = "protocol-ranks", Round = 13, LiveObserver = true, Players = players, States = states, Ranks = ranks, TradingOpen = true };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            if (b.Buy(s, players[6].Uid, 8, 40, m.TradeVersion) != null || b.Buy(s, players[4].Uid, 6, 10, m.TradeVersion) != null)
+                throw new Exception("Protocol rank fixture purchase failed");
+            long expected = 950 + m.Positions[6].Claim + m.Positions[4].Claim / 4;
+            int[] life = new int[] { -18, 48, 0, 29, -12, 74, -19, 66 };
+            int[] raw = new int[] { 4, 2, 5, 3, 6, 0, 7, 1 }; s.Round = 15;
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(life[i], 0, 0, life[i] <= 0 ? raw[i] : 0);
+            b.Observe(s, null);
+            if (b.Balance != 950 || m.Positions[6].Resolved || m.TradingWindowOpen) throw new Exception("Old rank mismatch was not reproduced");
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); m = b.Find(s.Id);
+            for (int i = 0; i < 8; i++) { states[i] = GameRanks.ReadState(life[i], 0, 0, raw[i]); ranks[i] = GameRanks.FromProtocol(raw[i]); }
+            b.Observe(s, null);
+            if (b.Balance != expected || m.KnownRanks[6] != 8 || !m.Positions[6].Resolved || !m.TradingWindowOpen)
+                throw new Exception("Normalized ranks did not recover pending rewards");
+            s.Ended = true; b.Observe(s, null);
+            if (!m.Settled || m.FinalRanks[5] != 1 || b.Balance != expected) throw new Exception("Zero based winner settlement failed");
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); b.Observe(s, null);
+            if (b.Balance != expected) throw new Exception("Recovered rank rewards were paid twice");
         }
 
         static void RankSelectionFlow(Player[] players, Rating[] ratings)

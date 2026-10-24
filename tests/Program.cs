@@ -260,6 +260,7 @@ internal static partial class Program
         LifeShareChecks();
         TrendChecks();
         RankSelectionChecks();
+        GameRankChecks();
         Console.WriteLine("Passed: " + _passed + "; Failed: " + _failed);
         return _failed == 0 ? 0 : 1;
     }

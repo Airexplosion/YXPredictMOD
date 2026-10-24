@@ -1,0 +1,88 @@
+name: Publish verified MOD package
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/releases/latest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mod-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify release metadata and tested package
+        id: package
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, zipfile
+          from pathlib import Path
+          meta = json.loads(Path('.github/releases/latest.json').read_text(encoding='utf-8'))
+          version = meta['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid release version'
+          assert meta['tag'] == 'v' + version, 'Tag/version mismatch'
+          assert re.fullmatch(r'[0-9a-f]{64}', meta['sha256']), 'Invalid package checksum'
+          for key in ('artifact', 'notes'):
+              path = Path(meta[key])
+              assert not path.is_absolute() and '..' not in path.parts and path.is_file(), 'Invalid release file'
+              assert '\n' not in meta[key] and '\r' not in meta[key], 'Invalid release path'
+          artifact = Path(meta['artifact'])
+          assert artifact.name == 'local.yxp.predictionpoints-' + version + '.zip', 'Unexpected package name'
+          assert hashlib.sha256(artifact.read_bytes()).hexdigest() == meta['sha256'], 'Package checksum mismatch'
+          manifest = json.loads(Path('mod/manifest.json').read_text(encoding='utf-8-sig'))
+          root = 'local.yxp.predictionpoints/'
+          with zipfile.ZipFile(artifact) as archive:
+              assert set(archive.namelist()) == {root + 'manifest.json', root + 'plugins/PredictionPoints.dll', root + 'README.md'}, 'Unexpected ZIP contents'
+              packed = json.loads(archive.read(root + 'manifest.json').decode('utf-8-sig'))
+          assert packed == manifest, 'Source and packaged manifests differ'
+          assert manifest['id'] == 'local.yxp.predictionpoints' and manifest['version'] == version, 'Manifest/version mismatch'
+          assert manifest['updateUrl'] == 'https://github.com/' + os.environ['GITHUB_REPOSITORY'], 'Wrong update repository'
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              for key in ('version', 'tag', 'artifact', 'notes', 'sha256'):
+                  output.write(key + '=' + meta[key] + '\n')
+              output.write('name=' + artifact.name + '\n')
+          PY
+      - name: Upload draft, verify attachment and publish
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+          PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
+          RELEASE_NOTES: ${{ steps.package.outputs.notes }}
+        run: |
+          set -euo pipefail
+          existing_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [ "$existing_draft" = "false" ]; then
+            echo 'This version is already published. Publish a new version instead.' >&2
+            exit 1
+          fi
+          if [ "$existing_draft" = "true" ]; then
+            existing_target=$(gh release view "$RELEASE_TAG" --json targetCommitish --jq .targetCommitish)
+            if [ "$existing_target" != "$GITHUB_SHA" ]; then
+              echo 'Existing draft belongs to a different commit.' >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "$PACKAGE_PATH" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$PACKAGE_PATH" --draft --target "$GITHUB_SHA" --title "$RELEASE_TAG - 修复淘汰奖励结算" --notes-file "$RELEASE_NOTES"
+          fi
+          mkdir -p .release-verify
+          gh release download "$RELEASE_TAG" --pattern "$PACKAGE_NAME" --dir .release-verify
+          printf '%s  %s\n' "$PACKAGE_SHA256" ".release-verify/$PACKAGE_NAME" | sha256sum --check -
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          echo "Published https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

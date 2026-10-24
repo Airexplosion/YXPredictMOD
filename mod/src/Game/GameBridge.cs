@@ -185,9 +185,9 @@ namespace YxPrediction
                 if (string.IsNullOrEmpty(p.uid)) { reason = "玩家UID尚未提供，不能查询Elo"; return null; }
                 for (int j = 0; j < i; j++) if (players[j].Uid == p.uid) { reason = "玩家UID重复，等待名单同步"; return null; }
                 players[i] = new Player(p.uid, p.username, p.isAI);
-                ranks[i] = p.rank;
+                ranks[i] = GameRanks.FromProtocol(p.rank);
                 // 存活玩家可能携带显示用名次，只把淘汰后的rank当作确定结果。
-                states[i] = new PlayerState(p.life, p.winRoundCount, p.loseRoundCount, p.life <= 0 && p.rank >= 1 && p.rank <= 8 ? p.rank : 0);
+                states[i] = GameRanks.ReadState(p.life, p.winRoundCount, p.loseRoundCount, p.rank);
                 swaps[i] = RemainingSwaps(status, p);
             }
             string id;
