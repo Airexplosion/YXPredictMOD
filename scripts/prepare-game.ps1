@@ -39,4 +39,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Il2CppDumper失败。' }
 & dotnet $patcher refs --game $GamePath --out (Join-Path $root 'refs') --dump-dir (Join-Path $dump 'DummyDll')
 if ($LASTEXITCODE -ne 0) { throw 'SDK引用提取失败。' }
 Copy-Item -LiteralPath (Join-Path $dump 'DummyDll/UnityEngine.UnityWebRequestModule.dll') -Destination (Join-Path $root 'refs/UnityEngine.UnityWebRequestModule.dll') -Force
+Copy-Item -LiteralPath (Join-Path $dump 'DummyDll/UnityEngine.ImageConversionModule.dll') -Destination (Join-Path $root 'refs/UnityEngine.ImageConversionModule.dll') -Force
 Write-Output '游戏引用已更新；refs/ 属于本机游戏，不应分发或提交。'

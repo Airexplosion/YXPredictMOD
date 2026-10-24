@@ -37,7 +37,27 @@ namespace YxPrediction
             SharedTrendsFlow(players, ratings);
             RankSelectionFlow(players, ratings);
             ProtocolRankFlow(players, ratings);
+            HorseFlow(players, ratings);
             return "INTERPRETER PASS";
+        }
+
+        static void HorseFlow(Player[] players, Rating[] ratings)
+        {
+            var profiles = new HorseProfile[8]; var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) { profiles[i] = new HorseProfile(ratings[i], 1, 10, i == 7); states[i] = new PlayerState(100, 0, 0, 0); }
+            var s = new MatchSnapshot { Id = "horses", Round = 1, Players = players, States = states };
+            var roster = new HorseRoster(); roster.Observe(s, profiles);
+            s.Round = 2; states[7] = new PlayerState(100, 1, 0, 0); roster.Observe(s, profiles); roster.Observe(s, profiles);
+            s.Round = 3; states[7] = new PlayerState(100, 2, 0, 0); roster.Observe(s, profiles);
+            var member = roster.Find(players[7].Uid);
+            if (!member.DarkHorse || member.Tags != "旋转木马" || member.ConsecutiveWins != 2) throw new Exception("Horse streak or stable tag failed");
+            s.Round = 4; states[7] = new PlayerState(100, 2, 1, 0); roster.Observe(s, profiles);
+            if (member.DarkHorse || member.Tags != "旋转木马") throw new Exception("Horse loss cleared seasonal tag");
+            var shard = Json.ParseObject("{\"uid\":{\"rating\":3500,\"sigma\":100,\"dx\":2,\"seasons\":{\"10\":{\"start\":3500,\"peak\":3700,\"end\":3450}}}}");
+            var profile = HorseProfile.Read(shard, "uid");
+            if (!profile.Spinning || profile.DaoXinGames != 2 || profile.Rating.Score != 3500) throw new Exception("Horse profile failed under interpreter");
+            s.Id = "new-horses"; roster.Observe(s, profiles);
+            if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
         }
 
         static void ProtocolRankFlow(Player[] players, Rating[] ratings)

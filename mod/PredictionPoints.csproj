@@ -19,8 +19,35 @@
     <Reference Include="Yx.ModSdk"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="$(YxRefs)*.dll"><Private>false</Private></Reference>
   </ItemGroup>
+  <UsingTask TaskName="EmbedHorseImages" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <AssetDir ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" /><Using Namespace="System.IO" /><Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // ILRuntime does not expose Assembly resource streams. Embed the original PNG bytes deterministically.
+        string[] titles = { "特等马", "上等马", "中等马", "牛马", "海马", "黑马" };
+        var source = new StringBuilder();
+        source.AppendLine("// Generated from mod/assets/horse/*.png; do not edit.");
+        source.AppendLine("namespace YxPrediction { internal static class HorseImageData { public static string Get(int index) { switch (index) {");
+        for (int i = 0; i < titles.Length; i++)
+            source.AppendLine("case " + i + ": return \"" + Convert.ToBase64String(File.ReadAllBytes(Path.Combine(AssetDir, titles[i] + ".png"))) + "\";");
+        source.AppendLine("default: return \"\"; } } } }");
+        Directory.CreateDirectory(Path.GetDirectoryName(OutputFile));
+        string text = source.ToString();
+        if (!File.Exists(OutputFile) || File.ReadAllText(OutputFile) != text) File.WriteAllText(OutputFile, text, new UTF8Encoding(false));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="GenerateHorseImages" BeforeTargets="CoreCompile" Condition="'$(YxHasGameRefs)' == 'true'">
+    <EmbedHorseImages AssetDir="$(MSBuildProjectDirectory)/assets/horse" OutputFile="$(MSBuildProjectDirectory)/$(IntermediateOutputPath)HorseImageData.g.cs" />
+    <ItemGroup><Compile Include="$(IntermediateOutputPath)HorseImageData.g.cs" /></ItemGroup>
+  </Target>
   <Target Name="RequireSdk" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="!Exists('$(YxSdkDir)net40\Yx.ModSdk.Core.dll')" Text="先运行 scripts/restore-sdk.ps1 恢复固定版本 SDK。" />
     <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.UnityWebRequestModule.dll')" Text="需要 UnityWebRequest 引用，请运行 scripts/prepare-game.ps1。" />
+    <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.ImageConversionModule.dll')" Text="需要 ImageConversion 引用，请运行 scripts/prepare-game.ps1。" />
   </Target>
 </Project>

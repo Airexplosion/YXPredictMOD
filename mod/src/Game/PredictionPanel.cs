@@ -12,10 +12,11 @@ namespace YxPrediction
     {
         readonly PredictionMod _mod;
         readonly UiKit _ui;
-        GameObject _root, _singleRoot;
+        GameObject _root, _singleRoot, _simpleColumns, _detailedColumns;
         TextMeshProUGUI _header, _message, _footer;
-        TextMeshProUGUI _singleHeader, _singleMessage;
-        UiButton _previousHistory, _nextHistory;
+        TextMeshProUGUI _singleHeader, _singleMessage, _singleHorse;
+        UiButton _previousHistory, _nextHistory, _detailToggle, _horseToggle, _singleHorseToggle;
+        TextMeshProUGUI _simpleStakeHeading, _simpleActionsHeading, _simpleResultHeading;
         BetRow _singleRow;
         LifeChart _lifeChart, _lifeShareChart;
         readonly BetRow[] _rows = new BetRow[8];
@@ -24,7 +25,7 @@ namespace YxPrediction
         float _nextRefresh;
         bool _history;
         int _historyIndex;
-        bool _visible, _expanded;
+        bool _visible, _expanded, _detailed;
         bool _waitForFocusRelease;
         int _singleEnableAfterFrame = -1;
         string _focusUid, _focusMatchId, _singleMarketId, _singleUid;
@@ -37,7 +38,7 @@ namespace YxPrediction
         {
             if (_visible) { Close(); return; }
             if (_root == null) Build();
-            if (_root != null && _singleRoot != null) { _visible = true; _expanded = false; _history = false; Refresh(); }
+            if (_root != null && _singleRoot != null) { _visible = true; _expanded = false; _history = false; _detailed = false; Refresh(); }
         }
         public void Update()
         {
@@ -56,29 +57,43 @@ namespace YxPrediction
             var center = new Vector2(0.5f, 0.5f);
             _root = _ui.Panel("PredictionPoints", center, center, Vector2.zero, new Vector2(Width, Height), new Color(0.04f, 0.06f, 0.1f, 0.97f), true);
             if (_root == null) return;
-            _header = Label("header", "", 18, -14, 850, 38, 23);
-            Button("collapse", "收起", 886, -15, 68, Collapse);
-            Button("history", "历史", 962, -15, 65, ToggleHistory);
-            Button("close", "关闭", 1035, -15, 67, Close);
+            _header = Label("header", "", 18, -14, 750, 38, 23);
+            Button("collapse", "收起", 792, -15, 68, Collapse);
+            _detailToggle = Button("detailToggle", "详细数据", 868, -15, 92, ToggleDetails);
+            Button("history", "历史", 968, -15, 65, ToggleHistory);
+            Button("close", "关闭", 1041, -15, 61, Close);
             _message = Label("message", "", 18, -55, 1080, 45, 18);
-            Label("playerColumn", "玩家 / 命元", 18, -104, 174, 28, 17);
-            Label("eloColumn", "Elo", 198, -104, 66, 28, 17);
-            Label("rankColumn", "目标名次", 270, -104, 110, 28, 17);
-            Label("oddsColumn", "买入倍率", 390, -104, 86, 28, 17);
-            Label("stakeColumn", "买入积分", 482, -104, 74, 28, 17);
-            Label("actionsColumn", "调仓操作", 562, -104, 264, 28, 17);
-            Label("resultColumn", "持仓 / 参考报价 / 结算", 840, -104, 265, 28, 17);
+            _detailedColumns = _ui.Row(_root.transform, "detailedColumns", new Vector2(0, -104), new Vector2(Width, 28), Color.clear);
+            Transform columns = _detailedColumns.transform;
+            Label("playerColumn", "玩家 / 命元", 18, 0, 174, 28, 17, columns);
+            Label("eloColumn", "Elo", 198, 0, 66, 28, 17, columns);
+            Label("rankColumn", "目标名次", 270, 0, 110, 28, 17, columns);
+            Label("oddsColumn", "买入倍率", 390, 0, 86, 28, 17, columns);
+            Label("stakeColumn", "买入积分", 482, 0, 74, 28, 17, columns);
+            Label("actionsColumn", "调仓操作", 562, 0, 264, 28, 17, columns);
+            Label("resultColumn", "持仓 / 参考报价 / 结算", 840, 0, 265, 28, 17, columns);
+            _simpleColumns = _ui.Row(_root.transform, "simpleColumns", new Vector2(0, -104), new Vector2(Width, 28), Color.clear);
+            columns = _simpleColumns.transform;
+            Label("simplePlayerColumn", "玩家", 18, 0, 174, 28, 17, columns);
+            Label("simpleRankColumn", "猜第几名", 212, 0, 110, 28, 17, columns);
+            _simpleStakeHeading = Label("simpleStakeColumn", "这次投入", 336, 0, 80, 28, 17, columns);
+            _simpleActionsHeading = Label("simpleActionsColumn", "操作", 428, 0, 268, 28, 17, columns);
+            _simpleResultHeading = Label("simpleResultColumn", "我的预测与返还", 716, 0, 386, 28, 17, columns);
             for (int i = 0; i < 8; i++) _rows[i] = new BetRow(this, i, -138 - i * 63);
             _footer = Label("footer", "", 18, -650, 1080, 70, 16);
+            _horseToggle = Button("horseToggle", "称号：开", 18, -687, 108, ToggleHorses);
             _previousHistory = Button("previousHistory", "上一局", 948, -687, 72, PreviousHistory);
             _nextHistory = Button("nextHistory", "下一局", 1030, -687, 72, NextHistory);
             _previousHistory.GameObject.SetActive(false); _nextHistory.GameObject.SetActive(false);
             _singleRoot = _ui.Panel("PredictionSinglePlayer", center, center, Vector2.zero, new Vector2(SingleWidth, SingleHeight), new Color(0.04f, 0.06f, 0.1f, 0.97f), true);
             if (_singleRoot == null) return;
             Transform single = _singleRoot.transform;
-            _singleHeader = Label("singleHeader", "", 18, -14, 492, 32, 21, single);
+            _singleHeader = Label("singleHeader", "", 18, -14, 380, 32, 21, single);
+            _singleHorseToggle = Button("singleHorseToggle", "称号：开", 410, -14, 108, ToggleHorses, single);
             Button("expandAll", "展开全部", 528, -14, 108, Expand, single);
             Button("closeSingle", "关闭", 644, -14, 78, Close, single);
+            _singleHorse = Label("singleHorse", "", 18, -99, 704, 20, 14, single);
+            _singleHorse.enableWordWrapping = false; _singleHorse.overflowMode = TextOverflowModes.Ellipsis;
             _singleMessage = Label("singleMessage", "", 18, -121, 704, 34, 16, single);
             Label("singleRankColumn", "目标名次", 18, -157, 110, 22, 15, single);
             Label("singleOddsColumn", "买入倍率", 140, -157, 92, 22, 15, single);
@@ -112,6 +127,8 @@ namespace YxPrediction
         void Refresh()
         {
             if (!_visible) return;
+            string horseToggle = _mod.Horses != null && _mod.Horses.Enabled ? "称号：开" : "称号：关";
+            _horseToggle.SetText(horseToggle); _singleHorseToggle.SetText(horseToggle);
             string uid = FocusSelection.Uid(_mod.Snapshot);
             string matchId = _mod.Snapshot == null ? null : _mod.Snapshot.Id;
             if (uid != _focusUid || matchId != _focusMatchId)
@@ -127,13 +144,22 @@ namespace YxPrediction
             if (!_expanded) { RefreshSingle(); return; }
             Market market = Shown();
             _rankSelection.Observe(market);
-            string title = _history ? "观战预测 · 历史" : "观战预测 · 本地积分";
+            _simpleColumns.SetActive(!_detailed); _detailedColumns.SetActive(_detailed);
+            _detailToggle.SetText(_detailed ? "简洁模式" : "详细数据");
+            _simpleStakeHeading.gameObject.SetActive(!_history); _simpleActionsHeading.gameObject.SetActive(!_history);
+            _simpleResultHeading.rectTransform.anchoredPosition = new Vector2(_history ? 428 : 716, 0);
+            string title = _history ? "预测历史" : (_detailed ? "观战预测 · 本地积分" : "全部玩家");
             long value = 0;
-            if (market != null && market.IsTrading)
+            if (_detailed && market != null && market.IsTrading)
                 for (int i = 0; i < 8; i++) value += TradingOdds.Sale(market, i, false);
             _header.text = title + "    余额 " + PredictionMod.N(_mod.Book.Balance)
-                + (market != null && market.IsTrading ? "    本局参考清仓值 " + PredictionMod.N(value) : "");
-            _message.text = _history ? "历史只读；再次点击「历史」返回当前观战。报价为保存时的参考值。" : _mod.Message;
+                + (_detailed && market != null && market.IsTrading ? "    本局参考清仓值 " + PredictionMod.N(value) : "");
+            _message.text = _history ? (_detailed ? "历史只读；再次点击「历史」返回当前观战。报价为保存时的参考值。" : "历史记录，仅供查看。") : _mod.Message;
+            if (!_detailed && !_history && _mod.Message != null)
+            {
+                if (_mod.Message.StartsWith("交易开放：", StringComparison.Ordinal)) _message.text = "现在可以下注，也可以调整已参与的预测。";
+                else if (_mod.Message == "本轮交易暂停，等待下一轮修炼阶段") _message.text = "本轮已暂停，下一轮可以继续。";
+            }
             bool changed = _marketId != (market == null ? null : market.Id);
             _marketId = market == null ? null : market.Id;
             for (int i = 0; i < 8; i++) _rows[i].Refresh(market, changed);
@@ -142,8 +168,9 @@ namespace YxPrediction
             if (market == null) _footer.text = (_mod.QueryStatus ?? "查分使用UID，不依赖昵称。") + "\n本地积分模式。认证时长未接入。";
             else if (market.IsTrading)
             {
-                _footer.text = "差1名返25% | 出售折价3% | 前5轮利润加成8/6/4/2/0%";
+                _footer.text = _detailed ? "差1名返25% | 出售折价3% | 前5轮利润加成8/6/4/2/0%" : "返还包含本金 · 差1名返25% · 退出金额已扣3%";
             }
+            else if (!_detailed) _footer.text = "返还包含本金 · " + (market.HasAdjacentReward ? "差1名返25%" : "仅猜中名次返还") + " · 旧版预测不能调整";
             else _footer.text = "旧盘口：每人固定一票，第5轮结束封盘，保留原赔率及结算规则。\n"
                 + (market.HasAdjacentReward ? "差1名返正中总额25%。" : "仅正中返还。") + " 认证时长未接入。";
         }
@@ -165,6 +192,7 @@ namespace YxPrediction
             _singleMarketId = market == null ? null : market.Id; _singleUid = _focusUid;
             _singleRow.PlayerIndex = index;
             _singleRow.Refresh(index < 0 ? null : market, changed);
+            _singleHorse.text = _mod.Horses == null ? "" : _mod.Horses.Describe(_focusUid);
             _singleHeader.text = "观战预测    余额 " + PredictionMod.N(_mod.Book.Balance);
             _singleMessage.text = _focusUid == null ? "等待当前观战对象，点击游戏中的玩家头像进行切换。" : _mod.Message;
             if (market != null && index >= 0 && (market.Settled || (market.IsTrading && market.Positions[index].Resolved)))
@@ -172,7 +200,9 @@ namespace YxPrediction
             _lifeChart.Refresh(market, index);
             _lifeShareChart.Refresh(market, index);
         }
-        void Expand() { _expanded = true; _history = false; Refresh(); }
+        void Expand() { _expanded = true; _history = false; _detailed = false; Refresh(); }
+        void ToggleDetails() { _detailed = !_detailed; Refresh(); }
+        void ToggleHorses() { if (_mod.Horses != null) _mod.Horses.Toggle(); Refresh(); }
         void Collapse() { _expanded = false; _history = false; Refresh(); }
         void Close() { _visible = false; if (_root != null) _root.SetActive(false); if (_singleRoot != null) _singleRoot.SetActive(false); }
         public void Hide() { Close(); }
@@ -187,10 +217,12 @@ namespace YxPrediction
             int _index;
             readonly bool _single;
             public int PlayerIndex { get { return _index; } set { _index = value; } }
-            readonly TextMeshProUGUI _name, _elo, _odds, _result, _preview;
+            readonly TextMeshProUGUI _name, _elo, _odds, _result, _preview, _playerState;
             readonly UiButton _prev, _next, _buy, _half, _sell, _switch;
             readonly UiInput _stake, _rankInput;
-            readonly RectTransform _row;
+            readonly RectTransform _row, _stakeRect;
+            bool _layoutReady, _layoutDetailed, _layoutHistory;
+            bool Simple { get { return !_single && !_panel._detailed; } }
             TMP_InputField _rankField;
             int _rank, _version;
             string _shownId, _shownUid;
@@ -224,12 +256,14 @@ namespace YxPrediction
                 _row = row.transform as RectTransform;
                 Transform rowParent = row.transform;
                 _name = panel.Label("name" + id, "", 18, 0, 174, 60, 16, rowParent);
+                _playerState = panel.Label("playerState" + id, "", 18, -32, 174, 24, 15, rowParent);
                 _elo = panel.Label("elo" + id, "", 198, 0, 66, 34, 16, rowParent);
                 _prev = panel.Button("prev" + id, "−", 270, 0, 32, Previous, rowParent);
                 _rankInput = RankInput(rowParent, "rank" + id, 306, 0);
                 _next = panel.Button("next" + id, "+", 346, 0, 32, Next, rowParent);
                 _odds = panel.Label("odds" + id, "", 390, 0, 86, 34, 16, rowParent);
                 _stake = panel._ui.NumberInput(rowParent, "stake" + id, new Vector2(482, 0), new Vector2(74, 34), 5, OnStake);
+                _stakeRect = rowParent.Find("stake" + id) as RectTransform;
                 _stake.SetText("10");
                 _buy = panel.Button("buy" + id, "买入", 562, 0, 58, Buy, rowParent);
                 _half = panel.Button("half" + id, "减半", 626, 0, 58, Half, rowParent);
@@ -237,6 +271,53 @@ namespace YxPrediction
                 _switch = panel.Button("switch" + id, "换预测", 754, 0, 72, Switch, rowParent);
                 _preview = panel.Label("preview" + id, "", 270, -36, 558, 24, 14, rowParent);
                 _result = panel.Label("result" + id, "", 840, 0, 265, 60, 14, rowParent);
+            }
+            static void Place(Transform target, float x, float y, float width, float height)
+            {
+                var rect = target as RectTransform;
+                if (rect == null) return;
+                rect.anchoredPosition = new Vector2(x, y); rect.sizeDelta = new Vector2(width, height);
+            }
+            void ApplyLayout()
+            {
+                if (_single) return;
+                bool detailed = _panel._detailed, history = _panel._history;
+                if (_layoutReady && _layoutDetailed == detailed && _layoutHistory == history) return;
+                _layoutReady = true; _layoutDetailed = detailed; _layoutHistory = history;
+                _elo.gameObject.SetActive(detailed); _odds.gameObject.SetActive(detailed);
+                _playerState.gameObject.SetActive(!detailed);
+                _stakeRect.gameObject.SetActive(detailed || !history);
+                _preview.gameObject.SetActive(detailed || !history);
+                Place(_name.transform, 18, 0, 174, detailed ? 60 : 30);
+                _name.fontSize = detailed ? 16 : 18; _name.fontStyle = detailed ? FontStyles.Normal : FontStyles.Bold;
+                _name.enableWordWrapping = detailed; _name.overflowMode = TextOverflowModes.Ellipsis;
+                Place(_prev.GameObject.transform, detailed ? 270 : 212, 0, 32, 34);
+                Place(_rankField.transform, detailed ? 306 : 248, 0, 36, 34);
+                Place(_next.GameObject.transform, detailed ? 346 : 288, 0, 32, 34);
+                Place(_stakeRect, detailed ? 482 : 336, 0, 74, 34);
+                Place(_buy.GameObject.transform, detailed ? 562 : 428, 0, detailed ? 58 : 64, 34);
+                Place(_half.GameObject.transform, detailed ? 626 : 500, 0, detailed ? 58 : 78, 34);
+                Place(_sell.GameObject.transform, detailed ? 690 : 586, 0, detailed ? 58 : 100, 34);
+                Place(_switch.GameObject.transform, detailed ? 754 : 428, 0, detailed ? 72 : 64, 34);
+                Place(_preview.transform, detailed ? 270 : 212, -36, detailed ? 558 : 484, 24);
+                Place(_result.transform, detailed ? 840 : (history ? 428 : 716), 0, detailed ? 265 : (history ? 674 : 386), 60);
+                _preview.fontSize = detailed ? 14 : 15; _result.fontSize = detailed ? 14 : 17;
+                _half.SetText(detailed ? "减半" : "退一半"); _sell.SetText(detailed ? "清仓" : "全部退出");
+                _switch.SetText(detailed ? "换预测" : "改猜");
+            }
+            void ActionVisibility(Market market)
+            {
+                if (_single) return;
+                bool ready = market != null && _index >= 0 && _index < 8;
+                Position p = ready && market.IsTrading ? market.Positions[_index] : null;
+                bool owned = p != null && p.Claim > 0 && !p.Resolved;
+                bool editable = ready && !_panel._history && !market.Settled
+                    && (p != null ? !p.Resolved : market.Tickets[_index] == null);
+                bool changing = owned && _rank > 0 && p.Rank != _rank;
+                _buy.GameObject.SetActive(!Simple || (editable && !changing));
+                _switch.GameObject.SetActive(!Simple || (editable && changing));
+                _half.GameObject.SetActive(!Simple || (editable && owned));
+                _sell.GameObject.SetActive(!Simple || (editable && owned));
             }
             UiInput RankInput(Transform parent, string name, float x, float y)
             {
@@ -296,6 +377,7 @@ namespace YxPrediction
             }
             public void Refresh(Market market, bool changed)
             {
+                ApplyLayout();
                 if (changed)
                 {
                     if (_rankField != null) _rankField.DeactivateInputField();
@@ -307,6 +389,7 @@ namespace YxPrediction
                 string rankText = _rank == 0 ? "" : PredictionMod.N(_rank);
                 if (changed) _rankInput.SetText(rankText); else _rankInput.Show(rankText);
                 _version = market == null ? 0 : market.TradeVersion;
+                ActionVisibility(market);
                 _half.SetInteractable(false); _sell.SetInteractable(false); _switch.SetInteractable(false);
                 if (market == null || _index < 0 || _index >= 8)
                 {
@@ -314,6 +397,7 @@ namespace YxPrediction
                     bool known = _index >= 0 && _index < 8 && !_panel._history && snapshot != null && snapshot.Players != null && snapshot.Players.Length == 8;
                     _name.text = known ? snapshot.Players[_index].Name : (_single ? "等待观战对象" : "等待玩家");
                     _elo.text = known ? "待开盘" : "—"; _odds.text = "—";
+                    if (_playerState != null) _playerState.text = "";
                     _result.text = _panel._mod.PreparationError == null ? "等待开盘" : "开盘失败，见上方提示"; _preview.text = "";
                     _prev.SetInteractable(false); _next.SetInteractable(false); _buy.SetInteractable(false);
                     if (_rankField != null) _rankField.interactable = false;
@@ -323,17 +407,29 @@ namespace YxPrediction
                 Rating rating = market.Ratings[_index];
                 _elo.text = rating.Found ? rating.Score.ToString("0", CultureInfo.InvariantCulture) : "3000*";
                 if (_single) _elo.text = "Elo " + _elo.text;
+                else if (Simple)
+                {
+                    if (market.KnownRanks[_index] > 0) _playerState.text = "最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名";
+                    else if (market.Life[_index].Points.Count > 0) _playerState.text = "命元 " + PredictionMod.N(market.Life[_index].Points[market.Life[_index].Points.Count - 1].Life);
+                    else if (market.QuoteStates != null) _playerState.text = "命元 " + PredictionMod.N(market.QuoteStates[_index].Life);
+                    else _playerState.text = "";
+                    HorseMember horse = _panel._mod.Horses == null || _panel._history ? null : _panel._mod.Horses.Find(market.Players[_index].Uid);
+                    if (horse != null && horse.Title.Length > 0) _playerState.text += " · " + horse.Title;
+                    _playerState.enableWordWrapping = false; _playerState.overflowMode = TextOverflowModes.Ellipsis;
+                }
                 if (market.IsTrading) RefreshTrading(market); else RefreshLegacy(market);
                 if (_rankField != null) _rankField.interactable = CanEditRank();
             }
             void RefreshTrading(Market market)
             {
                 Position p = market.Positions[_index];
-                if (!_single)
+                if (!_single && !Simple)
                 {
                     if (market.KnownRanks[_index] > 0) _name.text += "\n已确定第" + PredictionMod.N(market.KnownRanks[_index]) + "名";
                     else if (market.Life[_index].Points.Count > 0) _name.text += "\n命元 " + PredictionMod.N(market.Life[_index].Points[market.Life[_index].Points.Count - 1].Life);
                     else if (market.QuoteStates != null) _name.text += "\n命元 " + PredictionMod.N(market.QuoteStates[_index].Life);
+                    HorseMember horse = _panel._mod.Horses == null || _panel._history ? null : _panel._mod.Horses.Find(market.Players[_index].Uid);
+                    if (horse != null && horse.Title.Length > 0) _name.text += "\n" + horse.Caption;
                 }
                 bool current = !_panel._history && _panel._mod.Snapshot != null && _panel._mod.Snapshot.Id == market.Id
                     && _panel._mod.Snapshot.LiveObserver && _panel._mod.PreparationError == null;
@@ -342,7 +438,7 @@ namespace YxPrediction
                 _prev.SetInteractable(current && !market.Settled && !p.Resolved);
                 _next.SetInteractable(current && !market.Settled && !p.Resolved);
                 bool canBuy = TradingOdds.CanBuy(market, _index, _rank);
-                _buy.SetText(p.Claim > 0 ? "增持" : "买入");
+                _buy.SetText(p.Claim > 0 ? (Simple ? "加注" : "增持") : (Simple ? "下注" : "买入"));
                 _buy.SetInteractable(active && _panel._mod.Enabled && canBuy && (p.Claim == 0 || p.Rank == _rank));
                 _half.SetInteractable(active && p.Claim >= 2); _sell.SetInteractable(active && p.Claim > 0);
                 _switch.SetInteractable(active && _panel._mod.Enabled && canBuy && p.Claim > 0 && p.Rank != _rank);
@@ -352,10 +448,12 @@ namespace YxPrediction
                 if (canBuy && long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out stake) && stake >= 1 && stake <= Odds.MaximumStake)
                 {
                     long claim = stake * rate / 10000;
-                    _preview.text = "本次买入" + PredictionMod.N(stake) + " → 正中返" + PredictionMod.N(claim) + " / 差1返" + PredictionMod.N(claim / 4)
+                    if (Simple) _preview.text = (p.Claim > 0 && p.Rank != _rank ? "先退出旧注，再投" : "这次投") + PredictionMod.N(stake) + "分，猜中返" + PredictionMod.N(claim) + "分";
+                    else _preview.text = "本次买入" + PredictionMod.N(stake) + " → 正中返" + PredictionMod.N(claim) + " / 差1返" + PredictionMod.N(claim / 4)
                         + (p.Claim > 0 && p.Rank != _rank ? "（换预测按新名次买入）" : "");
                 }
-                else _preview.text = _rank == 0 ? "请选择目标名次（1～8）" : "选择仍可能达到的名次，输入1～10000整数积分";
+                else _preview.text = Simple ? (_rank == 0 ? "" : (canBuy ? "输入1～10000积分" : "这个名次已不可下注")) : (_rank == 0 ? "请选择目标名次（1～8）" : "选择仍可能达到的名次，输入1～10000整数积分");
+                if (Simple) { RefreshSimpleResult(market, active); return; }
                 if (p.Resolved)
                 {
                     _result.text = "最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名 · 结算返" + PredictionMod.N(p.FinalPayout)
@@ -373,6 +471,28 @@ namespace YxPrediction
                 else _result.text = "未持仓 / 已清仓\n累计投" + PredictionMod.N(p.Invested) + " 收回" + PredictionMod.N(p.CashReturned)
                     + "\n已实现收益 " + PredictionMod.N(p.NetResult);
             }
+            static string Earned(long value)
+            {
+                return value > 0 ? "合计赚" + PredictionMod.N(value) + "分" : (value < 0 ? "合计亏" + PredictionMod.N(-value) + "分" : "收支持平");
+            }
+            void RefreshSimpleResult(Market market, bool active)
+            {
+                Position p = market.Positions[_index];
+                if (p.Resolved)
+                {
+                    _preview.text = "";
+                    if (p.Invested == 0) _result.text = "未参与";
+                    else _result.text = (p.Rank > 0 ? "猜第" + PredictionMod.N(p.Rank) + "名" : "已退出")
+                        + " · 最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名\n"
+                        + (p.Rank > 0 ? "已到账" + PredictionMod.N(p.FinalPayout) + "分" : "退出收回" + PredictionMod.N(p.CashReturned) + "分")
+                        + " · " + Earned(p.NetResult);
+                }
+                else if (p.Claim > 0)
+                    _result.text = "已猜第" + PredictionMod.N(p.Rank) + "名 · 剩余投入" + PredictionMod.N(p.Cost) + "分\n"
+                        + "猜中返" + PredictionMod.N(p.Claim) + "分 · " + (active ? "全退返" : "参考退回")
+                        + PredictionMod.N(TradingOdds.Sale(market, _index, false)) + "分";
+                else _result.text = p.Invested == 0 ? "还没下注" : "已退出 · 收回" + PredictionMod.N(p.CashReturned) + "分\n" + Earned(p.NetResult);
+            }
             void RefreshLegacy(Market market)
             {
                 Ticket ticket = market.Tickets[_index];
@@ -389,6 +509,23 @@ namespace YxPrediction
                 else if (market.Settled) _result.text = "本金" + PredictionMod.N(ticket.Stake) + " · 最终第" + PredictionMod.N(market.FinalRanks[_index]) + "名\n返还 " + PredictionMod.N(ticket.ReturnFor(market.FinalRanks[_index], market.RuleVersion));
                 else _result.text = "本金" + PredictionMod.N(ticket.Stake) + " 正中返" + PredictionMod.N(ticket.Payout) + "\n"
                     + (market.HasAdjacentReward ? "差1返" + PredictionMod.N(ticket.AdjacentPayout) : "仅正中返还");
+                if (Simple)
+                {
+                    if (ticket == null)
+                    {
+                        _result.text = "还没下注";
+                        long stake;
+                        _preview.text = rank > 0 && long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out stake) && stake >= 1 && stake <= Odds.MaximumStake
+                            ? "这次投" + PredictionMod.N(stake) + "分，猜中返" + PredictionMod.N(stake * rate / 10000) + "分" : "";
+                    }
+                    else
+                    {
+                        _preview.text = "";
+                        _result.text = market.Settled ? "猜第" + PredictionMod.N(ticket.Rank) + "名 · 最终第" + PredictionMod.N(market.FinalRanks[_index])
+                            + "名\n已到账" + PredictionMod.N(ticket.ReturnFor(market.FinalRanks[_index], market.RuleVersion)) + "分"
+                            : "已猜第" + PredictionMod.N(ticket.Rank) + "名 · 已投" + PredictionMod.N(ticket.Stake) + "分\n猜中返" + PredictionMod.N(ticket.Payout) + "分";
+                    }
+                }
             }
         }
     }

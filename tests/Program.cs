@@ -261,6 +261,7 @@ internal static partial class Program
         TrendChecks();
         RankSelectionChecks();
         GameRankChecks();
+        HorseChecks();
         Console.WriteLine("Passed: " + _passed + "; Failed: " + _failed);
         return _failed == 0 ? 0 : 1;
     }

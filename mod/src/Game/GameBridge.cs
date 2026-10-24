@@ -19,6 +19,7 @@ namespace YxPrediction
         int _resultsThroughRound;
         float _nextPoll;
         public GameBridge(PredictionMod mod, ModContext ctx) { _mod = mod; _ctx = ctx; _elo = new EloClient(ctx); }
+        public HorseProfile[] HorseProfiles(Player[] players) { return _elo.GetHorseProfiles(players); }
 
         void Waiting(string message)
         {

@@ -19,6 +19,7 @@ namespace YxPrediction
         GameBridge _bridge;
         PredictionPanel _panel;
         PredictionLauncher _launcher;
+        public TianJiFeature Horses { get; private set; }
 #endif
 
         public Market Current { get { return Snapshot == null || Book == null ? null : Book.Find(Snapshot.Id); } }
@@ -33,6 +34,7 @@ namespace YxPrediction
             Message = "进入八人观战后自动准备赔率；点击「名次预测」打开面板";
 #if YX_GAME
             _bridge = new GameBridge(this, ctx);
+            Horses = new TianJiFeature(this, ctx, _bridge);
             _panel = new PredictionPanel(this, ctx);
             _launcher = new PredictionLauncher(ctx, _panel);
             ctx.Events.OnNetIn<Proto.GameStatus>(_bridge.OnStatus);
@@ -47,6 +49,7 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
+            if (Horses != null) Horses.Update();
             if (_launcher != null) _launcher.Update();
             if (_panel != null) _panel.Update();
 #endif
@@ -58,6 +61,7 @@ namespace YxPrediction
             if (_bridge != null) _bridge.Destroy();
             if (_launcher != null) _launcher.Destroy();
             if (_panel != null) _panel.Destroy();
+            if (Horses != null) Horses.Destroy();
 #endif
         }
 

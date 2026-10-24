@@ -54,6 +54,22 @@ namespace YxPrediction
             return waiting ? null : ratings;
         }
 
+        public HorseProfile[] GetHorseProfiles(Player[] players)
+        {
+            if (Get(players) == null) return null; // 和预测共用请求及分片缓存，不用昵称反查或改写UID。
+            var profiles = new HorseProfile[8];
+            for (int i = 0; i < 8; i++)
+            {
+                Dictionary<string, object> shard;
+                string uid = players[i].Uid;
+                if (players[i].IsAi || !EloData.IsPublicUid(uid) || !_shards.TryGetValue(uid.Substring(uid.Length - 2), out shard) || shard == null)
+                { profiles[i] = new HorseProfile(Rating.Unknown()); continue; }
+                try { profiles[i] = HorseProfile.Read(shard, uid); }
+                catch { profiles[i] = new HorseProfile(Rating.Unknown()); }
+            }
+            return profiles;
+        }
+
         void Begin(string uid, string suffix)
         {
             _suffix = suffix;
