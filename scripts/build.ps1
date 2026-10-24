@@ -15,6 +15,11 @@ try {
     if (!(Test-Path -LiteralPath 'vendor/yixianpai-mod-sdk/sdk/net40/Yx.ModSdk.Core.dll')) { throw '先运行 scripts/restore-sdk.ps1。' }
     Invoke-Dotnet restore tests/PredictionChecks.csproj --configfile NuGet.Config
     Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-restore
+    Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --rule-parity .cache/single-player-parity.json
+    $parityHash = (Get-FileHash '.cache/single-player-parity.json').Hash
+    if ($parityHash -ne (Get-FileHash 'server/fixtures/single-player-parity.json').Hash) { throw '单人规则对照数据发生变化，请重新生成并审核服务端对照测试。' }
+    & node --test server/rooms.test.mjs server/rules.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw '联机规则对照失败。' }
     Invoke-Dotnet run --project tests/GameEntryChecks/GameEntryChecks.csproj
     Invoke-Dotnet run --project tests/HorseHoverChecks/HorseHoverChecks.csproj
     & (Join-Path $PSScriptRoot 'check-interpreter.ps1')

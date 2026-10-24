@@ -40,6 +40,8 @@ namespace YxPrediction
             HorseFlow(players, ratings);
             PanelLayoutFlow();
             RoomWireFixture.Verify();
+            EloScanFixture.Verify();
+            RoomRateFixture.Verify();
             return "INTERPRETER PASS";
         }
 

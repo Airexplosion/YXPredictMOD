@@ -39,7 +39,7 @@ namespace YxPrediction
             if (_uid != focus || _game != r.GameId || _room != r.Code) { _uid=focus;_game=r.GameId;_room=r.Code;_index=index;_selected=r.MyRanks[index]>0?r.MyRanks[index]:0;_stake.SetText("10"); }
             _index=index;
             _name.text=r.Names[index];_rank.text=_selected>0?"第"+PredictionMod.N(_selected)+"名":"—";
-            _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Stakes[index])+"分":"未持仓";
+            _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules==2?r.Claims[index]:r.Stakes[index])+"分":"未持仓";
             HorseMember horse=_mod.Horses.FindMember(focus);
             _bar.Badge.sprite=horse==null?null:_mod.Horses.GetSprite(horse.IconTitle);
             _bar.Badge.gameObject.SetActive(!_collapsed&&_bar.Badge.sprite!=null);
@@ -49,7 +49,7 @@ namespace YxPrediction
             if(_selected>0)
             {
                 long pool=0;for(int i=0;i<8;i++)pool+=r.Pools[index*8+i];long chosen=r.Pools[index*8+_selected-1];
-                _bar.Rate.text=online?(chosen>0?(pool/(double)chosen).ToString("0.00",CultureInfo.InvariantCulture)+"x":"—"):PredictionMod.Rate(_mod.Current.QuoteRates[index*8+_selected-1]);
+                _bar.Rate.text=!online||r.Rules==2?PredictionMod.Rate(r.QuoteRates[index*8+_selected-1]):chosen>0?(pool/(double)chosen).ToString("0.00",CultureInfo.InvariantCulture)+"x":"—";
             }
             else _bar.Rate.text="—";
             bool open=r.Open && r.Ranks[index]==0;

@@ -23,6 +23,7 @@ namespace YxPrediction
         NativeTheme _theme;
         PanelLayout _layout;
         CharacterBetBar _betBar;
+        PredictionOverviewEntry _overviewEntry;
         TalentOrbit _talents;
         public TianJiFeature Horses { get; private set; }
 #endif
@@ -48,6 +49,7 @@ namespace YxPrediction
             _bridge = new GameBridge(this, ctx);
             Horses = new TianJiFeature(this, ctx, _bridge);
             _betBar = new CharacterBetBar(this, ctx, _theme);
+            _overviewEntry = new PredictionOverviewEntry(this, ctx, _theme);
             _talents = new TalentOrbit(ctx);
 
             ctx.Events.OnNetIn<Proto.GameStatus>(_bridge.OnStatus);
@@ -67,6 +69,7 @@ namespace YxPrediction
             if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();
             if (_betBar != null) _betBar.Update();
+            if (_overviewEntry != null) _overviewEntry.Update();
             if (_talents != null) _talents.Update();
 #endif
         }
@@ -78,6 +81,7 @@ namespace YxPrediction
             if (Online != null) Online.Destroy();
             if (OnlinePanel != null) OnlinePanel.Destroy();
             if (_betBar != null) _betBar.Destroy();
+            if (_overviewEntry != null) _overviewEntry.Destroy();
             if (_talents != null) _talents.Destroy();
             if (Horses != null) Horses.Destroy();
 #endif

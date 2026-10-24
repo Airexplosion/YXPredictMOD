@@ -27,8 +27,12 @@ namespace YxPrediction
         string _feedback;
         float _next;
         NativePredictionWindow _classic;
-        bool _peek, _minimized, _detailed;
-        NativePanelButton _peekButton, _minimizeButton;
+        bool _minimized, _detailed;
+        NativePanelButton _minimizeButton;
+        bool _showTrend; int _trendPlayer;
+        GameObject _trendRoot;
+        LifeChart _lifeChart,_shareChart,_swapChart;
+        TextMeshProUGUI _trendName;
         public RoomPanel(PredictionMod mod, ModContext ctx, NativeTheme theme)
         { _mod = mod; _ctx = ctx; _theme = theme; _ui = new UiKit(ctx); ctx.Input.RegisterHotkey("onlineRoom", "Ctrl+Shift+P", Toggle); _entry = new LobbyRoomEntry(ctx, theme, Toggle); }
         public void Toggle()
@@ -94,18 +98,27 @@ namespace YxPrediction
             _root=_classic.Root; if(_root==null)return;
             _status=_classic.Status;_message=_classic.Footer;
             Transform banner=_classic.Banner.transform;
-            _theme.CreateButtonTopLeft(banner,"details","详细数据",496f,-11f,88f,32f,NativePanelButtonStyle.Secondary,ToggleDetails,16);
+            _theme.CreateButtonTopLeft(banner,"details","走势图",496f,-11f,82f,32f,NativePanelButtonStyle.Secondary,ToggleTrend,16);
             _theme.CreateButtonTopLeft(banner,"horses","顶栏马牌",590f,-11f,104f,32f,NativePanelButtonStyle.Secondary,ToggleHorses,16);
-            _peekButton=_theme.CreateButtonTopLeft(banner,"peek","透视",700f,-11f,66f,32f,NativePanelButtonStyle.Secondary,TogglePeek,16);
-            _minimizeButton=_theme.CreateButtonTopLeft(banner,"minimize","折起",772f,-11f,66f,32f,NativePanelButtonStyle.Secondary,ToggleMinimize,16);
-            _theme.CreateButtonTopLeft(banner,"roomOptions","房间",844f,-11f,90f,32f,NativePanelButtonStyle.Secondary,ShowConnectionMenu,16);
-            _theme.CreateButtonTopLeft(banner,"leave","离开",940f,-11f,66f,32f,NativePanelButtonStyle.Secondary,Leave,16);
-            _theme.CreateButtonTopLeft(banner,"close","×",1012f,-11f,54f,32f,NativePanelButtonStyle.Close,Close,22);
+            _minimizeButton=_theme.CreateButtonTopLeft(banner,"minimize","折起",700f,-11f,66f,32f,NativePanelButtonStyle.Secondary,ToggleMinimize,16);
+            _theme.CreateButtonTopLeft(banner,"roomOptions","房间",772f,-11f,90f,32f,NativePanelButtonStyle.Secondary,ShowConnectionMenu,16);
+            _theme.CreateButtonTopLeft(banner,"leave","离开",868f,-11f,66f,32f,NativePanelButtonStyle.Secondary,Leave,16);
+            _theme.CreateButtonTopLeft(banner,"close","×",940f,-11f,54f,32f,NativePanelButtonStyle.Close,Close,22);
             for(int i=0;i<8;i++)_rows[i]=new Row(this,i);
+            _trendRoot=_ui.Row(_classic.Body.transform,"TrendTab",Vector2.zero,new Vector2(1116f,510f),Color.clear);_trendRoot.GetComponent<Image>().raycastTarget=false;
+            _theme.CreateButtonTopLeft(_trendRoot.transform,"prevPlayer","上一人",14f,-4f,110f,34f,NativePanelButtonStyle.Secondary,PrevTrend,18);
+            _trendName=_ui.Label(_trendRoot.transform,"trendPlayer","",new Vector2(140f,-4f),new Vector2(300f,34f),20);
+            _theme.CreateButtonTopLeft(_trendRoot.transform,"nextPlayer","下一人",450f,-4f,110f,34f,NativePanelButtonStyle.Secondary,NextTrend,18);
+            _lifeChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.LifeMetric,10f,-50f,350f,440f,_theme);
+            _shareChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.ShareMetric,375f,-50f,350f,440f,_theme);
+            _swapChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.SwapsMetric,740f,-50f,350f,440f,_theme);
+            _trendRoot.SetActive(false);
         }
+        void ToggleTrend(){_showTrend=!_showTrend;_classic.Table.SetActive(!_showTrend);_trendRoot.SetActive(_showTrend);}
+        void PrevTrend(){_trendPlayer=(_trendPlayer+7)%8;}
+        void NextTrend(){_trendPlayer=(_trendPlayer+1)%8;}
         void ToggleDetails(){_detailed=!_detailed;}
         void ToggleHorses(){_mod.Horses.Toggle();}
-        void TogglePeek(){_peek=!_peek;_classic.SetPeek(_peek);_peekButton.SetText(_peek?"退出透视":"透视");}
         void ToggleMinimize(){_minimized=!_minimized;_classic.SetMinimized(_minimized);_minimizeButton.SetText(_minimized?"展开":"折起");}
         TextMeshProUGUI Label(string name, string value, float x, float y, float w, float h, int size)
         {
@@ -154,10 +167,11 @@ namespace YxPrediction
                 string members = "成员：";
                 RoomState room = _mod.Online.State;
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
-                _message.text = _feedback ?? _mod.Online.JoinNotice ?? members;
+                _message.text = _feedback ?? _mod.Online.JoinNotice ?? (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members);
             }
             else _message.text = _feedback ?? _mod.PreparationError ?? "";
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
+            if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);_swapChart.Refresh(_mod.Current,_trendPlayer);}
         }
         public void SetFeedback(string message) { _feedback = message; }
         public RoomState CurrentView()
@@ -165,8 +179,9 @@ namespace YxPrediction
             if (HasCurrentRoom()) return _mod.Online.State;
             Market m = _mod.Current; if (m == null) return null;
             var r = new RoomState(); r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
+            r.BaseRates=m.BaseRates;r.QuoteRates=m.QuoteRates;for(int j=0;j<64;j++)r.Factors[j]=10000;
             r.Open = m.TradingWindowOpen; r.Settled = m.Settled; r.Balance = _mod.Book.Balance; r.Members = 1;
-            for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim; }
+            for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
             return r;
         }
         public void Submit(int player, int rank, long amount, int action)
@@ -243,10 +258,11 @@ namespace YxPrediction
                 if (r == null) { _holdingLabel.text = "未连接"; return; }
                 long total = 0; for (int j = 0; j < 8; j++) total += r.Pools[_index * 8 + j];
                 long selected = _chosen > 0 ? r.Pools[_index * 8 + _chosen - 1] : 0;
-                string rate = _chosen == 0 ? "—" : !_panel.HasCurrentRoom() && _panel._mod.Current != null ? PredictionMod.Rate(_panel._mod.Current.QuoteRates[_index * 8 + _chosen - 1]) : selected > 0 ? (total / (double)selected).ToString("0.00",CultureInfo.InvariantCulture) + "x" : "暂无投入";
+                int quoteAt=_index*8+Math.Max(1,_chosen)-1;
+                string rate=_chosen==0?"—":!_panel.HasCurrentRoom()||r.Rules==2?PredictionMod.Rate(r.QuoteRates[quoteAt]):selected>0?(total/(double)selected).ToString("0.00",CultureInfo.InvariantCulture)+"x":"暂无投入";
                 _oddsLabel.text=rate=="暂无投入"?"—":rate;
-                _holdingLabel.text=r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(r.Stakes[_index])+"分":"未持仓";
-                _resultLabel.text=r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名":"";
+                _holdingLabel.text=r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules==2?r.Claims[_index]:r.Stakes[_index])+"分":"未持仓";
+                _resultLabel.text=r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名 · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"分":_panel.HasCurrentRoom()&&r.Rules==2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
                 _half.SetActive(r.Stakes[_index]>0);_sell.SetActive(r.Stakes[_index]>0);
                 _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == _chosen ? "增持" : "换预测" : "投入");
             }

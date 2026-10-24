@@ -10,7 +10,9 @@ namespace YxPrediction
         public string Code, GameId;
         public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
         public bool Host, Open, Settled;
-        public int Version, Round, Members;
+        public int Version, Round, Members, Rules;
+        public int[] BaseRates=new int[64], QuoteRates=new int[64], Factors=new int[64];
+        public long[] Claims=new long[8], FinalPayouts=new long[8];
         public long Balance, Payout;
         public readonly string[] Uids = new string[8], Names = new string[8];
         public readonly int[] Ranks = new int[8], MyRanks = new int[8];
@@ -22,6 +24,12 @@ namespace YxPrediction
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
+            r.Rules=(int)Json.GetNumber(d,"rules",1);
+            if(r.Rules==2){
+                var baseline=Json.GetArray(d,"baseRates");var quoted=Json.GetArray(d,"quoteRates");var factors=Json.GetArray(d,"factors");
+                if(baseline==null||quoted==null||factors==null||baseline.Count!=64||quoted.Count!=64||factors.Count!=64)throw new FormatException("房间倍率缺失");
+                for(int i=0;i<64;i++){r.BaseRates[i]=Convert.ToInt32(baseline[i],CultureInfo.InvariantCulture);r.QuoteRates[i]=Convert.ToInt32(quoted[i],CultureInfo.InvariantCulture);r.Factors[i]=Convert.ToInt32(factors[i],CultureInfo.InvariantCulture);}
+            }
             var members = Json.GetArray(d, "memberDetails");
             if (members != null)
             {
@@ -38,7 +46,7 @@ namespace YxPrediction
                 r.Uids[i] = Json.GetString(player, "uid", ""); r.Names[i] = Json.GetString(player, "name", "");
                 r.Ranks[i] = Convert.ToInt32(ranks[i], CultureInfo.InvariantCulture);
                 var pos = positions[i] as Dictionary<string, object>;
-                if (pos != null) { r.MyRanks[i] = (int)Json.GetNumber(pos, "rank", 0); r.Stakes[i] = (long)Json.GetNumber(pos, "stake", 0); }
+                if (pos != null) { r.MyRanks[i] = (int)Json.GetNumber(pos, "rank", 0); r.Stakes[i] = (long)Json.GetNumber(pos, "stake", 0); r.Claims[i]=(long)Json.GetNumber(pos,"claim",r.Stakes[i]);r.FinalPayouts[i]=(long)Json.GetNumber(pos,"payout",0); }
                 var totals = pools[i] as List<object>; if (totals == null || totals.Count != 8) throw new FormatException("资金池维度错误");
                 for (int j = 0; j < 8; j++) r.Pools[i * 8 + j] = Convert.ToInt64(totals[j], CultureInfo.InvariantCulture);
             }

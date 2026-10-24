@@ -1,3 +1,4 @@
+import { quoteRates, sale, returnFor } from './odds.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -47,6 +48,7 @@ export class Rooms {
       && typeof x.name === 'string' && x.name.length <= 128), '需要完整八人名单');
     requireThat(Array.isArray(s.ranks) && s.ranks.length === 8 && s.ranks.every(x => integer(x, 0, 8)), '名次无效');
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
+    requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础倍率格式无效');
     return s;
   }
   findByGame(key, nativeId) {
@@ -71,7 +73,7 @@ export class Rooms {
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
-        closedThrough: 0, open: false, ended: false, settled: false, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+        closedThrough: 0, open: false, ended: false, settled: false, rules: s.baseRates ? 2 : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       return this.view(code, key);
     });
@@ -109,16 +111,31 @@ export class Rooms {
     const before = JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks]);
     requireThat(r.gameId === s.id && r.players.every(p => s.players.some(q => q.uid === p.uid)), '房间名单或对局不一致');
     requireThat(s.round >= r.round, '拒绝旧回合状态');
+    if(r.rules===2 && (r.quoteRound === undefined || s.round>r.round)){
+      if(s.baseRates) r.baseRates=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
+      const totals=Array.from({length:8},()=>Array(8).fill(0));
+      for(const ps of Object.values(r.positions)) for(let i=0;i<8;i++) if(ps[i]&&!ps[i].resolved)totals[i][ps[i].rank-1]+=ps[i].stake;
+      const quotes=quoteRates(r.baseRates,totals);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
+    }
+    if(r.rules===2 && s.baseRates){
+      const nextBase=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
+      if(JSON.stringify(nextBase)!==JSON.stringify(r.baseRates)){
+        r.baseRates=nextBase;r.quoteRates=nextBase.map((base,at)=>base<=0?0:Math.max(10100,Math.min(500000,Math.floor(base*r.factors[at]/10000))));r.version++;
+      }
+    }
     if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
-    r.open = !r.ended && s.open && r.round > r.closedThrough;
+    r.open = !r.ended && s.open && r.round > r.closedThrough && (r.rules!==2 || r.ranks.filter(rank=>rank===0).length>=2);
     for (let i = 0; i < 8; i++) {
       if (r.ranks[i] && ranks[i] && r.ranks[i] !== ranks[i]) throw new RoomError('确定名次冲突');
       if (ranks[i]) r.ranks[i] = ranks[i];
     }
     const known = r.ranks.filter(Boolean); requireThat(new Set(known).size === known.length, '名次重复');
+    if(r.rules===2 && !r.ended) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
+    if(r.rules===2 && known.length>=7)r.open=false;
+    if(r.rules===2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
     if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks])) r.version++;
   }
@@ -137,6 +154,7 @@ export class Rooms {
     requireThat(this.isOpen(r), '交易暂停：等待房主同步下一轮修炼状态');
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
     requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止交易');
+    if(r.rules===2) requireThat((r.actionCounts?.[key]?.[input.player] ?? 0)<512,'该选手本局操作次数已达512次');
     requireThat(['buy', 'half', 'sell', 'switch'].includes(input.kind), '操作无效');
     return this.commit(() => {
       r = this.state.rooms[code]; const account = this.account(key);
@@ -144,25 +162,49 @@ export class Rooms {
       let p = positions[input.player];
       const sell = input.kind === 'sell' || input.kind === 'half' || input.kind === 'switch';
       if (sell) {
-        requireThat(p && p.stake > 0, '没有可出售的持仓');
-        const amount = input.kind === 'half' ? Math.ceil(p.stake / 2) : p.stake;
-        // Refund 97% of original contribution; no speculative mark-to-market minting.
-        account.balance += Math.floor(amount * 97 / 100); p.stake -= amount;
-        if (!p.stake) positions[input.player] = p = null;
+        requireThat(p && (r.rules===2 ? p.claim>0&&!p.resolved : p.stake>0), '没有可出售的持仓');
+        if(r.rules===2 && input.kind==='switch')requireThat(p.rank!==input.rank,'预测名次相同，请使用增持');
+        if(r.rules===2){
+          const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;
+          requireThat(removed>0,'剩余权益不足减半，请使用清仓');
+          const returned=sale(p.claim,r.quoteRates[input.player*8+p.rank-1],input.kind==='half');
+          requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'积分余额已达上限');
+          const released=Number(BigInt(p.stake)*BigInt(removed)/BigInt(p.claim));
+          p.claim-=removed;p.stake-=released;account.balance+=returned;
+          if(!p.claim)positions[input.player]=p=null;
+        }else{
+          const amount = input.kind === 'half' ? Math.ceil(p.stake / 2) : p.stake;
+          account.balance += Math.floor(amount * 97 / 100); p.stake -= amount;
+          if (!p.stake) positions[input.player] = p = null;
+        }
       }
       if (input.kind === 'buy' || input.kind === 'switch') {
         requireThat(integer(input.rank, 1, 8) && !r.ranks.includes(input.rank), '请选择仍可能的名次');
+        if(r.rules===2)requireThat(input.rank<=8-r.ranks.filter(Boolean).length&&r.quoteRates[input.player*8+input.rank-1]>0,'该名次已不可能达到');
         requireThat(integer(input.stake, 1, 10000) && account.balance >= input.stake, '积分不足或投入须为1至10000整数');
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
         account.balance -= input.stake;
-        if (p) p.stake += input.stake; else positions[input.player] = { rank: input.rank, stake: input.stake };
+        if (p) {p.stake += input.stake;if(r.rules===2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
+        else {positions[input.player] = { rank: input.rank, stake: input.stake };if(r.rules===2)positions[input.player].claim=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
       }
-      requireThat(Object.keys(r.receipts).length < 20000, '本房间操作次数已满');
+      if(r.rules===2){const counts=(r.actionCounts??={})[key]??=Array(8).fill(0);counts[input.player]++;}
+      requireThat(Object.keys(r.receipts).length < (r.rules===2?131072:20000), '本房间操作次数已满');
       r.receipts[receiptKey] = true; r.version++;
       return this.view(code, key);
     });
   }
+  settleKnown(r){
+    for(const [key,ps] of Object.entries(r.positions)){
+      for(let i=0;i<8;i++){
+        const p=ps[i];if(!p||p.resolved||!r.ranks[i])continue;
+        const payout=returnFor(p.claim,p.rank,r.ranks[i]);
+        requireThat(this.state.accounts[key].balance+payout<=1000000000000,'积分余额已达上限');
+        this.state.accounts[key].balance+=payout;r.payouts[key]=(r.payouts[key]??0)+payout;p.payout=payout;p.resolved=true;
+      }
+    }
+  }
   settle(r) {
+    if(r.rules===2){this.settleKnown(r);r.settled=true;r.open=false;return;}
     for (let i = 0; i < 8; i++) {
       let pool = 0, winnerStake = 0;
       for (const positions of Object.values(r.positions)) {
@@ -183,7 +225,7 @@ export class Rooms {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

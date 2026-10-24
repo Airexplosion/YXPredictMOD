@@ -5,6 +5,8 @@ internal static partial class Program
 {
     static void PanelLayoutChecks()
     {
+        Check("Elo shard scans are bounded, selective and reject broken envelopes", EloScanFixture.Verify);
+        Check("rule-2 room response decodes base coefficient quote and locked rights", RoomRateFixture.Verify);
         Check("real Node room response decodes shared pools and personal position", RoomWireFixture.Verify);
 
         Check("random room waits for matching live snapshot and rejects timeout", delegate

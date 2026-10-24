@@ -125,6 +125,12 @@ namespace YxPrediction
             if (string.IsNullOrEmpty(_token)) { var register = Body("register"); register["name"] = _name.Value; Send(register); }
             else ConnectReady();
         }
+        Dictionary<string,object> RatedSnapshot(MatchSnapshot snapshot)
+        {
+            var data=Snapshot(snapshot);Market market=_mod.Current;
+            if(market!=null&&market.QuoteRates!=null){var rates=new List<object>();for(int i=0;i<snapshot.Players.Length;i++){int at=market.FindPlayer(snapshot.Players[i].Uid);for(int rank=0;rank<8;rank++)rates.Add(market.QuoteRates[at*8+rank]);}data["baseRates"]=rates;data["open"]=snapshot.LiveObserver&&market.TradingWindowOpen;}
+            return data;
+        }
         void ConnectReady()
         {
             if (_afterRegister == "findGame") { _afterRegister=null; var find=Body("findGame"); find["nativeId"]=_discoverNative; Send(find); return; }
@@ -133,7 +139,7 @@ namespace YxPrediction
             MatchSnapshot s = _mod.Snapshot;
             if (s == null || !s.LiveObserver) { Message = "观战已离开，请重新连接"; return; }
             var body = Body(_afterRegister); body["gameId"] = s.Id;
-            if (_afterRegister == "create") body["snapshot"] = Snapshot(s);
+            if (_afterRegister == "create") {if(_mod.Current==null){Message="Elo基础倍率仍在准备，请稍后创建";return;}body["snapshot"] = RatedSnapshot(s);}
             _afterRegister = null; Send(body);
         }
         public void RandomJoin()
@@ -222,7 +228,7 @@ namespace YxPrediction
             {
                 MatchSnapshot ready = _mod.Snapshot;
                 if (Time.unscaledTime >= _createDeadline) { _createNativeId = null; Message = "未进入所选观战，创建已取消"; }
-                else if (ready != null && ready.LiveObserver && !ready.Ended && ready.IsEightPlayerMatch() && NativeRoomSpectate.CurrentRoomId() == _createNativeId)
+                else if (_mod.Current != null && ready != null && ready.LiveObserver && !ready.Ended && ready.IsEightPlayerMatch() && NativeRoomSpectate.CurrentRoomId() == _createNativeId)
                 { _createNativeId = null; Connect("", true); return; }
                 else return;
             }
@@ -269,7 +275,7 @@ namespace YxPrediction
                             State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
-                            SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : "资金池参考赔率随投入变化；最终赔率以封盘资金池为准";
+                            SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }
@@ -298,7 +304,7 @@ namespace YxPrediction
             if (string.IsNullOrEmpty(_code) || string.IsNullOrEmpty(_token)) return;
             MatchSnapshot s = _mod.Snapshot;
             if (State != null && State.Host && s != null && s.Id == State.GameId && (s.LiveObserver || s.Ended))
-            { var body = Body("sync"); body["snapshot"] = Snapshot(s); Send(body); }
+            { var body = Body("sync"); body["snapshot"] = RatedSnapshot(s); Send(body); }
             else Send(Body("view"));
         }
         void DestroyRequest() { if (_request != null) { _request.Abort(); _request.Dispose(); _request = null; } }
