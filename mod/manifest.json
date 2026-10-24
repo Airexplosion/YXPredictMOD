@@ -1,9 +1,9 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "观战名次预测（积分）",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": "Local",
-  "description": "恢复走势图和右上角预测总览、移除透视；联机基础倍率×下回合投注系数，其余权益和相邻25%返还对齐单人；Elo分帧筛选解析。",
+  "description": "使用当前原生境界槽位恢复左侧仙命布局；保留旧预测UI、走势图和单人/联机统一权益规则及Elo分帧解析。",
   "sdkVersion": ">=1.0.0 <2.0.0",
   "entry": "plugins/PredictionPoints.dll",
   "entryType": "YxPrediction.PredictionMod",
