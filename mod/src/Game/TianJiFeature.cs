@@ -50,6 +50,8 @@ namespace YxPrediction
             public HorseCaption Caption;
             public Image Avatar, Icon;
             public Sprite Clip;
+            public Rect HoverArea;
+            public bool Visible;
         }
         public TianJiFeature(PredictionMod mod, ModContext ctx, GameBridge bridge)
         {
@@ -163,26 +165,35 @@ namespace YxPrediction
         {
             Vector3 mouse = Input.mousePosition;
             var screen = new Vector2(mouse.x, mouse.y);
+            int hoveredIndex = -1;
+            float closest = float.PositiveInfinity;
             for (int i = 0; i < _plates.Count; i++)
             {
                 Plate plate = _plates[i];
                 if (plate.IconFrame == null || plate.Icon == null) continue;
                 bool valid = Roster.MatchId == snapshot.Id && plate.Item != null && plate.Avatar != null
                     && plate.Item.battlePlayerData != null && plate.Item.battlePlayerData.uid == plate.Uid;
-                bool visible = valid && plate.Root != null && plate.Root.activeSelf && plate.Avatar.isActiveAndEnabled;
-                bool hovered = false;
-                if (visible)
+                plate.Visible = valid && plate.Root != null && plate.Root.activeSelf && plate.Avatar.isActiveAndEnabled;
+                if (plate.Visible)
                 {
                     RectTransform avatar = plate.Avatar.rectTransform;
                     HorsePlateLayout.PlaceIcon(plate.IconFrame.transform as RectTransform, avatar);
                     Canvas canvas = plate.Avatar.canvas;
                     Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
                     Vector2 local;
-                    hovered = Application.isFocused && RectTransformUtility.ScreenPointToLocalPointInRectangle(avatar, screen, camera, out local)
-                        && HorsePlateLayout.ContainsPoint(avatar, local);
+                    if (Application.isFocused && RectTransformUtility.ScreenPointToLocalPointInRectangle(avatar, screen, camera, out local))
+                    {
+                        float distance = HorsePlateLayout.HoverDistance(avatar, plate.HoverArea, local);
+                        if (distance < closest) { closest = distance; hoveredIndex = i; }
+                    }
                 }
+            }
+            for (int i = 0; i < _plates.Count; i++)
+            {
+                Plate plate = _plates[i];
+                if (plate.IconFrame == null || plate.Icon == null) continue;
                 plate.IconFrame.SetActive(HorsePlateLayout.ShouldShow(_icons.Value && plate.Icon.sprite != null && plate.Clip != null,
-                    visible, _iconsOnFocus.Value, valid ? plate.Uid : null, snapshot.FocusedUid, hovered));
+                    plate.Visible, _iconsOnFocus.Value, plate.Uid, snapshot.FocusedUid, i == hoveredIndex));
             }
         }
         void RefreshPlates()
@@ -274,6 +285,11 @@ namespace YxPrediction
             float captionTop = caption.size.y > 0
                 ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
             root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - HorseCaption.GapBelowName - captionTop);
+            float stroke = HorseCaption.StrokeSize;
+            Rect captionGlyph = caption.size.y > 0
+                ? new Rect(caption.min.x - stroke, caption.min.y - stroke, caption.size.x + stroke * 2, caption.size.y + stroke * 2)
+                : plate.Label.rectTransform.rect;
+            plate.HoverArea = HorsePlateLayout.HoverBounds(plate.Avatar.rectTransform, plate.Name.rectTransform, plate.Label.rectTransform, captionGlyph);
         }
         static Color ColorOf(string title)
         {

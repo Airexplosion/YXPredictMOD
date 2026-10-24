@@ -1,8 +1,8 @@
 {
-  "version": "0.3.12",
-  "tag": "v0.3.12",
-  "title": "v0.3.12 - 默认马图，查看与悬停显示角色",
-  "artifact": "dist/local.yxp.predictionpoints-0.3.12.zip",
-  "sha256": "684ece431439e569ee9e81554b44868b09c4bce3171d682bdff31b02141fcda7",
-  "notes": ".github/releases/v0.3.12.md"
+  "version": "0.3.13",
+  "tag": "v0.3.13",
+  "title": "v0.3.13 - 扩大玩家悬停区域",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.13.zip",
+  "sha256": "5d1ab73ae8bcdc9da60db0139c5d3dffc6409b5d531ecb41ad449d28e4f5417e",
+  "notes": ".github/releases/v0.3.13.md"
 }

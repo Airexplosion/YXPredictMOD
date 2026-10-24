@@ -196,15 +196,48 @@ internal static class Program
         True(HorsePlateLayout.ShouldShow(true, true, false, "player2", "player1", false), "Leaving B did not restore its icon");
         True(HorsePlateLayout.ShouldShow(true, true, false, "player1", "player2", false), "Switching to B did not restore A's icon");
         True(!HorsePlateLayout.ShouldShow(true, true, false, "player2", "player2", false), "Switching to B did not reveal B");
-        var avatar = Box(null, 0, 0, 100, 120); avatar.pivot = new Vector2(0.3f, 0.7f);
-        Vector2 center = avatar.rect.center;
-        True(HorsePlateLayout.ContainsPoint(avatar, center), "Avatar center missed");
-        True(HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x + 49, center.y)), "Inside circle missed");
-        True(!HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x + 49, center.y + 49)), "Transparent corner triggered hover");
-        True(!HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x, center.y + 51)), "Outside circle triggered hover");
-        avatar.sizeDelta = new Vector2(0, 0);
-        True(!HorsePlateLayout.ContainsPoint(avatar, center), "Unlaid-out avatar triggered hover");
-        Console.WriteLine("PASS default icons/role-on-focus and alternate roles/icon-on-focus, pointer leave/focus switch, disabled guards and circular hover bounds");
+        Console.WriteLine("PASS default icons/role-on-focus and alternate roles/icon-on-focus, pointer leave/focus switch and disabled guards");
+    }
+    static void HorseHoverRegions()
+    {
+        foreach (float scale in new float[] { 0.65f, 1, 1.5f })
+        {
+            var canvas = Box(null, 300, 200, 1920, 1080); canvas.localScale = new Vector3(scale, scale, 1);
+            for (int slot = 0; slot < 8; slot++)
+            {
+                var item = Box(canvas, 300 + slot * 158, -30, 150, 210);
+                var avatar = Box(item, 75, -60, 100, 100); avatar.pivot = new Vector2(0.5f, 0.5f);
+                var name = Box(item, 75, -126, 150, 30); name.pivot = new Vector2(0.5f, 0.5f);
+                var caption = Box(name, 75, -30, 150, 48); caption.pivot = new Vector2(0.5f, 1);
+                var glyph = new Rect(-70, -23, 140, 23);
+                Rect area = HorsePlateLayout.HoverBounds(avatar, name, caption, glyph);
+                Near(area.x, -83); Near(area.y, -120); Near(area.width, 166); Near(area.height, 186);
+                foreach (Vector2 point in new Vector2[] { new Vector2(-80, 60), new Vector2(65, 55), new Vector2(0, 0),
+                    new Vector2(70, -68), new Vector2(70, -104), new Vector2(-80, -90), new Vector2(0, -118) })
+                {
+                    True(HorsePlateLayout.ContainsPoint(area, point), "Player rectangle missed corner, health badge, ID, caption or blank gap");
+                    True(!HorsePlateLayout.ShouldShow(true, true, false, "player", null, true), "Expanded hover failed in default mode");
+                    True(HorsePlateLayout.ShouldShow(true, true, true, "player", null, true), "Expanded hover failed in alternate mode");
+                }
+                True(!HorsePlateLayout.ContainsPoint(area, new Vector2(0, -121)), "Area extended too far below title");
+                True(!HorsePlateLayout.ContainsPoint(area, new Vector2(84, 0)), "Area extended into neighboring slot");
+                True(!HorsePlateLayout.ContainsPoint(area, new Vector2(158, 0)), "Adjacent avatar center triggered this player");
+                True(float.IsPositiveInfinity(HorsePlateLayout.HoverDistance(avatar, area, new Vector2(0, -121))), "Outside region became a hover candidate");
+                // 两列相距158，热区边缘可能重叠；x=81离右列更近。
+                True(HorsePlateLayout.ContainsPoint(area, new Vector2(81, 0)) && HorsePlateLayout.ContainsPoint(area, new Vector2(-77, 0)), "Overlap fixture missing");
+                True(HorsePlateLayout.HoverDistance(avatar, area, new Vector2(-77, 0))
+                    < HorsePlateLayout.HoverDistance(avatar, area, new Vector2(81, 0)), "Overlap did not prefer nearest player");
+                // 改变pivot和文字缩放后，按实际控件坐标重算，而不是沿用屏幕像素常量。
+                avatar.pivot = new Vector2(0.3f, 0.7f); name.localScale = new Vector3(0.9f, 0.9f, 1);
+                area = HorsePlateLayout.HoverBounds(avatar, name, caption, glyph);
+                Vector3 captionPoint = avatar.InverseTransformPoint(caption.TransformPoint(new Vector3(60, -23, 0)));
+                True(HorsePlateLayout.ContainsPoint(area, new Vector2(captionPoint.x, captionPoint.y)), "Changed pivot or text scale lost title hit area");
+                avatar.sizeDelta = Vector2.zero;
+                area = HorsePlateLayout.HoverBounds(avatar, name, caption, glyph);
+                True(!HorsePlateLayout.ContainsPoint(area, Vector2.zero), "Unlaid-out avatar triggered hover");
+            }
+        }
+        Console.WriteLine("PASS full player hover rectangle: avatar corners, health badge, ID, caption, blank gaps, boundaries, nearest overlap, eight slots and three scales");
     }
     static void HorseBindings(string path)
     {
@@ -232,7 +265,8 @@ internal static class Program
                 }
                 if (method.Name == "ToggleIconMode") True(Calls(method, "set_Value") && Calls(method, "GetComponent"), "Hotkey must persist mode and avoid typing in input fields");
                 if (method.Name == "UpdateIcons")
-                    True(Calls(method, "PlaceIcon") && Calls(method, "ShouldShow") && Calls(method, "ContainsPoint") && Calls(method, "get_isActiveAndEnabled"), "Avatar placement, visibility or round hover guard not bound");
+                    True(Calls(method, "PlaceIcon") && Calls(method, "ShouldShow") && Calls(method, "HoverDistance") && Calls(method, "get_isActiveAndEnabled"), "Avatar placement, visibility or full player hover guard not bound");
+                if (method.Name == "PositionPlate") True(Calls(method, "HoverBounds"), "Actual ID/caption bounds not bound to hover area");
                 if (method.Name == "ClearPlates") True(Calls(method, "DestroyPlate"), "Clearing a match leaked independent icons");
                 if (method.Name == "RefreshPlates")
                 {
@@ -301,7 +335,7 @@ internal static class Program
     }
     static int Main(string[] args)
     {
-        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); BlackCaptionStroke(); HorseIconLayering(); HorseIconVisibility(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
+        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); BlackCaptionStroke(); HorseIconLayering(); HorseIconVisibility(); HorseHoverRegions(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
         catch (Exception ex) { Console.WriteLine(ex); return 1; }
     }
 }
