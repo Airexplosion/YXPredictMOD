@@ -87,26 +87,25 @@ namespace YxPrediction
         void BackChoices() { _connectionMenu = false; if (_joinForm != null) _joinForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(true); }
         void Build()
         {
-            _root = _ui.Panel("PredictionOnlineRoom", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1140f, 650f), NativeTheme.LacquerBlack);
+            _root = _ui.Panel("PredictionOnlineRoom", new Vector2(0.5f,0.5f),new Vector2(0.5f,0.5f),Vector2.zero,new Vector2(1140f,650f),NativeTheme.LacquerBlack);
             if (_root == null) return;
             _theme.ApplyWindowFrame(_root.GetComponent<Image>());
-            _theme.DecorateWindow(_root, "名次预测");
-            Label("title", "名次预测", 20, -12, 690, 34, 24);
-            _theme.CreateButtonTopLeft(_root.transform, "close", "关闭", 1030, -12, 90, 34, NativeBtnStyle.Close, Close, 20);
-            _tableCreate = _theme.CreateButtonTopLeft(_root.transform, "create", "创建房间", 24, -62, 150, 38, NativeBtnStyle.Primary, Create, 20);
-            _tableJoin = _theme.CreateButtonTopLeft(_root.transform, "join", "加入房间", 188, -62, 150, 38, NativeBtnStyle.Secondary, ShowConnectionMenu, 20);
-            _theme.CreateButtonTopLeft(_root.transform, "leave", "离开房间", 608, -62, 130, 38, NativeBtnStyle.Secondary, Leave, 20);
-            _theme.CreateButtonTopLeft(_root.transform, "random", "房间选项", 752, -62, 142, 38, NativeBtnStyle.Primary, ShowConnectionMenu, 20);
-            _status = Label("status", "请在管理器 MOD 配置 online.server 与昵称，再创建或加入房间", 20, -112, 1090, 34, 20);
-            Label("headerPlayer", "选手", 20, -152, 205, 30, 20);
-            Label("headerRank", "预测名次", 230, -152, 140, 30, 20);
-            Label("headerStake", "投入积分", 382, -152, 100, 30, 20);
-            Label("headerActions", "操作", 492, -152, 258, 30, 20);
-            Label("headerHolding", "持仓 / 参考赔率", 770, -152, 350, 30, 20);
-            for (int i = 0; i < 8; i++) _rows[i] = new Row(this, i);
-            _message = Label("message", "", 20, -594, 1090, 44, 18);
-            _message.enableWordWrapping = true;
-            _message.color = NativeTheme.TextMuted;
+            _theme.DecorateWindow(_root,"名次预测");
+            var title=Label("title","名次预测总览",20,-8,230,34,22); title.color=NativeTheme.AntiqueGold;
+            _status=Label("status","",254,-8,560,34,16);
+            _tableCreate=_theme.CreateButtonTopLeft(_root.transform,"create","创建",820,-8,72,32,NativeBtnStyle.Secondary,Create,16);
+            _tableJoin=_theme.CreateButtonTopLeft(_root.transform,"join","加入",898,-8,72,32,NativeBtnStyle.Secondary,ShowConnectionMenu,16);
+            _theme.CreateButtonTopLeft(_root.transform,"leave","离开",976,-8,72,32,NativeBtnStyle.Secondary,Leave,16);
+            _theme.CreateButtonTopLeft(_root.transform,"close","×",1060,-8,54,32,NativeBtnStyle.Close,Close,22);
+            Label("headerPlayer","玩家",20,-55,160,30,18);
+            Label("headerHorse","田忌马牌",186,-55,145,30,18);
+            Label("headerRank","猜第几名",336,-55,120,30,18);
+            Label("headerRate","倍率",464,-55,76,30,18);
+            Label("headerStake","投入",548,-55,68,30,18);
+            Label("headerActions","操作",624,-55,192,30,18);
+            Label("headerHolding","我的预测与返还",830,-55,270,30,18);
+            for(int i=0;i<8;i++) _rows[i]=new Row(this,i);
+            _message=Label("message","",20,-586,1090,48,17);_message.enableWordWrapping=true;
         }
         TextMeshProUGUI Label(string name, string value, float x, float y, float w, float h, int size)
         {
@@ -190,28 +189,142 @@ namespace YxPrediction
         {
             readonly RoomPanel _panel;
             readonly int _index;
-            readonly TextMeshProUGUI _name, _rank, _holding;
+            readonly TextMeshProUGUI _rank, _playerName, _playerLife, _horseTitle, _oddsLabel, _holdingLabel, _resultLabel;
+            readonly GameObject _rowGo;
+            readonly RectTransform _rowRect;
+            readonly Image _selfFlag, _horseIcon, _dividerLine;
+            readonly NativeButton _btnMinus, _btnPlus;
             readonly UiInput _stake;
             readonly NativeButton _buy, _half, _sell;
             int _chosen = 1;
             string _identity;
             public Row(RoomPanel panel, int index)
             {
-                _panel = panel; _index = index; float y = -188f - index * 50f;
-                string id = index.ToString(CultureInfo.InvariantCulture);
-                var background = panel._ui.Row(panel._root.transform, "rowBackground" + id, new Vector2(12f, y + 2f), new Vector2(1116f, 46f), index % 2 == 0 ? new Color(0.13f, 0.15f, 0.17f, 0.92f) : new Color(0.09f, 0.11f, 0.13f, 0.92f));
-                background.GetComponent<Image>().raycastTarget = false;
-                _name = panel.Label("name"+id, "—", 20,y,205,40,20);
-                panel._theme.CreateButtonTopLeft(panel._root.transform,"minus"+id,"−",230,y,34,38,NativeBtnStyle.Pill,Minus,22);
-                _rank = panel.Label("rank"+id,"1名",270,y,58,38,20);
-                panel._theme.CreateButtonTopLeft(panel._root.transform,"plus"+id,"+",330,y,34,38,NativeBtnStyle.Pill,Plus,22);
-                _stake = panel._ui.NumberInput(panel._root.transform,"stake"+id,new Vector2(382,y),new Vector2(92,38),5,Ignore);_stake.SetText("10");
-                panel._theme.StyleInput(panel._root.transform.Find("stake"+id), 22);
-                _buy = panel._theme.CreateButtonTopLeft(panel._root.transform,"buy"+id,"投入",492,y,86,38,NativeBtnStyle.Primary,Buy,20);
-                _half = panel._theme.CreateButtonTopLeft(panel._root.transform,"half"+id,"退半",590,y,74,38,NativeBtnStyle.Caution,Half,20);
-                _sell = panel._theme.CreateButtonTopLeft(panel._root.transform,"sell"+id,"清仓",676,y,74,38,NativeBtnStyle.Danger,Sell,20);
-                _holding = panel.Label("holding"+id,"",770,y,350,40,18);
+                _panel = panel;
+                _index = index;
+
+                _rowGo = new GameObject("Row_" + PredictionMod.N(index), typeof(RectTransform));
+                _rowGo.transform.SetParent(panel._root.transform, false);
+
+                _rowRect = _rowGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(_rowRect, 0f, -88f-index*60f, PanelLayout.WindowWidth - 24f, 54f);
+
+                Transform row = _rowGo.transform;
+
+                // 关注高亮光晕
+                var flagGo = new GameObject("SelfFlag", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                flagGo.transform.SetParent(row, false);
+                var flagRect = flagGo.GetComponent<RectTransform>();
+                flagRect.anchorMin = Vector2.zero;
+                flagRect.anchorMax = Vector2.one;
+                flagRect.sizeDelta = Vector2.zero;
+                _selfFlag = flagGo.GetComponent<Image>();
+                panel._theme.ApplySelfFlag(_selfFlag);
+                _selfFlag.raycastTarget = false;
+                _selfFlag.gameObject.SetActive(false);
+
+                // 1. 玩家信息
+                var nameGo = new GameObject("PlayerName", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                nameGo.transform.SetParent(row, false);
+                var nameRect = nameGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(nameRect, 16f, -6f, 160f, 24f);
+                _playerName = nameGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_playerName, 16, true, TextAlignmentOptions.Left);
+                _playerName.raycastTarget = false;
+
+                var lifeGo = new GameObject("PlayerLife", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                lifeGo.transform.SetParent(row, false);
+                var lifeRect = lifeGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(lifeRect, 16f, -30f, 160f, 20f);
+                _playerLife = lifeGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_playerLife, 13, false, TextAlignmentOptions.Left);
+                _playerLife.color = NativeTheme.TextMuted;
+                _playerLife.raycastTarget = false;
+
+                // 2. 田忌称号
+                var iconGo = new GameObject("HorseIcon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                iconGo.transform.SetParent(row, false);
+                var iconRect = iconGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(iconRect, 186f, -10f, 36f, 36f);
+                _horseIcon = iconGo.GetComponent<Image>();
+                _horseIcon.preserveAspect = true;
+                _horseIcon.raycastTarget = false;
+
+                var titleGo = new GameObject("HorseTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                titleGo.transform.SetParent(row, false);
+                var titleRect = titleGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(titleRect, 226f, -10f, 105f, 36f);
+                _horseTitle = titleGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_horseTitle, 15, true, TextAlignmentOptions.Left);
+                _horseTitle.raycastTarget = false;
+
+                // 3. 目标名次与倍率
+                _btnMinus = panel._theme.CreateButtonTopLeft(row, "Minus", "−", 336f, -11f, 30f, 34f, NativeBtnStyle.Pill, Minus, 18);
+
+                var rankGo = new GameObject("RankLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                rankGo.transform.SetParent(row, false);
+                var rRect = rankGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(rRect, 370f, -11f, 52f, 34f);
+                _rank = rankGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_rank, 18, true, TextAlignmentOptions.Center);
+                _rank.color = NativeTheme.AntiqueGold;
+
+                _btnPlus = panel._theme.CreateButtonTopLeft(row, "Plus", "+", 426f, -11f, 30f, 34f, NativeBtnStyle.Pill, Plus, 18);
+
+                var oddsGo = new GameObject("OddsLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                oddsGo.transform.SetParent(row, false);
+                var oRect = oddsGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(oRect, 464f, -11f, 76f, 34f);
+                _oddsLabel = oddsGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_oddsLabel, 17, true, TextAlignmentOptions.Center);
+                _oddsLabel.color = new Color(0.35f, 0.95f, 0.82f, 1f);
+
+                // 4. 积分输入
+                _stake = panel._ui.NumberInput(row, "Stake", new Vector2(548f, -11f), new Vector2(68f, 34f), 5, Ignore);
+                Transform stakeT = row.Find("Stake");
+                if (stakeT != null)
+                {
+                    var bg = stakeT.GetComponent<Image>();
+                    if (bg != null) panel._theme.ApplyInset(bg);
+                    panel._theme.StyleInput(stakeT,20);
+                }
+
+                _stake.SetText("10");
+
+                // 5. 调仓操作按钮
+                _buy = panel._theme.CreateButtonTopLeft(row, "BtnBuy", "下注", 624f, -11f, 68f, 34f, NativeBtnStyle.Primary, Buy, 15);
+                _half = panel._theme.CreateButtonTopLeft(row, "BtnHalf", "退半", 698f, -11f, 56f, 34f, NativeBtnStyle.Caution, Half, 14);
+                _sell = panel._theme.CreateButtonTopLeft(row, "BtnSell", "清仓", 760f, -11f, 56f, 34f, NativeBtnStyle.Danger, Sell, 14);
+
+                // 6. 权益与结果
+                var holdingGo = new GameObject("HoldingLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                holdingGo.transform.SetParent(row, false);
+                var hRect = holdingGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(hRect, 830f, -8f, 200f, 24f);
+                _holdingLabel = holdingGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_holdingLabel, 15, true, TextAlignmentOptions.Left);
+                _holdingLabel.color = NativeTheme.TextParchment;
+                _holdingLabel.raycastTarget = false;
+
+                var resultGo = new GameObject("ResultLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                resultGo.transform.SetParent(row, false);
+                var resRect = resultGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(resRect, 830f, -31f, 200f, 22f);
+                _resultLabel = resultGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_resultLabel, 13, false, TextAlignmentOptions.Left);
+                _resultLabel.color = NativeTheme.AntiqueGold;
+                _resultLabel.raycastTarget = false;
+
+                // 7. 分隔线
+                var lineGo = new GameObject("Line", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                lineGo.transform.SetParent(row, false);
+                var lineRect = lineGo.GetComponent<RectTransform>();
+                NativeTheme.SetTopLeft(lineRect, 10f, -54f, PanelLayout.WindowWidth - 44f, 1.5f);
+                _dividerLine = lineGo.GetComponent<Image>();
+                panel._theme.ApplyLine(_dividerLine);
+                _dividerLine.raycastTarget = false;
             }
+
             void Minus() { _chosen = _chosen == 1 ? 8 : _chosen - 1; }
             void Plus() { _chosen = _chosen == 8 ? 1 : _chosen + 1; }
             void Buy()
@@ -228,16 +341,31 @@ namespace YxPrediction
             {
                 string identity = r == null ? null : r.Code + ":" + r.GameId + ":" + r.Uids[_index];
                 if (_identity != identity) { _identity = identity; _chosen = r != null && r.MyRanks[_index] > 0 ? r.MyRanks[_index] : 1; _stake.SetText("10"); }
-                _rank.text = PredictionMod.N(_chosen) + "名";
+                _rank.text = "第" + PredictionMod.N(_chosen) + "名";
                 bool valid = r != null && _panel._mod.Snapshot != null && r.GameId == _panel._mod.Snapshot.Id;
                 bool open = valid && r.Open && !r.Settled && (!_panel.HasCurrentRoom() || !_panel._mod.Online.Busy) && r.Ranks[_index] == 0;
                 _buy.SetInteractable(open); _half.SetInteractable(open && r.Stakes[_index] > 0); _sell.SetInteractable(open && r.Stakes[_index] > 0);
-                _name.text = r == null ? "—" : r.Names[_index];
-                if (r == null) { _holding.text = "未连接"; return; }
+                _playerName.text = r == null ? "—" : r.Names[_index];
+                if (r != null)
+                {
+                    MatchSnapshot snapshot=_panel._mod.Snapshot; PlayerState state=null;
+                    if(snapshot!=null) for(int i=0;i<snapshot.Players.Length;i++) if(snapshot.Players[i].Uid==r.Uids[_index] && snapshot.States!=null) state=snapshot.States[i];
+                    _playerLife.text=state==null?"":"命元 "+PredictionMod.N(state.Life)+" · "+PredictionMod.N(state.Wins)+"胜"+PredictionMod.N(state.Losses)+"负";
+                    _selfFlag.gameObject.SetActive(snapshot!=null&&FocusSelection.Uid(snapshot)==r.Uids[_index]);
+                    HorseMember horse=_panel._mod.Horses.FindMember(r.Uids[_index]);
+                    _horseTitle.text=horse==null?"":horse.Caption;
+                    if(horse!=null) _horseTitle.color=TianJiFeature.ColorOf(horse.Title);
+                    _horseIcon.sprite=horse==null?null:_panel._mod.Horses.GetSprite(horse.IconTitle);
+                    _horseIcon.gameObject.SetActive(_horseIcon.sprite!=null);
+                }
+                if (r == null) { _holdingLabel.text = "未连接"; return; }
                 long total = 0; for (int j = 0; j < 8; j++) total += r.Pools[_index * 8 + j];
                 long selected = r.Pools[_index * 8 + _chosen - 1];
                 string rate = !_panel.HasCurrentRoom() && _panel._mod.Current != null ? PredictionMod.Rate(_panel._mod.Current.QuoteRates[_index * 8 + _chosen - 1]) : selected > 0 ? (total / (double)selected).ToString("0.00",CultureInfo.InvariantCulture) + "x" : "暂无投入";
-                _holding.text = r.Stakes[_index] > 0 ? "猜" + PredictionMod.N(r.MyRanks[_index]) + "名 " + PredictionMod.N(r.Stakes[_index]) + "分 · " + rate : "未持仓 · " + rate;
+                _oddsLabel.text=rate=="暂无投入"?"—":rate;
+                _holdingLabel.text=r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(r.Stakes[_index])+"分":"未持仓";
+                _resultLabel.text=r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名":"";
+                _half.SetActive(r.Stakes[_index]>0);_sell.SetActive(r.Stakes[_index]>0);
                 _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == _chosen ? "增持" : "换预测" : "投入");
             }
         }
