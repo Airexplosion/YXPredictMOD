@@ -131,13 +131,24 @@ namespace YxPrediction
                 _theme.ApplyWindowFrame(bg);
                 bg.raycastTarget = true;
 
+                // 暗墨底色衬板，确保文字与按钮在任何背景下均具备极致高对比度
+                var darkBack = new GameObject("Backing", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                darkBack.transform.SetParent(_root.transform, false);
+                var dbRect = darkBack.GetComponent<RectTransform>();
+                dbRect.anchorMin = Vector2.zero;
+                dbRect.anchorMax = Vector2.one;
+                dbRect.sizeDelta = new Vector2(-12f, -12f);
+                var dbImg = darkBack.GetComponent<Image>();
+                dbImg.color = new Color(0.06f, 0.08f, 0.10f, 0.94f);
+                dbImg.raycastTarget = false;
+
                 Transform bar = _root.transform;
 
                 // 1. 田忌称号与玩家名
                 var iconGo = new GameObject("HorseIcon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
                 iconGo.transform.SetParent(bar, false);
                 var iconRect = iconGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(iconRect, 12f, -10f, 36f, 36f);
+                NativeTheme.SetTopLeft(iconRect, 14f, -14f, 38f, 38f);
                 _horseIcon = iconGo.GetComponent<Image>();
                 _horseIcon.raycastTarget = false;
                 _horseIcon.preserveAspect = true;
@@ -145,52 +156,52 @@ namespace YxPrediction
                 var horseTitleGo = new GameObject("HorseTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 horseTitleGo.transform.SetParent(bar, false);
                 var titleRect = horseTitleGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(titleRect, 52f, -10f, 85f, 18f);
+                NativeTheme.SetTopLeft(titleRect, 58f, -12f, 105f, 20f);
                 _horseTitle = horseTitleGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(_horseTitle, 13, true, TextAlignmentOptions.Left);
+                _theme.ApplyTextStyle(_horseTitle, 15, true, TextAlignmentOptions.Left);
                 _horseTitle.raycastTarget = false;
 
                 var playerNameGo = new GameObject("PlayerName", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 playerNameGo.transform.SetParent(bar, false);
                 var nameRect = playerNameGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(nameRect, 52f, -28f, 85f, 18f);
+                NativeTheme.SetTopLeft(nameRect, 58f, -36f, 105f, 20f);
                 _playerName = playerNameGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(_playerName, 13, false, TextAlignmentOptions.Left);
-                _playerName.color = NativeTheme.TextMuted;
+                _theme.ApplyTextStyle(_playerName, 14, false, TextAlignmentOptions.Left);
+                _playerName.color = NativeTheme.TextParchment;
                 _playerName.raycastTarget = false;
 
                 // 2. 名次选择器与赔率
-                _btnMinus = _theme.CreateButtonTopLeft(bar, "BtnMinus", "−", 142f, -12f, 28f, 32f, NativeBtnStyle.Pill, OnMinusClicked, 16);
+                _btnMinus = _theme.CreateButtonTopLeft(bar, "BtnMinus", "−", 168f, -16f, 30f, 34f, NativeBtnStyle.Pill, OnMinusClicked, 18);
 
                 var rankGo = new GameObject("RankLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 rankGo.transform.SetParent(bar, false);
                 var rankRect = rankGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(rankRect, 172f, -12f, 48f, 32f);
+                NativeTheme.SetTopLeft(rankRect, 202f, -16f, 48f, 34f);
                 _rankLabel = rankGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(_rankLabel, 14, true, TextAlignmentOptions.Center);
+                _theme.ApplyTextStyle(_rankLabel, 18, true, TextAlignmentOptions.Center);
                 _rankLabel.color = NativeTheme.AntiqueGold;
 
-                _btnPlus = _theme.CreateButtonTopLeft(bar, "BtnPlus", "+", 222f, -12f, 28f, 32f, NativeBtnStyle.Pill, OnPlusClicked, 16);
+                _btnPlus = _theme.CreateButtonTopLeft(bar, "BtnPlus", "+", 254f, -16f, 30f, 34f, NativeBtnStyle.Pill, OnPlusClicked, 18);
 
                 var oddsGo = new GameObject("OddsLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 oddsGo.transform.SetParent(bar, false);
                 var oddsRect = oddsGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(oddsRect, 254f, -12f, 58f, 32f);
+                NativeTheme.SetTopLeft(oddsRect, 288f, -16f, 58f, 34f);
                 _oddsLabel = oddsGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(_oddsLabel, 14, true, TextAlignmentOptions.Center);
-                _oddsLabel.color = new Color(0.4f, 0.95f, 0.85f, 1f);
+                _theme.ApplyTextStyle(_oddsLabel, 17, true, TextAlignmentOptions.Center);
+                _oddsLabel.color = new Color(0.35f, 0.95f, 0.82f, 1f);
 
                 // 3. 积分输入
                 var stakeLblGo = new GameObject("StakePre", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 stakeLblGo.transform.SetParent(bar, false);
                 var stakeLblRect = stakeLblGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(stakeLblRect, 316f, -16f, 18f, 24f);
+                NativeTheme.SetTopLeft(stakeLblRect, 350f, -20f, 18f, 26f);
                 var stakePre = stakeLblGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(stakePre, 13, false, TextAlignmentOptions.Center);
+                _theme.ApplyTextStyle(stakePre, 14, false, TextAlignmentOptions.Center);
                 stakePre.text = "投";
-                stakePre.color = NativeTheme.TextMuted;
+                stakePre.color = NativeTheme.TextParchment;
 
-                _stakeInput = _ui.NumberInput(bar, "StakeInput", new Vector2(336f, -12f), new Vector2(52f, 32f), 14, OnStakeChanged);
+                _stakeInput = _ui.NumberInput(bar, "StakeInput", new Vector2(372f, -16f), new Vector2(52f, 34f), 16, OnStakeChanged);
                 Transform inputTransform = bar.Find("StakeInput");
                 if (inputTransform != null)
                 {
@@ -201,30 +212,30 @@ namespace YxPrediction
                 var stakePostGo = new GameObject("StakePost", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 stakePostGo.transform.SetParent(bar, false);
                 var stakePostRect = stakePostGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(stakePostRect, 390f, -16f, 18f, 24f);
+                NativeTheme.SetTopLeft(stakePostRect, 428f, -20f, 18f, 26f);
                 var stakePost = stakePostGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(stakePost, 13, false, TextAlignmentOptions.Center);
+                _theme.ApplyTextStyle(stakePost, 14, false, TextAlignmentOptions.Center);
                 stakePost.text = "分";
-                stakePost.color = NativeTheme.TextMuted;
+                stakePost.color = NativeTheme.TextParchment;
 
                 // 4. 操作按钮
-                _btnBuy = _theme.CreateButtonTopLeft(bar, "BtnBuy", "下注", 415f, -11f, 68f, 34f, NativeBtnStyle.Primary, OnBuyClicked, 14);
-                _btnSellHalf = _theme.CreateButtonTopLeft(bar, "BtnSellHalf", "退半", 487f, -11f, 52f, 34f, NativeBtnStyle.Caution, OnSellHalfClicked, 13);
-                _btnSellAll = _theme.CreateButtonTopLeft(bar, "BtnSellAll", "清仓", 543f, -11f, 52f, 34f, NativeBtnStyle.Danger, OnSellAllClicked, 13);
+                _btnBuy = _theme.CreateButtonTopLeft(bar, "BtnBuy", "下注", 454f, -16f, 64f, 34f, NativeBtnStyle.Primary, OnBuyClicked, 15);
+                _btnSellHalf = _theme.CreateButtonTopLeft(bar, "BtnSellHalf", "退半", 522f, -16f, 52f, 34f, NativeBtnStyle.Caution, OnSellHalfClicked, 14);
+                _btnSellAll = _theme.CreateButtonTopLeft(bar, "BtnSellAll", "清仓", 578f, -16f, 52f, 34f, NativeBtnStyle.Danger, OnSellAllClicked, 14);
 
                 // 5. 实时权益与预测预览
                 var prevGo = new GameObject("PreviewLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 prevGo.transform.SetParent(bar, false);
                 var prevRect = prevGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(prevRect, 604f, -12f, 226f, 32f);
+                NativeTheme.SetTopLeft(prevRect, 638f, -16f, 172f, 34f);
                 _previewLabel = prevGo.GetComponent<TextMeshProUGUI>();
-                _theme.ApplyTextStyle(_previewLabel, 12, false, TextAlignmentOptions.Left);
+                _theme.ApplyTextStyle(_previewLabel, 14, false, TextAlignmentOptions.Left);
                 _previewLabel.color = NativeTheme.TextParchment;
 
                 // 6. 快捷按钮
-                _btnTrend = _theme.CreateButtonTopLeft(bar, "BtnTrend", "走势", 836f, -12f, 40f, 32f, NativeBtnStyle.Secondary, OnTrendClicked, 12);
-                _btnOverview = _theme.CreateButtonTopLeft(bar, "BtnOverview", "总览", 880f, -12f, 40f, 32f, NativeBtnStyle.Secondary, OnOverviewClicked, 12);
-                _btnCollapse = _theme.CreateButtonTopLeft(bar, "BtnCollapse", "▾", 924f, -14f, 24f, 28f, NativeBtnStyle.Pill, OnCollapseClicked, 14);
+                _btnTrend = _theme.CreateButtonTopLeft(bar, "BtnTrend", "走势", 816f, -16f, 38f, 34f, NativeBtnStyle.Secondary, OnTrendClicked, 14);
+                _btnOverview = _theme.CreateButtonTopLeft(bar, "BtnOverview", "总览", 858f, -16f, 38f, 34f, NativeBtnStyle.Secondary, OnOverviewClicked, 14);
+                _btnCollapse = _theme.CreateButtonTopLeft(bar, "BtnCollapse", "▾", 900f, -17f, 26f, 32f, NativeBtnStyle.Pill, OnCollapseClicked, 16);
             }
             catch (Exception ex)
             {

@@ -26,8 +26,7 @@ namespace YxPrediction
         static FieldInfo _oppTalentsField;
         static FieldInfo _readyLayerField;
         static FieldInfo _selfInfoField;
-        static FieldInfo _selfLayoutField;
-        static FieldInfo _layoutItemsField;
+        static FieldInfo _selfTalentsField;
 
         public static void Update()
         {
@@ -114,38 +113,28 @@ namespace YxPrediction
             var selfInfo = _selfInfoField.GetValue(ready) as PlayerSelfInfoItem;
             if (selfInfo == null || selfInfo.gameObject == null || !selfInfo.gameObject.activeInHierarchy) return;
 
-            if (_selfLayoutField == null)
+            if (_selfTalentsField == null)
             {
-                _selfLayoutField = typeof(PlayerSelfInfoItem).GetField("m_BattleTalentsLayout", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                _selfTalentsField = typeof(PlayerSelfInfoItem).GetField("m_TalentItems", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             }
-            if (_selfLayoutField == null) return;
+            if (_selfTalentsField == null) return;
 
-            var layout = _selfLayoutField.GetValue(selfInfo) as BattleTalentsLayout;
-            if (layout == null) return;
-
-            if (_layoutItemsField == null)
-            {
-                _layoutItemsField = typeof(BattleTalentsLayout).GetField("m_TalentItems", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            }
-            if (_layoutItemsField == null) return;
-
-            var items = _layoutItemsField.GetValue(layout) as IList;
+            var items = _selfTalentsField.GetValue(selfInfo) as IList;
             if (items == null || items.Count == 0) return;
 
             Vector2 center = new Vector2(CenterX, CenterY);
             if (selfInfo.transform != null)
             {
                 var rt = selfInfo.transform as RectTransform;
-                if (rt != null && rt.parent != null)
+                if (rt != null)
                 {
-                    Vector3 worldPos = rt.TransformPoint(Vector3.zero);
+                    Vector3 worldPos = rt.TransformPoint(new Vector3(145f, 145f, 0f));
                     for (int i = 0; i < items.Count; i++)
                     {
                         var item = items[i] as BattleTalentIconItem;
                         if (item != null && item.transform != null && item.transform.parent != null)
                         {
                             center = item.transform.parent.InverseTransformPoint(worldPos);
-                            center.y += 20f;
                             break;
                         }
                     }

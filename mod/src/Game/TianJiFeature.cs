@@ -220,25 +220,35 @@ namespace YxPrediction
                     var name = item.FindComponent<TextMeshProUGUI>("UsernameLabel", false);
                     var avatar = item.FindComponent<Image>("Avatar", false);
                     if (name == null || avatar == null) continue;
-                    // 称号跟随昵称；图标独立放在昵称之前，确保原生ID也绘制在图标上方。
-                    GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(150, 48), Color.clear);
+                    // 称号跟随昵称下方，不遮挡原生用户名；图标作为头像左上角角标。
+                    GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(130, 22), Color.clear);
                     var rect = root.transform as RectTransform;
-                    rect.anchorMin = rect.anchorMax = name.rectTransform.pivot;
-                    rect.pivot = new Vector2(0.5f, 1);
+                    rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+                    rect.pivot = new Vector2(0.5f, 1f);
+                    rect.anchoredPosition = new Vector2(0f, -1f);
                     var background = root.GetComponent(typeof(Image)) as Image;
                     if (background != null) background.raycastTarget = false;
-                    // 为字体本身的行高留足空间，再按实际字形顶边贴齐ID，避免大字号整行被裁掉。
-                    var label = _ui.Label(root.transform, "caption", "", Vector2.zero, new Vector2(150, 48), 22);
-                    label.fontStyle = FontStyles.Bold; label.alignment = TextAlignmentOptions.Top;
-                    label.richText = false; label.raycastTarget = false; label.enableWordWrapping = false;
+
+                    var label = _ui.Label(root.transform, "caption", "", Vector2.zero, new Vector2(130, 22), 11);
+                    label.fontStyle = FontStyles.Bold;
+                    label.alignment = TextAlignmentOptions.Center;
+                    label.richText = false;
+                    label.raycastTarget = false;
+                    label.enableWordWrapping = false;
                     label.overflowMode = TextOverflowModes.Ellipsis;
-                    label.outlineColor = new Color(0, 0, 0, 0.95f); label.outlineWidth = 0.2f;
-                    var iconRoot = _ui.Row(name.transform.parent, "YXPredictHorseIcon", Vector2.zero,
-                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
+                    label.outlineColor = new Color(0, 0, 0, 0.95f);
+                    label.outlineWidth = 0.25f;
+
+                    var iconRoot = _ui.Row(avatar.transform, "YXPredictHorseIcon", Vector2.zero,
+                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.clear);
                     var iconRect = iconRoot.transform as RectTransform;
-                    iconRect.pivot = new Vector2(0.5f, 0.5f);
+                    iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 1f);
+                    iconRect.pivot = new Vector2(0.15f, 0.85f);
+                    iconRect.anchoredPosition = new Vector2(-2f, 2f);
+                    iconRect.sizeDelta = new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize);
                     var icon = iconRoot.GetComponent(typeof(Image)) as Image;
-                    icon.raycastTarget = false; icon.preserveAspect = true;
+                    icon.raycastTarget = false;
+                    icon.preserveAspect = true;
                     plate = new Plate { Item = item, Root = root, Name = name, Label = label, Avatar = avatar, Icon = icon };
                     _plates.Add(plate);
                 }
@@ -247,27 +257,15 @@ namespace YxPrediction
                 plate.Label.text = member.PlateCaption;
                 plate.Label.color = member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title);
                 Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
-                plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null && plate.Name.isActiveAndEnabled);
+                plate.Icon.sprite = sprite;
+                plate.Icon.gameObject.SetActive(sprite != null && plate.Avatar.isActiveAndEnabled);
                 PositionPlate(plate);
             }
         }
         static void PositionPlate(Plate plate)
         {
-            // 同时扣除两种字体的排版留白，将称号的字形顶边放在ID字形底边下方1单位。
-            plate.Name.ForceMeshUpdate(false, false);
-            plate.Label.ForceMeshUpdate(false, false);
-            Bounds bounds = plate.Name.textBounds;
-            Bounds caption = plate.Label.textBounds;
-            Rect nameRect = plate.Name.rectTransform.rect;
-            var root = plate.Root.transform as RectTransform;
-            float bottom = bounds.size.y > 0 ? bounds.min.y : nameRect.yMin;
-            // TMP是SDK布局框的内层子节点，字形坐标须先转换回挂签根节点。
-            float captionTop = caption.size.y > 0
-                ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
-            root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - 1 - captionTop);
-            // 以ID字形下沿为图标中心，覆盖用户指定的ID/称号区域；文字始终在前。
-            HorsePlateLayout.PlaceIcon(plate.Icon.rectTransform, plate.Name.rectTransform,
-                bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom);
+            if (plate == null || plate.Avatar == null || plate.Icon == null) return;
+            HorsePlateLayout.PlaceBadge(plate.Icon.rectTransform, plate.Avatar.rectTransform);
         }
         public static Color ColorOf(string title)
         {

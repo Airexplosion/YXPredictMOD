@@ -5,12 +5,25 @@ namespace YxPrediction
 {
     public static class HorsePlateLayout
     {
-        public const float IconSize = 88;
+        public const float IconSize = 34f;
 
-        // 昵称自身的Graphic先于其子节点绘制，故图标必须放在昵称之前的同级节点。
-        // 称号仍是昵称的子节点；不移动或复制游戏的原生昵称。
+        public static void PlaceBadge(RectTransform icon, RectTransform avatar)
+        {
+            if (icon == null || avatar == null) return;
+            if (icon.parent != avatar) icon.SetParent(avatar, false);
+            icon.anchorMin = icon.anchorMax = new Vector2(0f, 1f);
+            icon.pivot = new Vector2(0.15f, 0.85f);
+            icon.anchoredPosition = new Vector2(-2f, 2f);
+            icon.sizeDelta = new Vector2(IconSize, IconSize);
+            icon.localScale = Vector3.one;
+
+            // 确保绘制在头像上层
+            icon.SetAsLastSibling();
+        }
+
         public static void PlaceIcon(RectTransform icon, RectTransform name, float centerX, float bottomY)
         {
+            if (icon == null || name == null) return;
             Transform parent = name.parent;
             if (parent == null) return;
             if (icon.parent != parent) icon.SetParent(parent, false);
@@ -18,14 +31,9 @@ namespace YxPrediction
             icon.anchorMin = icon.anchorMax = parentRect == null ? new Vector2(0.5f, 0.5f) : parentRect.pivot;
             icon.pivot = new Vector2(0.5f, 0.5f);
             icon.sizeDelta = new Vector2(IconSize, IconSize);
-            icon.localScale = new Vector3(1, 1, 1);
+            icon.localScale = Vector3.one;
             Vector3 point = parent.InverseTransformPoint(name.TransformPoint(new Vector3(centerX, bottomY, 0)));
             icon.anchoredPosition = new Vector2(point.x, point.y);
-
-            // 已在前面时须减去自身占的一个位置，否则重复刷新会与昵称互换前后。
-            int nameIndex = name.GetSiblingIndex(), iconIndex = icon.GetSiblingIndex();
-            int target = iconIndex < nameIndex ? nameIndex - 1 : nameIndex;
-            if (iconIndex != target) icon.SetSiblingIndex(target);
         }
     }
 }
