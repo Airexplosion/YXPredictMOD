@@ -17,6 +17,12 @@ namespace UnityEngine
         public float x, y, z;
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
     }
+    public struct Rect
+    {
+        public float x, y, width, height;
+        public Rect(float x, float y, float width, float height) { this.x = x; this.y = y; this.width = width; this.height = height; }
+        public Vector2 center { get { return new Vector2(x + width / 2, y + height / 2); } }
+    }
     public class Transform
     {
         Transform _parent;
@@ -59,6 +65,7 @@ namespace UnityEngine
     public class RectTransform : Transform
     {
         public Vector2 anchorMin, anchorMax, pivot, anchoredPosition, sizeDelta;
+        public Rect rect { get { return new Rect(-pivot.x * Width, -pivot.y * Height, Width, Height); } }
         public float Width { get { var p = parent as RectTransform; return sizeDelta.x + (p == null ? 0 : p.Width * (anchorMax.x - anchorMin.x)); } }
         public float Height { get { var p = parent as RectTransform; return sizeDelta.y + (p == null ? 0 : p.Height * (anchorMax.y - anchorMin.y)); } }
         internal override Vector3 LocalPosition()

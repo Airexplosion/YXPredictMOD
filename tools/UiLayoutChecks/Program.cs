@@ -142,30 +142,62 @@ internal static class Program
                 var hud = Box(item, 0, 0, 30, 30);
                 var caption = Label(name, 0, -30, 150, 48);
                 var icon = Box(name, 0, 0, 56, 56);
-                var face = Box(icon, 0, 0, 88, 88);
+                var face = Box(icon, 0, 0, 100, 100);
                 var order = new System.Collections.Generic.List<Transform>(); PaintOrder(item, order);
                 True(order.IndexOf(icon) > order.IndexOf(name), "Old child icon should reproduce covering native ID");
                 for (int repeat = 0; repeat < 20; repeat++)
                 {
-                    HorsePlateLayout.PlaceIcon(icon, name, 3, -8);
-                    True(icon.parent == name.parent && name.parent == item, "Native ID was moved or icon stayed its child");
-                    True(icon.GetSiblingIndex() + 1 == name.GetSiblingIndex(), "Repeated placement reversed icon/text layers");
-                    True(avatar.GetSiblingIndex() < icon.GetSiblingIndex() && hud.GetSiblingIndex() > name.GetSiblingIndex(), "Native siblings were reordered");
-                    Near(icon.Width, 88); Near(icon.Height, 88);
-                    Vector3 expected = name.TransformPoint(new Vector3(3, -8, 0));
+                    avatar.sizeDelta = new Vector2(90 + repeat, 100 + repeat);
+                    avatar.pivot = new Vector2(0.3f, 0.7f);
+                    HorsePlateLayout.PlaceIcon(icon, avatar);
+                    True(icon.parent == avatar && name.parent == item, "Native ID was moved or icon did not cover avatar");
+                    True(avatar.GetSiblingIndex() == 0 && name.GetSiblingIndex() == 1 && hud.GetSiblingIndex() == 2, "Native siblings were reordered");
+                    Near(icon.Width, 90 + repeat); Near(icon.Height, 90 + repeat);
+                    Vector2 center = avatar.rect.center;
+                    Vector3 expected = avatar.TransformPoint(new Vector3(center.x, center.y, 0));
                     Vector3 actual = icon.TransformPoint(new Vector3(0, 0, 0));
                     Near(actual.x, expected.x); Near(actual.y, expected.y);
                     order.Clear(); PaintOrder(item, order);
                     True(order.IndexOf(icon) < order.IndexOf(name) && order.IndexOf(icon) < order.IndexOf(caption.rectTransform), "ID or caption painted behind icon");
-                    True(face.parent == icon && order.IndexOf(face) < order.IndexOf(name), "Masked image escaped its frame or covered native ID");
+                    True(face.parent == icon && order.IndexOf(avatar) < order.IndexOf(face) && order.IndexOf(face) < order.IndexOf(name), "Masked image did not cover avatar or covered native ID");
+                    True(order.IndexOf(face) < order.IndexOf(hud), "Overlay covered native health/selection HUD");
                 }
                 var moved = Box(canvas, slot * 158, -60, 180, 210);
-                name.SetParent(moved, false);
-                HorsePlateLayout.PlaceIcon(icon, name, 3, -8);
-                True(icon.parent == moved && icon.GetSiblingIndex() < name.GetSiblingIndex(), "Icon did not follow reparented player ID");
+                avatar.SetParent(moved, false);
+                HorsePlateLayout.PlaceIcon(icon, avatar);
+                True(icon.parent == avatar && avatar.parent == moved && name.parent == item, "Icon did not follow reparented avatar or moved ID");
             }
         }
-        Console.WriteLine("PASS 88px horse icons behind native ID and caption across eight slots, 20 refreshes, scaling and reparenting");
+        Console.WriteLine("PASS circular avatar overlays follow native size, pivot, eight slots, 20 refreshes, scaling and reparenting; native ID/title/HUD stay above");
+    }
+    static void HorseIconVisibility()
+    {
+        string[] players = { "player1", "player2", "player3" };
+        foreach (string focus in new string[] { null, "", "other", "player1", "player2" })
+        {
+            foreach (string uid in players)
+            {
+                True(HorsePlateLayout.ShouldShow(true, true, false, uid, focus, false) == (uid == focus), "Auto mode did not follow actual focused UID");
+                True(HorsePlateLayout.ShouldShow(true, true, false, uid, focus, true), "Hover did not reveal another avatar");
+                True(HorsePlateLayout.ShouldShow(true, true, true, uid, focus, false), "Always-cover did not reveal all avatars");
+                for (int flags = 0; flags < 4; flags++)
+                {
+                    bool always = (flags & 1) != 0, hover = (flags & 2) != 0;
+                    True(!HorsePlateLayout.ShouldShow(false, true, always, uid, focus, hover), "Missing sprite or disabled image setting exposed overlay");
+                    True(!HorsePlateLayout.ShouldShow(true, false, always, uid, focus, hover), "Hidden or reused native avatar exposed overlay");
+                    True(!HorsePlateLayout.ShouldShow(true, true, always, null, focus, hover), "Unbound player exposed overlay");
+                }
+            }
+        }
+        var avatar = Box(null, 0, 0, 100, 120); avatar.pivot = new Vector2(0.3f, 0.7f);
+        Vector2 center = avatar.rect.center;
+        True(HorsePlateLayout.ContainsPoint(avatar, center), "Avatar center missed");
+        True(HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x + 49, center.y)), "Inside circle missed");
+        True(!HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x + 49, center.y + 49)), "Transparent corner triggered hover");
+        True(!HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x, center.y + 51)), "Outside circle triggered hover");
+        avatar.sizeDelta = new Vector2(0, 0);
+        True(!HorsePlateLayout.ContainsPoint(avatar, center), "Unlaid-out avatar triggered hover");
+        Console.WriteLine("PASS automatic focus/hover, always-cover and disabled modes; round hit area rejects corners and empty bounds");
     }
     static void HorseBindings(string path)
     {
@@ -174,17 +206,21 @@ internal static class Program
             TypeDefinition type = module.GetType("YxPrediction.TianJiFeature");
             foreach (var method in type.Methods)
             {
-                if (method.Name == "PositionPlate") True(Calls(method, "PlaceIcon"), "Horse layout not bound to production helper");
+                if (method.Name == "Update") True(Calls(method, "UpdateIcons"), "Icon hover/focus not refreshed every frame");
+                if (method.Name == ".ctor") True(Calls(method, "RegisterHotkey"), "Configurable hotkey is missing");
+                if (method.Name == "ToggleAlwaysCover") True(Calls(method, "set_Value") && Calls(method, "GetComponent"), "Hotkey must persist mode and avoid typing in input fields");
+                if (method.Name == "UpdateIcons")
+                    True(Calls(method, "PlaceIcon") && Calls(method, "ShouldShow") && Calls(method, "ContainsPoint") && Calls(method, "get_isActiveAndEnabled"), "Avatar placement, visibility or round hover guard not bound");
                 if (method.Name == "ClearPlates") True(Calls(method, "DestroyPlate"), "Clearing a match leaked independent icons");
                 if (method.Name == "RefreshPlates")
                 {
-                    True(Calls(method, "DestroyPlate") && Calls(method, "get_isActiveAndEnabled"), "Stale or hidden native IDs retained an independent icon");
+                    True(Calls(method, "DestroyPlate"), "Stale icons were not cleaned up");
                     True(Calls(method, "Set"), "HorseCaption outline not updated from production title");
                     True(Calls(method, "CircleMask") && Calls(method, "set_showMaskGraphic"), "Circular native UI mask is missing");
                 }
             }
         }
-        Console.WriteLine("PASS compiled horse placement, independent icon cleanup and native ID visibility bindings");
+        Console.WriteLine("PASS compiled avatar overlay, per-frame visibility, configurable persisted hotkey, input guard, cleanup and circular mask bindings");
     }
     static void ObserverVisibility()
     {
@@ -243,7 +279,7 @@ internal static class Program
     }
     static int Main(string[] args)
     {
-        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); BlackCaptionStroke(); HorseIconLayering(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
+        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); BlackCaptionStroke(); HorseIconLayering(); HorseIconVisibility(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
         catch (Exception ex) { Console.WriteLine(ex); return 1; }
     }
 }

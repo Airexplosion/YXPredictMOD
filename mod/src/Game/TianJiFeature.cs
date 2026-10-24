@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Reflection;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using Yx.ModSdk;
 using Yx.ModSdk.Game;
@@ -20,7 +21,7 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly GameBridge _bridge;
         readonly UiKit _ui;
-        readonly ConfigEntry<bool> _enabled, _icons;
+        readonly ConfigEntry<bool> _enabled, _icons, _alwaysCover;
         readonly HorseAssets _assets = new HorseAssets();
         readonly List<Plate> _plates = new List<Plate>();
         public readonly HorseRoster Roster = new HorseRoster();
@@ -42,6 +43,7 @@ namespace YxPrediction
         string _scoreMatchId;
         sealed class Plate
         {
+            public string Uid;
             public BattlePlayerInfoItem Item;
             public GameObject Root, IconFrame;
             public TextMeshProUGUI Name, Label;
@@ -53,10 +55,22 @@ namespace YxPrediction
         {
             _mod = mod; _ctx = ctx; _bridge = bridge; _ui = new UiKit(ctx);
             _enabled = ctx.Config.Bind("tianji", "enabled", true, "显示田忌赛马称号；按公开Elo分档，仅作趣味参考");
-            _icons = ctx.Config.Bind("tianji", "icons", true, "在ID及称号后方显示马图，保留游戏原头像");
+            _icons = ctx.Config.Bind("tianji", "icons", true, "允许圆形马图覆盖原头像；关闭后仅显示称号");
+            _alwaysCover = ctx.Config.Bind("tianji", "alwaysCover", false, "始终用马图覆盖头像；关闭时仅查看该角色或悬停头像时覆盖，Ctrl+Shift+H切换");
+            ctx.Input.RegisterHotkey("horseAlwaysCover", "Ctrl+Shift+H", ToggleAlwaysCover);
             ctx.Events.OnNetIn<Proto.MatchPlayerInfosResp>(OnScores);
         }
         public void Toggle() { _enabled.Value = !_enabled.Value; _nextUpdate = 0; Update(); }
+        void ToggleAlwaysCover()
+        {
+            var events = EventSystem.current;
+            var selected = events == null ? null : events.currentSelectedGameObject;
+            if (selected != null && (selected.GetComponent(typeof(TMP_InputField)) != null
+                || selected.GetComponent(typeof(InputField)) != null)) return;
+            _alwaysCover.Value = !_alwaysCover.Value;
+            _ctx.Log.Info(_alwaysCover.Value ? "马图：始终覆盖头像" : "马图：仅查看或悬停时覆盖头像");
+            _nextUpdate = 0;
+        }
         void OnScores(Proto.MatchPlayerInfosResp message)
         {
             try
@@ -116,22 +130,25 @@ namespace YxPrediction
         }
         public void Update()
         {
-            if (Time.unscaledTime < _nextUpdate) return;
-            _nextUpdate = Time.unscaledTime + 0.5f;
             try
             {
                 MatchSnapshot snapshot = _mod.Snapshot;
                 if (!Enabled || snapshot == null || SceneLoader.currentSceneName != "Battle")
                 { ClearPlates(); if (snapshot == null || !Enabled) Roster.Clear(); return; }
-                if (Roster.MatchId != snapshot.Id)
-                {
-                    ClearPlates(); _scores = null; _scoreMatchId = snapshot.Id;
-                    if (Time.unscaledTime - _pendingAt <= 60 && SamePlayers(snapshot, _pendingScores)) _scores = _pendingScores;
-                }
-                Roster.Observe(snapshot, _bridge.HorseProfiles(snapshot.Players));
                 var battling = BattleApi.IsBattling();
                 if (!battling.Ok || battling.Value) { ClearPlates(); return; }
-                RefreshPlates();
+                if (Time.unscaledTime >= _nextUpdate)
+                {
+                    _nextUpdate = Time.unscaledTime + 0.5f;
+                    if (Roster.MatchId != snapshot.Id)
+                    {
+                        ClearPlates(); _scores = null; _scoreMatchId = snapshot.Id;
+                        if (Time.unscaledTime - _pendingAt <= 60 && SamePlayers(snapshot, _pendingScores)) _scores = _pendingScores;
+                    }
+                    Roster.Observe(snapshot, _bridge.HorseProfiles(snapshot.Players));
+                    RefreshPlates();
+                }
+                UpdateIcons(snapshot);
                 _lastError = null;
             }
             catch (Exception ex)
@@ -139,6 +156,32 @@ namespace YxPrediction
                 ClearPlates();
                 string error = ex.GetType().Name + ": " + ex.Message;
                 if (_lastError != error) { _lastError = error; _ctx.Log.Warn("田忌称号暂不可用：" + error); }
+            }
+        }
+        void UpdateIcons(MatchSnapshot snapshot)
+        {
+            Vector3 mouse = Input.mousePosition;
+            var screen = new Vector2(mouse.x, mouse.y);
+            for (int i = 0; i < _plates.Count; i++)
+            {
+                Plate plate = _plates[i];
+                if (plate.IconFrame == null || plate.Icon == null) continue;
+                bool valid = Roster.MatchId == snapshot.Id && plate.Item != null && plate.Avatar != null
+                    && plate.Item.battlePlayerData != null && plate.Item.battlePlayerData.uid == plate.Uid;
+                bool visible = valid && plate.Root != null && plate.Root.activeSelf && plate.Avatar.isActiveAndEnabled;
+                bool hovered = false;
+                if (visible)
+                {
+                    RectTransform avatar = plate.Avatar.rectTransform;
+                    HorsePlateLayout.PlaceIcon(plate.IconFrame.transform as RectTransform, avatar);
+                    Canvas canvas = plate.Avatar.canvas;
+                    Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+                    Vector2 local;
+                    hovered = Application.isFocused && RectTransformUtility.ScreenPointToLocalPointInRectangle(avatar, screen, camera, out local)
+                        && HorsePlateLayout.ContainsPoint(avatar, local);
+                }
+                plate.IconFrame.SetActive(HorsePlateLayout.ShouldShow(_icons.Value && plate.Icon.sprite != null && plate.Clip != null,
+                    visible, _alwaysCover.Value, valid ? plate.Uid : null, snapshot.FocusedUid, hovered));
             }
         }
         void RefreshPlates()
@@ -160,7 +203,7 @@ namespace YxPrediction
                 Plate plate = _plates[i];
                 bool present = false;
                 for (int j = 0; j < items.Count; j++) if (object.ReferenceEquals(items[j], plate.Item)) present = true;
-                if (!present || plate.Root == null || plate.IconFrame == null || plate.Icon == null || plate.Item.gameObject == null)
+                if (!present || plate.Root == null || plate.IconFrame == null || plate.Icon == null || plate.Avatar == null || plate.Item.gameObject == null)
                 { DestroyPlate(plate); _plates.RemoveAt(i); }
             }
             for (int i = 0; i < items.Count; i++)
@@ -177,7 +220,7 @@ namespace YxPrediction
                     var name = item.FindComponent<TextMeshProUGUI>("UsernameLabel", false);
                     var avatar = item.FindComponent<Image>("Avatar", false);
                     if (name == null || avatar == null) continue;
-                    // 称号跟随昵称；图标独立放在昵称之前，确保原生ID也绘制在图标上方。
+                    // 称号跟随昵称；图标仅覆盖原生头像，不改写其Sprite或接管点击。
                     GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(150, 48), Color.clear);
                     var rect = root.transform as RectTransform;
                     rect.anchorMin = rect.anchorMax = name.rectTransform.pivot;
@@ -186,8 +229,9 @@ namespace YxPrediction
                     if (background != null) background.raycastTarget = false;
                     // 为字体本身的行高留足空间，再按实际字形顶边贴齐ID，避免大字号整行被裁掉。
                     var caption = new HorseCaption(_ui, root.transform);
-                    var iconRoot = _ui.Row(name.transform.parent, "YXPredictHorseIcon", Vector2.zero,
-                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
+                    var iconRoot = _ui.Row(avatar.transform, "YXPredictHorseIcon", Vector2.zero,
+                        Vector2.zero, Color.white);
+                    iconRoot.SetActive(false);
                     var iconRect = iconRoot.transform as RectTransform;
                     iconRect.pivot = new Vector2(0.5f, 0.5f);
                     var maskImage = iconRoot.GetComponent(typeof(Image)) as Image;
@@ -196,7 +240,7 @@ namespace YxPrediction
                     var mask = iconRoot.AddComponent(typeof(Mask)) as Mask;
                     mask.showMaskGraphic = false;
                     var face = _ui.Row(iconRoot.transform, "horseImage", Vector2.zero,
-                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
+                        Vector2.zero, Color.white);
                     var faceRect = face.transform as RectTransform;
                     faceRect.anchorMin = new Vector2(0, 0); faceRect.anchorMax = new Vector2(1, 1);
                     faceRect.offsetMin = faceRect.offsetMax = Vector2.zero;
@@ -206,12 +250,12 @@ namespace YxPrediction
                         Avatar = avatar, Icon = icon, IconFrame = iconRoot, Clip = clip };
                     _plates.Add(plate);
                 }
+                plate.Uid = item.battlePlayerData.uid;
                 plate.Root.SetActive(true);
                 // 挂签只保留主称号和分数；赛季附加标签仍在单人说明及详细数据中显示。
                 plate.Caption.Set(member.PlateCaption, member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title));
                 Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
                 plate.Icon.sprite = sprite;
-                plate.IconFrame.SetActive(sprite != null && plate.Clip != null && plate.Name.isActiveAndEnabled);
                 PositionPlate(plate);
             }
         }
@@ -229,9 +273,6 @@ namespace YxPrediction
             float captionTop = caption.size.y > 0
                 ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
             root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - HorseCaption.GapBelowName - captionTop);
-            // 以ID字形下沿为图标中心，覆盖用户指定的ID/称号区域；文字始终在前。
-            HorsePlateLayout.PlaceIcon(plate.IconFrame.transform as RectTransform, plate.Name.rectTransform,
-                bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom);
         }
         static Color ColorOf(string title)
         {

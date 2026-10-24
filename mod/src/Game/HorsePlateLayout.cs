@@ -5,27 +5,34 @@ namespace YxPrediction
 {
     public static class HorsePlateLayout
     {
-        public const float IconSize = 88;
-
-        // 昵称自身的Graphic先于其子节点绘制，故图标必须放在昵称之前的同级节点。
-        // 称号仍是昵称的子节点；不移动或复制游戏的原生昵称。
-        public static void PlaceIcon(RectTransform icon, RectTransform name, float centerX, float bottomY)
+        // 图标只覆盖头像本体，原头像的Sprite及原生控件层级保持不变。
+        public static void PlaceIcon(RectTransform icon, RectTransform avatar)
         {
-            Transform parent = name.parent;
-            if (parent == null) return;
-            if (icon.parent != parent) icon.SetParent(parent, false);
-            var parentRect = parent as RectTransform;
-            icon.anchorMin = icon.anchorMax = parentRect == null ? new Vector2(0.5f, 0.5f) : parentRect.pivot;
+            if (icon.parent != avatar) icon.SetParent(avatar, false);
+            icon.anchorMin = icon.anchorMax = new Vector2(0.5f, 0.5f);
             icon.pivot = new Vector2(0.5f, 0.5f);
-            icon.sizeDelta = new Vector2(IconSize, IconSize);
+            float size = System.Math.Min(avatar.rect.width, avatar.rect.height);
+            icon.sizeDelta = new Vector2(size, size);
             icon.localScale = new Vector3(1, 1, 1);
-            Vector3 point = parent.InverseTransformPoint(name.TransformPoint(new Vector3(centerX, bottomY, 0)));
-            icon.anchoredPosition = new Vector2(point.x, point.y);
+            icon.anchoredPosition = Vector2.zero;
+            if (icon.GetSiblingIndex() != avatar.childCount - 1) icon.SetAsLastSibling();
+        }
 
-            // 已在前面时须减去自身占的一个位置，否则重复刷新会与昵称互换前后。
-            int nameIndex = name.GetSiblingIndex(), iconIndex = icon.GetSiblingIndex();
-            int target = iconIndex < nameIndex ? nameIndex - 1 : nameIndex;
-            if (iconIndex != target) icon.SetSiblingIndex(target);
+        // 使用裁切圆而非包围方框判定悬停，缩放由原生屏幕坐标转换负责。
+        public static bool ContainsPoint(RectTransform avatar, Vector2 point)
+        {
+            Rect rect = avatar.rect;
+            float size = System.Math.Min(rect.width, rect.height);
+            if (size <= 0) return false;
+            float x = (point.x - rect.center.x) * 2 / size;
+            float y = (point.y - rect.center.y) * 2 / size;
+            return x * x + y * y <= 1;
+        }
+
+        public static bool ShouldShow(bool hasImage, bool avatarVisible, bool alwaysCover, string uid, string focusedUid, bool hovered)
+        {
+            return hasImage && avatarVisible && !string.IsNullOrEmpty(uid)
+                && (alwaysCover || hovered || (!string.IsNullOrEmpty(focusedUid) && uid == focusedUid));
         }
     }
 }

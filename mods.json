@@ -4,13 +4,13 @@
     {
       "id": "local.yxp.predictionpoints",
       "name": "天机赌马",
-      "version": "0.3.9",
+      "version": "0.3.10",
       "author": "@TeraE",
       "description": "实时观战积分预测、动态调仓、命元与占比走势；自己对局保留称号和马图。整合「田忌赛马」MOD，特别鸣谢原作者 @弈黑白B&W。仅使用本地积分，认证时长未接入。",
       "sdkVersion": ">=1.0.0 <2.0.0",
       "repo": "https://github.com/Teraen/YXPredictMOD",
-      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.3.9/local.yxp.predictionpoints-0.3.9.zip",
-      "sha256": "ce14fb60cd3d2b417c3eb6c7fe3b3e49f530387531737c0c2ed051a14ce6a38c"
+      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.3.10/local.yxp.predictionpoints-0.3.10.zip",
+      "sha256": "e5225e15b925e71b5a36b2608dc7763a05a6cd14286912f0e8c8bd2ce37ef15e"
     }
   ]
 }
