@@ -1,8 +1,8 @@
 {
-  "version": "0.3.7",
-  "tag": "v0.3.7",
-  "title": "v0.3.7 - 马图放大与文字层级",
-  "artifact": "dist/local.yxp.predictionpoints-0.3.7.zip",
-  "sha256": "ec965166cccea16c1c5e269dc6bf9576c910f6709ad310b50d7408d9dc4cf1f1",
-  "notes": ".github/releases/v0.3.7.md"
+  "version": "0.3.8",
+  "tag": "v0.3.8",
+  "title": "v0.3.8 - 称号黑色实边",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.8.zip",
+  "sha256": "46b2931495533604bb8bb2d33a5b124a296bc2cac51ba3dfc2b09b03e9c93f1e",
+  "notes": ".github/releases/v0.3.8.md"
 }

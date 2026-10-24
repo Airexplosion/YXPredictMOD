@@ -5,6 +5,12 @@ namespace UnityEngine
     {
         public float x, y;
         public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public static Vector2 zero { get { return new Vector2(0, 0); } }
+    }
+    public struct Color
+    {
+        public float r, g, b, a;
+        public Color(float r, float g, float b, float a) { this.r = r; this.g = g; this.b = b; this.a = a; }
     }
     public struct Vector3
     {
@@ -68,8 +74,18 @@ namespace UnityEngine
 }
 namespace TMPro
 {
+    public enum FontStyles { Normal, Bold }
+    public enum TextAlignmentOptions { Top }
+    public enum TextOverflowModes { Ellipsis }
     public sealed class TextMeshProUGUI
     {
         public UnityEngine.RectTransform rectTransform;
+        public string text;
+        public float fontSize;
+        public FontStyles fontStyle;
+        public TextAlignmentOptions alignment;
+        public TextOverflowModes overflowMode;
+        public UnityEngine.Color color;
+        public bool richText, raycastTarget, enableWordWrapping;
     }
 }

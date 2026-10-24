@@ -87,11 +87,40 @@ internal static class Program
         var glyph = new Vector3(0, 16, 0);
         float top = UiTextBox.PointIn(plate, caption, glyph).y;
         Near(top, -8); // 忽略SDK内层位移时会误用16，正好多出24单位间隙。
-        plate.anchoredPosition = new Vector2(0, -10 - 1 - top);
-        Near(UiTextBox.PointIn(name, caption, glyph).y, -11);
+        plate.anchoredPosition = new Vector2(0, -10 - HorseCaption.GapBelowName - top);
+        Near(UiTextBox.PointIn(name, caption, glyph).y + HorseCaption.StrokeSize, -11);
         UiTextBox.BringToFront(caption);
         True(UiTextBox.Container(caption).Raised && !caption.rectTransform.Raised, "Only inner text was raised");
         Console.WriteLine("PASS history heading, nested glyph gap and complete label stacking");
+    }
+    static void BlackCaptionStroke()
+    {
+        var root = Box(null, 0, 0, 150, 48);
+        var ui = new Yx.ModSdk.Unity.UiKit();
+        var caption = new HorseCaption(ui, root);
+        True(ui.Labels.Count == 9 && ui.Labels[8] == caption.Text, "Caption needs eight black edges behind one colored face");
+        foreach (string value in new string[] { "中等马 3710", "特等马 4266", "傀儡·地狱" })
+        {
+            var color = new Color(1, 0.83f, 0.28f, 1);
+            caption.Set(value, color); caption.Set(value, color);
+            var order = new System.Collections.Generic.List<Transform>(); PaintOrder(root, order);
+            var offsets = new System.Collections.Generic.HashSet<string>();
+            for (int i = 0; i < ui.Labels.Count; i++)
+            {
+                var layer = ui.Labels[i]; var box = UiTextBox.Container(layer);
+                True(layer.text == value && layer.fontStyle == FontStyles.Bold && layer.fontSize == 22, "Stroke text, score or font failed to follow face");
+                True(!layer.raycastTarget && !layer.richText && !layer.enableWordWrapping, "Stroke layer captured input or changed text layout");
+                True(box.parent == root, "Stroke layer escaped the caption cleanup root");
+                if (i == 8) { Near(box.anchoredPosition.x, 0); Near(box.anchoredPosition.y, 0); Near(layer.color.g, color.g); continue; }
+                Near(layer.color.r, 0); Near(layer.color.g, 0); Near(layer.color.b, 0); Near(layer.color.a, 1);
+                True(order.IndexOf(box) < order.IndexOf(UiTextBox.Container(caption.Text)), "Black edge covers colored face");
+                float x = box.anchoredPosition.x, y = box.anchoredPosition.y;
+                True((x != 0 || y != 0) && System.Math.Abs(x) <= 1.5f && System.Math.Abs(y) <= 1.5f, "Invalid stroke offset");
+                offsets.Add(x + "," + y);
+            }
+            True(offsets.Count == 8, "Black edges must cover eight distinct directions");
+        }
+        Console.WriteLine("PASS shader-independent 1.5px solid black caption outline, eight directions, text/score updates, color and cleanup ownership");
     }
     static void PaintOrder(Transform root, System.Collections.Generic.List<Transform> order)
     {
@@ -146,7 +175,10 @@ internal static class Program
                 if (method.Name == "PositionPlate") True(Calls(method, "PlaceIcon"), "Horse layout not bound to production helper");
                 if (method.Name == "ClearPlates") True(Calls(method, "DestroyPlate"), "Clearing a match leaked independent icons");
                 if (method.Name == "RefreshPlates")
+                {
                     True(Calls(method, "DestroyPlate") && Calls(method, "get_isActiveAndEnabled"), "Stale or hidden native IDs retained an independent icon");
+                    True(Calls(method, "Set"), "HorseCaption outline not updated from production title");
+                }
             }
         }
         Console.WriteLine("PASS compiled horse placement, independent icon cleanup and native ID visibility bindings");
@@ -208,7 +240,7 @@ internal static class Program
     }
     static int Main(string[] args)
     {
-        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); HorseIconLayering(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
+        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); BlackCaptionStroke(); HorseIconLayering(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
         catch (Exception ex) { Console.WriteLine(ex); return 1; }
     }
 }

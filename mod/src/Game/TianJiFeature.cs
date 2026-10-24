@@ -45,6 +45,7 @@ namespace YxPrediction
             public BattlePlayerInfoItem Item;
             public GameObject Root;
             public TextMeshProUGUI Name, Label;
+            public HorseCaption Caption;
             public Image Avatar, Icon;
         }
         public TianJiFeature(PredictionMod mod, ModContext ctx, GameBridge bridge)
@@ -183,24 +184,19 @@ namespace YxPrediction
                     var background = root.GetComponent(typeof(Image)) as Image;
                     if (background != null) background.raycastTarget = false;
                     // 为字体本身的行高留足空间，再按实际字形顶边贴齐ID，避免大字号整行被裁掉。
-                    var label = _ui.Label(root.transform, "caption", "", Vector2.zero, new Vector2(150, 48), 22);
-                    label.fontStyle = FontStyles.Bold; label.alignment = TextAlignmentOptions.Top;
-                    label.richText = false; label.raycastTarget = false; label.enableWordWrapping = false;
-                    label.overflowMode = TextOverflowModes.Ellipsis;
-                    label.outlineColor = new Color(0, 0, 0, 0.95f); label.outlineWidth = 0.2f;
+                    var caption = new HorseCaption(_ui, root.transform);
                     var iconRoot = _ui.Row(name.transform.parent, "YXPredictHorseIcon", Vector2.zero,
                         new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
                     var iconRect = iconRoot.transform as RectTransform;
                     iconRect.pivot = new Vector2(0.5f, 0.5f);
                     var icon = iconRoot.GetComponent(typeof(Image)) as Image;
                     icon.raycastTarget = false; icon.preserveAspect = true;
-                    plate = new Plate { Item = item, Root = root, Name = name, Label = label, Avatar = avatar, Icon = icon };
+                    plate = new Plate { Item = item, Root = root, Name = name, Label = caption.Text, Caption = caption, Avatar = avatar, Icon = icon };
                     _plates.Add(plate);
                 }
                 plate.Root.SetActive(true);
                 // 挂签只保留主称号和分数；赛季附加标签仍在单人说明及详细数据中显示。
-                plate.Label.text = member.PlateCaption;
-                plate.Label.color = member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title);
+                plate.Caption.Set(member.PlateCaption, member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title));
                 Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
                 plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null && plate.Name.isActiveAndEnabled);
                 PositionPlate(plate);
@@ -208,7 +204,7 @@ namespace YxPrediction
         }
         static void PositionPlate(Plate plate)
         {
-            // 同时扣除两种字体的排版留白，将称号的字形顶边放在ID字形底边下方1单位。
+            // 按正文测量字形，让黑边最上沿与原生ID字形下沿保留1单位间隔。
             plate.Name.ForceMeshUpdate(false, false);
             plate.Label.ForceMeshUpdate(false, false);
             Bounds bounds = plate.Name.textBounds;
@@ -219,7 +215,7 @@ namespace YxPrediction
             // TMP是SDK布局框的内层子节点，字形坐标须先转换回挂签根节点。
             float captionTop = caption.size.y > 0
                 ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
-            root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - 1 - captionTop);
+            root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - HorseCaption.GapBelowName - captionTop);
             // 以ID字形下沿为图标中心，覆盖用户指定的ID/称号区域；文字始终在前。
             HorsePlateLayout.PlaceIcon(plate.Icon.rectTransform, plate.Name.rectTransform,
                 bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom);

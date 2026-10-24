@@ -9,6 +9,7 @@
     <Compile Include="../../mod/src/Game/UiTextBox.cs" Link="UiTextBox.cs" />
     <Compile Include="../../mod/src/Game/PredictionVisibility.cs" Link="PredictionVisibility.cs" />
     <Compile Include="../../mod/src/Game/HorsePlateLayout.cs" Link="HorsePlateLayout.cs" />
+    <Compile Include="../../mod/src/Game/HorseCaption.cs" Link="HorseCaption.cs" />
     <Reference Include="Mono.Cecil"><HintPath>../../vendor/yixianpai-mod-sdk/tools/Mono.Cecil.dll</HintPath></Reference>
   </ItemGroup>
 </Project>
