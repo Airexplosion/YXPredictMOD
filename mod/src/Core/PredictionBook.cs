@@ -1,0 +1,287 @@
+using System;
+using System.Collections.Generic;
+
+namespace YxPrediction
+{
+    public sealed class PredictionBook
+    {
+        public long Balance;
+        public readonly List<Market> Markets = new List<Market>();
+        public int Revision;
+
+        public PredictionBook(long initialPoints)
+        {
+            if (initialPoints < 0 || initialPoints > Odds.MaximumBalance) throw new ArgumentOutOfRangeException("initialPoints");
+            Balance = initialPoints;
+        }
+
+        public Market Find(string id)
+        {
+            for (int i = 0; i < Markets.Count; i++) if (Markets[i].Id == id) return Markets[i];
+            return null;
+        }
+
+        public Market Observe(MatchSnapshot snapshot, Rating[] ratings)
+        {
+            if (snapshot == null || !snapshot.IsEightPlayerMatch()) return null;
+            Market market = Find(snapshot.Id);
+            if (market == null)
+            {
+                if (!snapshot.LiveObserver || ratings == null || ratings.Length != 8) return null;
+                // 保留未结束的盘口，切换观战、断线和重载不退回本金。
+                if (Markets.Count >= 12)
+                {
+                    int removable = -1;
+                    for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled) { removable = i; break; }
+                    if (removable < 0) return null;
+                    Markets.RemoveAt(removable);
+                }
+                market = new Market(snapshot.Id, snapshot.Players, ratings, Odds.Rates(ratings));
+                Markets.Add(market);
+                Revision++;
+            }
+            // 同一局必须始终是同一组UID；不依赖列表顺序。
+            for (int i = 0; i < 8; i++) if (market.FindPlayer(snapshot.Players[i].Uid) < 0) return null;
+            if (!market.Settled && snapshot.Round >= market.HighestRound && snapshot.RemainingSwaps != null && snapshot.RemainingSwaps.Length == 8)
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    int count = snapshot.RemainingSwaps[i];
+                    if (count >= 0 && count <= 100000 && market.Swaps[market.FindPlayer(snapshot.Players[i].Uid)].Record(snapshot.Round, count)) Revision++;
+                }
+            }
+            if (!market.Settled && snapshot.Round >= market.HighestRound && snapshot.States != null && snapshot.States.Length == 8)
+            {
+                bool complete = true;
+                for (int i = 0; i < 8; i++) if (snapshot.States[i] == null) complete = false;
+                if (complete)
+                    for (int i = 0; i < 8; i++)
+                        if (market.Life[market.FindPlayer(snapshot.Players[i].Uid)].Record(snapshot.Round, snapshot.States[i].Life)) Revision++;
+            }
+            if (market.IsTrading) { ObserveTrading(market, snapshot); return market; }
+            if (snapshot.Round > market.HighestRound) { market.HighestRound = snapshot.Round; Revision++; }
+            if (!market.Locked && (snapshot.Round > 5 || snapshot.FifthRoundEnded || snapshot.Ended))
+            {
+                market.Locked = true; Revision++;
+            }
+            if (snapshot.Ended) TrySettle(market, snapshot);
+            return market;
+        }
+
+        public string Bet(MatchSnapshot snapshot, string uid, int rank, long stake)
+        {
+            if (snapshot == null || !snapshot.LiveObserver || !snapshot.IsEightPlayerMatch()) return "仅限正在观战的八人实时对局";
+            Market market = Find(snapshot.Id);
+            if (market == null) return "赔率尚未准备好";
+            if (Observe(snapshot, null) == null) return "本局玩家信息不一致，请稍后重试";
+            if (market.IsTrading) return Buy(snapshot, uid, rank, stake, market.TradeVersion);
+            if (market.Locked || market.Settled || snapshot.Ended || snapshot.FifthRoundEnded || snapshot.Round > 5) return "已封盘，不能再下注";
+            // 抵御状态倒退：旧回合不能重新获得早猜加成。
+            if (snapshot.Round != market.HighestRound) return "对局状态正在同步，请稍后重试";
+            int index = market.FindPlayer(uid);
+            if (index < 0) return "该玩家不在本局";
+            if (market.Tickets[index] != null) return "该玩家已下注，不能修改或重复下注";
+            if (rank < 1 || rank > 8) return "请选择1至8名";
+            if (stake < 1 || stake > Odds.MaximumStake) return "本金须为1至10000的整数积分";
+            if (stake > Balance) return "积分不足";
+            int rate = Odds.EffectiveRate(market.BaseRates[index * 8 + rank - 1], snapshot.Round);
+            var ticket = new Ticket(index, rank, snapshot.Round, stake, rate);
+            Balance -= stake;
+            market.Tickets[index] = ticket;
+            Revision++;
+            return null;
+        }
+
+        static int[] FinalRanks(Market market, MatchSnapshot snapshot)
+        {
+            if (!snapshot.Ended || snapshot.Ranks == null || snapshot.Ranks.Length != 8) return null;
+            var ranks = new int[8]; var seen = new bool[9];
+            for (int i = 0; i < 8; i++)
+            {
+                int rank = snapshot.Ranks[i];
+                if (rank < 1 || rank > 8 || seen[rank]) return null;
+                seen[rank] = true; ranks[market.FindPlayer(snapshot.Players[i].Uid)] = rank;
+            }
+            return ranks;
+        }
+
+        void TradingChange(Market market)
+        {
+            if (market.TradeVersion >= 2000000000) throw new InvalidOperationException("本局状态版本已达上限");
+            market.TradeVersion++; Revision++;
+        }
+
+        void ObserveTrading(Market market, MatchSnapshot snapshot)
+        {
+            market.TradingWindowOpen = false;
+            market.TradingWaitReason = "等待完整修炼阶段状态";
+            if (market.Settled) return;
+            if (snapshot.Round < market.HighestRound) { market.TradingWaitReason = "对局状态正在同步"; return; }
+            if (snapshot.Round > market.HighestRound) { market.HighestRound = snapshot.Round; Revision++; }
+            if (snapshot.ResultsThroughRound > market.ClosedThroughRound)
+            { market.ClosedThroughRound = snapshot.ResultsThroughRound; TradingChange(market); }
+            int[] final = FinalRanks(market, snapshot);
+            PlayerState[] states = null;
+            if (snapshot.States != null && snapshot.States.Length == 8)
+            {
+                states = new PlayerState[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    if (snapshot.States[i] == null) { states = null; break; }
+                    states[market.FindPlayer(snapshot.Players[i].Uid)] = snapshot.States[i];
+                }
+            }
+            var known = new int[8]; var seen = new bool[9];
+            if (final == null && states != null)
+            {
+                int alive = 0;
+                for (int i = 0; i < 8; i++) if (states[i].Life > 0) alive++;
+                for (int i = 0; i < 8; i++)
+                    if ((states[i].Life > 0 && states[i].FinalRank != 0)
+                        || (states[i].Life <= 0 && states[i].FinalRank > 0 && states[i].FinalRank <= alive))
+                    { market.TradingWaitReason = "确定名次与存活人数尚未对齐"; return; }
+            }
+            for (int i = 0; i < 8; i++)
+            {
+                int rank = final != null ? final[i] : (states != null && states[i].Life <= 0 ? states[i].FinalRank : 0);
+                if (rank == 0) rank = market.KnownRanks[i];
+                if ((market.KnownRanks[i] > 0 && rank != market.KnownRanks[i]) || (rank > 0 && seen[rank])
+                    || (final == null && market.KnownRanks[i] > 0 && states != null && states[i].Life > 0))
+                { market.TradingWaitReason = "淘汰名次正在同步"; return; }
+                known[i] = rank; if (rank > 0) seen[rank] = true;
+            }
+            // 先验证整批，再逐人结算；部分淘汰可以提前入账，最终结果不重复派奖。
+            long payment = 0;
+            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += market.Positions[i].ReturnFor(known[i]);
+            if (payment > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过上限，保留待结算");
+            for (int i = 0; i < 8; i++)
+            {
+                if (known[i] == 0 || market.Positions[i].Resolved) continue;
+                Position position = market.Positions[i];
+                market.KnownRanks[i] = known[i]; position.FinalPayout = position.ReturnFor(known[i]); position.Resolved = true;
+                TradingChange(market);
+            }
+            Balance += payment; market.TotalPayout += payment;
+            if (snapshot.Ended)
+            {
+                if (!market.Locked) { market.Locked = true; Revision++; }
+                market.TradingWaitReason = "等待八人的完整最终名次";
+                if (final != null) { market.FinalRanks = final; market.Settled = true; TradingChange(market); }
+                return;
+            }
+            if (market.Locked) { market.TradingWaitReason = "已收到整局结束信号，等待最终名次"; return; }
+            if (!snapshot.LiveObserver || !snapshot.TradingOpen || snapshot.Round <= market.ClosedThroughRound)
+            { market.TradingWaitReason = "本轮交易暂停，等待下一轮修炼阶段"; return; }
+            if (states == null) return;
+            bool changed = market.QuoteRound != snapshot.Round || market.QuoteStates == null;
+            for (int i = 0; i < 8; i++)
+            {
+                if (states[i].Life <= 0 && states[i].FinalRank == 0) { market.TradingWaitReason = "等待淘汰玩家的确定名次"; return; }
+                if (market.QuoteStates == null || !states[i].Same(market.QuoteStates[i])) changed = true;
+            }
+            if (changed)
+            {
+                int[] rates;
+                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round); }
+                catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
+                market.QuoteStates = states; market.QuoteRates = rates; market.QuoteRound = snapshot.Round; TradingChange(market);
+            }
+            market.TradingWindowOpen = true; market.TradingWaitReason = null;
+        }
+
+        string TradingCheck(MatchSnapshot snapshot, string uid, int expectedVersion, out Market market, out int index)
+        {
+            market = null; index = -1;
+            if (snapshot == null || !snapshot.IsEightPlayerMatch() || !snapshot.LiveObserver) return "仅限实时八人观战";
+            market = Find(snapshot.Id);
+            if (market == null || !market.IsTrading) return "此盘口采用旧版固定投注规则";
+            if (Observe(snapshot, null) == null) return "本局玩家信息不一致";
+            if (market.Settled || market.Locked || snapshot.Ended) return "本局交易已结束";
+            if (!market.TradingWindowOpen || snapshot.Round != market.QuoteRound) return market.TradingWaitReason ?? "当前交易暂停";
+            index = market.FindPlayer(uid);
+            if (index < 0) return "该玩家不在本局";
+            if (market.KnownRanks[index] > 0 || market.Positions[index].Resolved) return "该玩家名次已确定，不能交易";
+            if (expectedVersion != market.TradeVersion) return "报价或持仓已更新，请查看新报价后再操作";
+            if (market.Positions[index].Actions >= Position.MaximumActions) return "该玩家本局操作次数已达512次";
+            return null;
+        }
+
+        public string Buy(MatchSnapshot snapshot, string uid, int rank, long stake, int expectedVersion)
+        {
+            Market market; int index;
+            string error = TradingCheck(snapshot, uid, expectedVersion, out market, out index);
+            if (error != null) return error;
+            Position p = market.Positions[index];
+            if (!TradingOdds.CanBuy(market, index, rank)) return "该名次已不可能达到，请选择仍可能的名次";
+            if (p.Claim > 0 && p.Rank != rank) return "持仓名次不同，请使用换预测";
+            if (stake < 1 || stake > Odds.MaximumStake || stake > Balance) return "本金须为1至10000整数积分且不能超过余额";
+            long claim = stake * market.QuoteRates[index * 8 + rank - 1] / 10000;
+            p.Rank = rank; p.Claim += claim; p.Cost += stake; p.Invested += stake; p.Actions++;
+            Balance -= stake; TradingChange(market);
+            return null;
+        }
+
+        public string Sell(MatchSnapshot snapshot, string uid, bool half, int expectedVersion)
+        {
+            Market market; int index;
+            string error = TradingCheck(snapshot, uid, expectedVersion, out market, out index);
+            if (error != null) return error;
+            Position p = market.Positions[index];
+            long removed = half ? p.Claim / 2 : p.Claim;
+            if (removed <= 0) return half && p.Claim > 0 ? "剩余权益不足减半，请使用清仓" : "当前没有持仓";
+            long returned = TradingOdds.Sale(market, index, half);
+            if (returned > Odds.MaximumBalance - Balance) return "积分余额已达上限";
+            long releasedCost = p.Cost * removed / p.Claim;
+            p.Claim -= removed; p.Cost -= releasedCost; p.CashReturned += returned; p.Actions++;
+            if (p.Claim == 0) { p.Rank = 0; p.Cost = 0; }
+            Balance += returned; TradingChange(market);
+            return null;
+        }
+
+        public string Switch(MatchSnapshot snapshot, string uid, int rank, long stake, int expectedVersion)
+        {
+            Market market; int index;
+            string error = TradingCheck(snapshot, uid, expectedVersion, out market, out index);
+            if (error != null) return error;
+            Position p = market.Positions[index];
+            if (p.Claim <= 0) return "当前没有持仓，请直接买入";
+            if (p.Rank == rank) return "预测名次相同，请使用增持";
+            if (!TradingOdds.CanBuy(market, index, rank)) return "该名次已不可能达到";
+            long returned = TradingOdds.Sale(market, index, false);
+            if (stake < 1 || stake > Odds.MaximumStake || stake > Balance + returned) return "换预测本金无效或余额不足（含出售所得）";
+            if (returned - stake > Odds.MaximumBalance - Balance) return "积分余额已达上限";
+            // 一次性完成，验证失败时不出售旧仓；新仓不继承旧名次的高赔率。
+            long claim = stake * market.QuoteRates[index * 8 + rank - 1] / 10000;
+            p.CashReturned += returned; p.Invested += stake; p.Cost = stake; p.Claim = claim; p.Rank = rank; p.Actions++;
+            Balance += returned - stake; TradingChange(market);
+            return null;
+        }
+
+        void TrySettle(Market market, MatchSnapshot snapshot)
+        {
+            if (market.Settled || snapshot.Ranks == null || snapshot.Ranks.Length != 8) return;
+            var orderedRanks = new int[8];
+            var seen = new bool[9];
+            for (int i = 0; i < 8; i++)
+            {
+                int rank = snapshot.Ranks[i];
+                if (rank < 1 || rank > 8 || seen[rank]) return;
+                seen[rank] = true;
+                orderedRanks[market.FindPlayer(snapshot.Players[i].Uid)] = rank;
+            }
+            long total = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                Ticket ticket = market.Tickets[i];
+                if (ticket != null) total += ticket.ReturnFor(orderedRanks[i], market.RuleVersion);
+            }
+            if (total > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过存档上限，结算已保留等待处理");
+            Balance += total;
+            market.TotalPayout = total;
+            market.FinalRanks = orderedRanks;
+            market.Locked = true;
+            market.Settled = true;
+            Revision++;
+        }
+    }
+}

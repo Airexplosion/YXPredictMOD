@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <YxSdkDir>$(MSBuildThisFileDirectory)vendor\yixianpai-mod-sdk\sdk\</YxSdkDir>
+    <YxRefs>$(MSBuildThisFileDirectory)refs\</YxRefs>
+    <LangVersion>7.3</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>

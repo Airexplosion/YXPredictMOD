@@ -1,0 +1,9 @@
+refs/
+.cache/
+**/bin/
+**/obj/
+**/plugins/
+dist/
+vendor/
+sdk-download-test.txt
+data/elo-cache/

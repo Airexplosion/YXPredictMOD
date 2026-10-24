@@ -1,0 +1,140 @@
+using System;
+using Yx.Shared;
+
+namespace YxPrediction
+{
+    public static class InterpreterProbe
+    {
+        public static string Run()
+        {
+            var ratings = new Rating[8];
+            var players = new Player[8];
+            for (int i = 0; i < 8; i++)
+            {
+                ratings[i] = new Rating(4400 - i * 160, 150, true);
+                players[i] = new Player("player" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "player", false);
+            }
+            var snapshot = new MatchSnapshot { Id = "probe", Round = 2, LiveObserver = true, Players = players };
+            var book = new PredictionBook(1000);
+            book.Markets.Add(new Market(snapshot.Id, players, ratings, Odds.Rates(ratings, 2), 2));
+            Market market = book.Observe(snapshot, null);
+            if (market == null || market.Players[0].Uid != players[0].Uid) throw new Exception("Market not created");
+            if (book.Bet(snapshot, players[0].Uid, 1, 10) != null || book.Balance != 990) throw new Exception("Bet not accepted");
+            if (book.Bet(snapshot, players[1].Uid, 3, 10) != null || book.Balance != 980) throw new Exception("Adjacent bet not accepted");
+            long expected = 980 + market.Tickets[0].Payout + market.Tickets[1].AdjacentPayout;
+            book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));
+            snapshot.Round = 6;
+            book.Observe(snapshot, null);
+            if (!book.Find("probe").Locked || book.Bet(snapshot, players[2].Uid, 2, 10) == null) throw new Exception("Cutoff failed");
+            snapshot.Ended = true; snapshot.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+            book.Observe(snapshot, null); book.Observe(snapshot, null);
+            if (book.Balance != expected || !book.Find("probe").Settled) throw new Exception("Settlement failed");
+            book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));
+            book.Observe(snapshot, null);
+            if (book.Balance != expected || book.Find("probe").RuleVersion != 2) throw new Exception("Adjacent reward persistence failed");
+            TradingFlow(players, ratings);
+            LifeFlow(players, ratings);
+            SharedTrendsFlow(players, ratings);
+            RankSelectionFlow(players, ratings);
+            return "INTERPRETER PASS";
+        }
+
+        static void RankSelectionFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var s = new MatchSnapshot { Id = "rank-selection", Round = 1, LiveObserver = true, Players = players, States = states, TradingOpen = true };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            var choices = new RankSelection(); choices.Observe(m);
+            for (int i = 0; i < 8; i++) if (choices.Selected(i) != 0) throw new Exception("Unbought rank was preselected");
+            choices.Step(0, false); if (choices.Selected(0) != 8) throw new Exception("Unselected reverse step failed");
+            choices.Step(0, true); if (choices.Selected(0) != 1) throw new Exception("Rank cycling failed");
+            if (!choices.SelectText(6, "3") || choices.SelectText(6, "9")) throw new Exception("Typed rank validation failed");
+            if (b.Buy(s, players[6].Uid, choices.Selected(6), 10, m.TradeVersion) != null) throw new Exception("Rank selection buy failed");
+            choices.Observe(m);
+            if (choices.Selected(6) != 3 || choices.Selected(5) != 0 || RankSelection.DisplayOrder(m)[0] != 6) throw new Exception("Purchased rank sync or order failed");
+            choices.SelectText(6, "4"); choices.Observe(m);
+            if (choices.Selected(6) != 4) throw new Exception("Draft overwritten by refresh");
+            if (b.Switch(s, players[6].Uid, 5, 10, m.TradeVersion) != null) throw new Exception("Rank selection switch failed");
+            choices.Observe(m); if (choices.Selected(6) != 5) throw new Exception("Switch did not sync rank");
+            if (b.Sell(s, players[6].Uid, false, m.TradeVersion) != null) throw new Exception("Rank selection liquidation failed");
+            choices.Observe(m);
+            if (choices.Selected(6) != 0 || RankSelection.DisplayOrder(m)[0] != 0) throw new Exception("Liquidation did not clear rank and priority");
+        }
+
+        static void SharedTrendsFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8]; var swaps = new int[8];
+            for (int i = 0; i < 8; i++) { states[i] = new PlayerState(100, 0, 0, 0); swaps[i] = 8; }
+            var s = new MatchSnapshot { Id = "shared-trends", Round = 4, LiveObserver = true, Players = players, States = states, RemainingSwaps = swaps, TradingOpen = true };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            s.Round = 5; states[7] = new PlayerState(85, 0, 1, 0); swaps[7] = 4; b.Observe(s, null);
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); m = b.Find(s.Id);
+            if (m.Swaps[7].Points[1].Remaining != 4 || b.Balance != 1000) throw new Exception("Swap history restore failed");
+            for (int metric = 0; metric < 3; metric++)
+            {
+                var first = new TrendChartData(m, 0, metric); var other = new TrendChartData(m, 7, metric);
+                if (first.Minimum <= 0 || first.Minimum != other.Minimum || first.Maximum != other.Maximum || first.FirstRound != other.FirstRound || first.LastRound != other.LastRound)
+                    throw new Exception("Common dynamic axes differ between players");
+                if (other.Y[1] < 0 || other.Y[1] > 1 || !other.Connected[1]) throw new Exception("Shared chart geometry failed");
+            }
+        }
+
+        static void LifeFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var s = new MatchSnapshot { Id = "life", Round = 1, LiveObserver = true, Players = players, States = states, TradingOpen = true, FocusedUid = players[3].Uid };
+            var book = new PredictionBook(1000); Market m = book.Observe(s, ratings);
+            s.Round = 2; states[3] = new PlayerState(85, 0, 1, 0); book.Observe(s, null);
+            if (FocusSelection.Index(m, s) != 3 || m.Life[3].Points.Count != 2) throw new Exception("Focused life collection failed");
+            book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book)))); m = book.Find("life");
+            if (m.Life[3].Points[1].Life != 85 || book.Balance != 1000) throw new Exception("Life history restore failed");
+            var data = new LifeChartData(m.Life[3]);
+            if (!data.Connected[1] || data.Y[1] != 0.85 || data.X[1] != 1) throw new Exception("Life chart geometry failed");
+            var share = new LifeShareChartData(m, 3);
+            if (!share.HasCurrentValue || Math.Abs(share.CurrentShare * 785 - 85) > 0.000000001 || !share.Connected[1]) throw new Exception("Life share geometry failed");
+            m.Life[3].Record(4, 70); data = new LifeChartData(m.Life[3]);
+            if (data.Connected[2] || data.X[2] != 1) throw new Exception("Missing rounds were joined");
+            share = new LifeShareChartData(m, 3);
+            if (share.HasCurrentValue || share.X.Length != 2) throw new Exception("Missing total life was fabricated");
+            s.FocusedUid = players[5].Uid;
+            if (FocusSelection.Index(m, s) != 5 || m.Life[5].Points[1].Life != 100) throw new Exception("Focus mixed player data");
+        }
+
+        static void TradingFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var snapshot = new MatchSnapshot { Id = "trading", Round = 2, LiveObserver = true, Players = players, States = states, TradingOpen = true };
+            var book = new PredictionBook(1000); Market m = book.Observe(snapshot, ratings);
+            if (!m.IsTrading || !m.TradingWindowOpen) throw new Exception("Trading window not open");
+            if (book.Buy(snapshot, players[0].Uid, 1, 100, m.TradeVersion) != null) throw new Exception("Initial buy failed");
+            if (book.Buy(snapshot, players[7].Uid, 7, 10, m.TradeVersion) != null) throw new Exception("Near-rank buy failed");
+            if (book.Sell(snapshot, players[0].Uid, true, m.TradeVersion) != null) throw new Exception("Half sale failed");
+            if (book.Buy(snapshot, players[0].Uid, 1, 20, m.TradeVersion) != null) throw new Exception("Increase failed");
+            int stale = m.TradeVersion; long before = book.Balance;
+            snapshot.Round = 6; states[0] = new PlayerState(160, 5, 0, 0);
+            if (book.Buy(snapshot, players[0].Uid, 1, 20, stale) == null || book.Balance != before) throw new Exception("Stale quote accepted");
+            book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book)))); m = book.Find("trading");
+            if (m.TradingWindowOpen) throw new Exception("Reload restored an open window");
+            book.Observe(snapshot, null);
+            if (book.Switch(snapshot, players[0].Uid, 2, 10, m.TradeVersion) != null) throw new Exception("Atomic switch failed");
+            snapshot.ResultsThroughRound = 6; book.Observe(snapshot, null);
+            if (book.Sell(snapshot, players[0].Uid, false, m.TradeVersion) == null) throw new Exception("Result latch failed");
+            book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book)))); m = book.Find("trading");
+            snapshot.ResultsThroughRound = 0; book.Observe(snapshot, null);
+            if (m.TradingWindowOpen) throw new Exception("Result latch lost on reload");
+            snapshot.Round = 7; states[7] = new PlayerState(0, 0, 6, 8); before = book.Balance;
+            long near = m.Positions[7].Claim / 4; book.Observe(snapshot, null);
+            if (!m.Positions[7].Resolved || book.Balance != before + near || !m.TradingWindowOpen) throw new Exception("Partial rank settlement failed");
+            if (book.Sell(snapshot, players[0].Uid, false, m.TradeVersion) != null) throw new Exception("Full sale failed");
+            if (book.Buy(snapshot, players[1].Uid, 1, 10, m.TradeVersion) != null) throw new Exception("Late buy failed");
+            long expected = book.Balance + m.Positions[1].Claim / 4;
+            snapshot.Ended = true; snapshot.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+            book.Observe(snapshot, null); book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));
+            book.Observe(snapshot, null);
+            if (book.Balance != expected || !book.Find("trading").Settled) throw new Exception("Trading settlement persistence failed");
+        }
+    }
+}

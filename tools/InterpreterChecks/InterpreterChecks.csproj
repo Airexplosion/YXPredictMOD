@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RollForward>Major</RollForward>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants>TRACE;NET_4_6;NO_PROFILER;DISABLE_ILRUNTIME_DEBUG</DefineConstants>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <NoWarn>CS0105;CS0618;CS0649;CS0219;CS0168;CS0414;SYSLIB0017;SYSLIB0021</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\..\.cache\ILRuntime\source\ILRuntime-2.1.0\ILRuntime\**\*.cs" Exclude="..\..\.cache\ILRuntime\source\ILRuntime-2.1.0\ILRuntime\obj\**\*.cs;..\..\.cache\ILRuntime\source\ILRuntime-2.1.0\ILRuntime\bin\**\*.cs" />
+    <Compile Include="..\..\.cache\ILRuntime\source\ILRuntime-2.1.0\Mono.Cecil\Mono\*.cs" />
+    <Compile Include="..\..\.cache\ILRuntime\source\ILRuntime-2.1.0\Mono.Cecil\Mono.*\*.cs" />
+  </ItemGroup>
+</Project>

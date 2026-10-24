@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net40</TargetFramework>
+    <AssemblyName>PredictionPoints</AssemblyName>
+    <RootNamespace>YxPrediction</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DebugType>none</DebugType>
+    <OutputPath>plugins\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <YxHasGameRefs Condition="Exists('$(YxRefs)UnityEngine.CoreModule.dll') And '$(CoreOnly)' != 'true'">true</YxHasGameRefs>
+    <DefineConstants Condition="'$(YxHasGameRefs)' == 'true'">$(DefineConstants);YX_GAME</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.Core.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(YxHasGameRefs)' == 'true'">
+    <Reference Include="Yx.ModSdk"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="$(YxRefs)*.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="RequireSdk" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(YxSdkDir)net40\Yx.ModSdk.Core.dll')" Text="先运行 scripts/restore-sdk.ps1 恢复固定版本 SDK。" />
+    <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.UnityWebRequestModule.dll')" Text="需要 UnityWebRequest 引用，请运行 scripts/prepare-game.ps1。" />
+  </Target>
+</Project>
