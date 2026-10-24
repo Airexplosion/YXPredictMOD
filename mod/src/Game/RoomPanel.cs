@@ -94,10 +94,15 @@ namespace YxPrediction
             _theme.CreateButtonTopLeft(_root.transform, "leave", "离开房间", 608, -62, 130, 38, NativeBtnStyle.Secondary, Leave, 20);
             _theme.CreateButtonTopLeft(_root.transform, "random", "房间选项", 752, -62, 142, 38, NativeBtnStyle.Primary, ShowConnectionMenu, 20);
             _status = Label("status", "请在管理器 MOD 配置 online.server 与昵称，再创建或加入房间", 20, -112, 1090, 34, 20);
-            Label("headers", "选手                         预测名次        投入积分       操作                                    持仓 / 资金池参考赔率", 20, -152, 1090, 30, 18);
+            Label("headerPlayer", "选手", 20, -152, 205, 30, 20);
+            Label("headerRank", "预测名次", 230, -152, 140, 30, 20);
+            Label("headerStake", "投入积分", 382, -152, 100, 30, 20);
+            Label("headerActions", "操作", 492, -152, 258, 30, 20);
+            Label("headerHolding", "持仓 / 参考赔率", 770, -152, 350, 30, 20);
             for (int i = 0; i < 8; i++) _rows[i] = new Row(this, i);
             _message = Label("message", "", 20, -594, 1090, 44, 18);
             _message.enableWordWrapping = true;
+            _message.color = NativeTheme.TextMuted;
         }
         TextMeshProUGUI Label(string name, string value, float x, float y, float w, float h, int size)
         {
@@ -177,6 +182,8 @@ namespace YxPrediction
             {
                 _panel = panel; _index = index; float y = -188f - index * 50f;
                 string id = index.ToString(CultureInfo.InvariantCulture);
+                var background = panel._ui.Row(panel._root.transform, "rowBackground" + id, new Vector2(12f, y + 2f), new Vector2(1116f, 46f), index % 2 == 0 ? new Color(0.075f, 0.09f, 0.12f, 1f) : new Color(0.05f, 0.065f, 0.09f, 1f));
+                background.GetComponent<Image>().raycastTarget = false;
                 _name = panel.Label("name"+id, "—", 20,y,205,40,20);
                 panel._theme.CreateButtonTopLeft(panel._root.transform,"minus"+id,"−",230,y,34,38,NativeBtnStyle.Pill,Minus,22);
                 _rank = panel.Label("rank"+id,"1名",270,y,58,38,20);

@@ -18,21 +18,49 @@ namespace YxPrediction
             if (icon.GetSiblingIndex() != avatar.childCount - 1) icon.SetAsLastSibling();
         }
 
-        // 使用裁切圆而非包围方框判定悬停，缩放由原生屏幕坐标转换负责。
-        public static bool ContainsPoint(RectTransform avatar, Vector2 point)
+        // 头像、ID及称号之间的空白也属于同一个矩形热区；不新增接收射线的控件。
+        public static Rect HoverBounds(RectTransform avatar, RectTransform name, RectTransform caption, Rect captionGlyph)
         {
             Rect rect = avatar.rect;
-            float size = System.Math.Min(rect.width, rect.height);
-            if (size <= 0) return false;
-            float x = (point.x - rect.center.x) * 2 / size;
-            float y = (point.y - rect.center.y) * 2 / size;
-            return x * x + y * y <= 1;
+            if (rect.width <= 0 || rect.height <= 0) return new Rect();
+            Rect area = Include(rect, avatar, name, name.rect);
+            area = Include(area, avatar, caption, captionGlyph);
+            // 额外覆盖命元角标及文字下方留白，按头像大小缩放。
+            float x = rect.width * 0.08f, y = rect.height * 0.16f;
+            return new Rect(area.x - x, area.y - y, area.width + x * 2, area.height + y * 2);
         }
 
-        public static bool ShouldShow(bool hasImage, bool avatarVisible, bool alwaysCover, string uid, string focusedUid, bool hovered)
+        static Rect Include(Rect bounds, RectTransform reference, RectTransform part, Rect region)
         {
-            return hasImage && avatarVisible && !string.IsNullOrEmpty(uid)
-                && (alwaysCover || hovered || (!string.IsNullOrEmpty(focusedUid) && uid == focusedUid));
+            float left = bounds.x, bottom = bounds.y, right = bounds.x + bounds.width, top = bounds.y + bounds.height;
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 point = reference.InverseTransformPoint(part.TransformPoint(new Vector3(
+                    region.x + (i % 2) * region.width, region.y + (i / 2) * region.height, 0)));
+                left = System.Math.Min(left, point.x); right = System.Math.Max(right, point.x);
+                bottom = System.Math.Min(bottom, point.y); top = System.Math.Max(top, point.y);
+            }
+            return new Rect(left, bottom, right - left, top - bottom);
+        }
+
+        public static bool ContainsPoint(Rect area, Vector2 point)
+        {
+            return area.width > 0 && area.height > 0 && point.x >= area.x && point.x <= area.x + area.width
+                && point.y >= area.y && point.y <= area.y + area.height;
+        }
+
+        public static float HoverDistance(RectTransform avatar, Rect area, Vector2 point)
+        {
+            // 相邻列热区重叠时，只选离鼠标最近的一列。
+            return avatar.rect.width > 0 && ContainsPoint(area, point)
+                ? System.Math.Abs(point.x - avatar.rect.center.x) / avatar.rect.width : float.PositiveInfinity;
+        }
+
+        public static bool ShouldShow(bool hasImage, bool avatarVisible, bool iconsOnFocus, string uid, string focusedUid, bool hovered)
+        {
+            if (!hasImage || !avatarVisible || string.IsNullOrEmpty(uid)) return false;
+            bool viewing = hovered || (!string.IsNullOrEmpty(focusedUid) && uid == focusedUid);
+            return iconsOnFocus ? viewing : !viewing;
         }
     }
 }

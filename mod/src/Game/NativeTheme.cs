@@ -79,13 +79,13 @@ namespace YxPrediction
         Material _nativeFontMaterial;
 
         // 典雅修仙墨玉与鎏金配色保底
-        public static readonly Color LacquerBlack = new Color(0.08f, 0.09f, 0.12f, 0.96f);
+        public static readonly Color LacquerBlack = new Color(0.035f, 0.045f, 0.065f, 1f);
         public static readonly Color RecessedJade = new Color(0.05f, 0.08f, 0.09f, 0.94f);
         public static readonly Color AntiqueGold = new Color(0.85f, 0.72f, 0.42f, 1f);
         public static readonly Color SoftGoldGlow = new Color(0.85f, 0.70f, 0.30f, 0.28f);
         public static readonly Color DividerBronze = new Color(0.55f, 0.48f, 0.36f, 0.45f);
-        public static readonly Color TextParchment = new Color(0.92f, 0.88f, 0.80f, 1f);
-        public static readonly Color TextMuted = new Color(0.68f, 0.65f, 0.58f, 1f);
+        public static readonly Color TextParchment = new Color(0.96f, 0.95f, 0.91f, 1f);
+        public static readonly Color TextMuted = new Color(0.76f, 0.79f, 0.83f, 1f);
 
         public Sprite WindowSprite { get { Harvest(); return _windowSprite; } }
         public Sprite BannerSprite { get { Harvest(); return _bannerSprite; } }
@@ -230,17 +230,12 @@ namespace YxPrediction
         public void ApplyWindowFrame(Image image)
         {
             if (image == null) return;
-            Harvest();
-            if (_windowSprite != null)
-            {
-                image.sprite = _windowSprite;
-                image.type = Image.Type.Sliced;
-                image.color = Color.white;
-            }
-            else
-            {
-                image.color = LacquerBlack;
-            }
+            // The native scoreboard sprite includes opaque white paper, not just a border.
+            // A solid dark surface keeps contrast independent of the selected game panel.
+            image.sprite = null;
+            image.material = null;
+            image.type = Image.Type.Simple;
+            image.color = LacquerBlack;
         }
 
         public void ApplyBanner(Image image)
@@ -262,17 +257,8 @@ namespace YxPrediction
         public void ApplyInset(Image image)
         {
             if (image == null) return;
-            Harvest();
-            if (_insetImage != null)
-            {
-                image.sprite = _insetImage;
-                image.type = Image.Type.Sliced;
-                image.color = Color.white;
-            }
-            else
-            {
-                image.color = RecessedJade;
-            }
+            image.sprite = null; image.material = null; image.type = Image.Type.Simple;
+            image.color = new Color(0.025f, 0.035f, 0.05f, 1f);
         }
 
         public void ApplyLine(Image image)
@@ -317,7 +303,15 @@ namespace YxPrediction
             rect.sizeDelta = new Vector2(width, height);
         }
 
-        public void StyleInput(Transform root, int fontSize) { if (root == null) return; Harvest(); NativeControlStyle.Input(root.GetComponent<TMP_InputField>(), _nativeInput, 5, fontSize); }
+        public void StyleInput(Transform root, int fontSize)
+        {
+            if (root == null) return;
+            Harvest();
+            TMP_InputField field = root.GetComponent<TMP_InputField>();
+            NativeControlStyle.Input(field, _nativeInput, 5, fontSize);
+            ApplyInset(root.GetComponent<Image>());
+            if (field != null && field.textComponent != null) field.textComponent.color = TextParchment;
+        }
         static void EmptyClick() { }
 
         public NativeButton CreateButtonTopLeft(Transform parent, string name, string text, float x, float y, float width, float height, NativeBtnStyle style, Action onClick, int fontSize = 15)
@@ -490,6 +484,15 @@ namespace YxPrediction
 
             btn.colors = colors;
             if (_nativeButton != null) NativeControlStyle.Button(btn, _nativeButton, label == null ? "" : label.text, label == null ? 20f : label.fontSize);
+            // Preserve native button silhouettes while keeping readable dark-theme contrast.
+            if (img != null) img.color = new Color(0.28f, 0.31f, 0.37f, 1f);
+            colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.15f, 1.15f, 1.15f, 1f);
+            colors.pressedColor = new Color(0.72f, 0.75f, 0.8f, 1f);
+            colors.disabledColor = new Color(0.45f, 0.48f, 0.53f, 1f);
+            btn.colors = colors;
+            if (label != null) label.color = TextParchment;
         }
     }
 }
