@@ -98,6 +98,7 @@ namespace YxPrediction
             if (_root == null || _rect == null) return;
 
             _root.SetActive(true);
+            _panel.ExposeShortcutBar(_root.transform);
             float scale = Mathf.Min(1.25f, (_parent.rect.width - 32f) / PanelLayout.BetBarWidth);
             _rect.localScale = new Vector3(scale, scale, 1f);
             UpdatePosition();
@@ -236,9 +237,9 @@ namespace YxPrediction
                 _previewLabel.color = NativeTheme.TextParchment;
 
                 // 6. 快捷按钮
-                _btnTrend = _theme.CreateButtonTopLeft(bar, "BtnTrend", "走势", 816f, -16f, 38f, 34f, NativeBtnStyle.Secondary, OnTrendClicked, 14);
-                _btnOverview = _theme.CreateButtonTopLeft(bar, "BtnOverview", "总览", 858f, -16f, 38f, 34f, NativeBtnStyle.Secondary, OnOverviewClicked, 14);
-                _btnCollapse = _theme.CreateButtonTopLeft(bar, "BtnCollapse", "▾", 900f, -17f, 26f, 32f, NativeBtnStyle.Pill, OnCollapseClicked, 16);
+                _btnTrend = _theme.CreateButtonTopLeft(bar, "BtnTrend", "走势", 816f, -14f, 72f, 38f, NativeBtnStyle.Secondary, OnTrendClicked, 18);
+                _btnOverview = _theme.CreateButtonTopLeft(bar, "BtnOverview", "总览", 894f, -14f, 72f, 38f, NativeBtnStyle.Secondary, OnOverviewClicked, 18);
+                _btnCollapse = _theme.CreateButtonTopLeft(bar, "BtnCollapse", "▾", 976f, -16f, 36f, 34f, NativeBtnStyle.Pill, OnCollapseClicked, 16);
             }
             catch (Exception ex)
             {
@@ -537,16 +538,18 @@ namespace YxPrediction
 
         void OnTrendClicked()
         {
+            if (!CanClick()) return;
             int pIndex = GetFocusedPlayerIndex();
             if (pIndex >= 0)
             {
-                _panel.ShowTrend(pIndex);
+                _panel.ToggleTrend(pIndex);
             }
         }
 
         void OnOverviewClicked()
         {
-            _panel.Toggle();
+            if (!CanClick()) return;
+            _panel.ToggleOverview();
         }
 
         bool CanClick()
@@ -574,7 +577,7 @@ namespace YxPrediction
                 else if (child.name != "HorseIcon" && child.name != "BtnSellHalf" && child.name != "BtnSellAll") child.gameObject.SetActive(true);
             }
             _rect.sizeDelta = new Vector2(_collapsed ? 120f : PanelLayout.BetBarWidth, _collapsed ? 42f : PanelLayout.BetBarHeight);
-            NativeTheme.SetTopLeft(_btnCollapse.GameObject.GetComponent<RectTransform>(), _collapsed ? 8f : 900f, _collapsed ? -4f : -17f, _collapsed ? 104f : 26f, 32f);
+            NativeTheme.SetTopLeft(_btnCollapse.GameObject.GetComponent<RectTransform>(), _collapsed ? 8f : 976f, _collapsed ? -4f : -17f, _collapsed ? 104f : 36f, 32f);
             _btnCollapse.SetText(_collapsed ? "展开预测" : "▾");
 
         }

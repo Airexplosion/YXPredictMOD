@@ -112,6 +112,28 @@ namespace YxPrediction
             }
         }
 
+        public void ExposeShortcutBar(Transform bar)
+        {
+            if (!_visible || _root == null || bar == null || bar.parent != _root.transform.parent) return;
+            // Only move above our own window, never above a later native dialog.
+            Transform parent = bar.parent;
+            if (_root.transform.GetSiblingIndex() == parent.childCount - 1 && _root.transform.GetSiblingIndex() > bar.GetSiblingIndex()) bar.SetAsLastSibling();
+        }
+
+        public void ToggleOverview()
+        {
+            if (_visible && _currentTab == Tab.Overview && !_history) { Close(); return; }
+            if (!_visible) Toggle();
+            _history = false; _currentTab = Tab.Overview; Refresh();
+        }
+
+        public void ToggleTrend(int playerIndex)
+        {
+            int selected = playerIndex >= 0 && playerIndex < 8 ? playerIndex : 0;
+            if (_visible && _currentTab == Tab.Trend && !_history && !_followFocusInTrend && _trendPlayer == selected) { Close(); return; }
+            _history = false; ShowTrend(selected);
+        }
+
         public void ShowTrend(int playerIndex)
         {
             if (!_visible) Toggle();

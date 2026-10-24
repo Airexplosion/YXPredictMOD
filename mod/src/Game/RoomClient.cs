@@ -21,18 +21,20 @@ namespace YxPrediction
         string _endpoint, _token, _code, _afterRegister;
         float _next;
         RoomMatch _match;
+        string _createNativeId, _lookupCode;
+        float _createDeadline;
         bool _joiningMatch;
-        public bool Matching { get { return _match != null; } }
+        public bool Matching { get { return _match != null || _createNativeId != null; } }
         public RoomState State { get; private set; }
         public string Message { get; private set; }
-        public bool Busy { get { return _request != null || _pending != null || _match != null; } }
+        public bool Busy { get { return _request != null || _pending != null || _match != null || _createNativeId != null; } }
         public RoomClient(PredictionMod mod, ModContext ctx)
         {
             _mod = mod; _ctx = ctx;
             _url = ctx.Config.Bind("online", "server", "https://auth.kaigua.vip/prediction", "独立娱乐积分房间服务地址；外网使用HTTPS");
             _name = ctx.Config.Bind("online", "name", "观众", "房间昵称（首次注册时使用，1至24字）");
             ReadIdentity();
-            Message = "独立娱乐积分：1000初始分；无购买、兑换或认证时长关联";
+            Message = "选择加入、创建或匹配房间";
         }
         public void SetMessage(string message) { Message = message; }
         void ReadIdentity()
@@ -69,6 +71,23 @@ namespace YxPrediction
         public void Connect(string code, bool create)
         {
             if (Busy) { Message = "等待上一操作确认"; return; }
+            if (NativeRoomSpectate.IsLobby)
+            {
+                if (create)
+                {
+                    string target, error;
+                    if (!LobbyRoomEntry.SpectateSelected(out target, out error)) { Message = error; return; }
+                    _createNativeId = target; _createDeadline = Time.unscaledTime + 90f;
+                    Message = "请确认原生观战提示；进入所选对局后创建房间，不会自动投入积分";
+                }
+                else
+                {
+                    _lookupCode = code.Trim(); _afterRegister = "lookup";
+                    if (string.IsNullOrEmpty(_token)) { var register = Body("register"); register["name"] = _name.Value; Send(register); }
+                    else ConnectReady();
+                }
+                return;
+            }
             MatchSnapshot s = _mod.Snapshot;
             if (!PredictionVisibility.CanShow() || s == null || !s.IsEightPlayerMatch()) { Message = "请先进入完整八人实时观战"; return; }
             State = null;
@@ -78,6 +97,7 @@ namespace YxPrediction
         }
         void ConnectReady()
         {
+            if (_afterRegister == "lookup") { _afterRegister = null; var lookup = Body("lookup"); lookup["code"] = _lookupCode; Send(lookup); return; }
             if (_afterRegister == "random") { _afterRegister = null; var random = Body("random"); random["exclude"] = _code ?? ""; Send(random); return; }
             MatchSnapshot s = _mod.Snapshot;
             if (s == null || !s.LiveObserver) { Message = "观战已离开，请重新连接"; return; }
@@ -96,8 +116,8 @@ namespace YxPrediction
         }
         public void CancelMatch()
         {
-            if (_match == null) return;
-            _match = null;
+            if (_match == null && _createNativeId == null) return;
+            _createNativeId = null; _match = null;
             Message = "已取消匹配，不加入预测房间；原生观战确认框请按游戏自己的取消按钮关闭";
         }
         public void Leave()
@@ -140,6 +160,14 @@ namespace YxPrediction
                 if (Busy) { Message = "服务器地址已变更；先恢复旧地址完成在途操作"; return; }
                 DestroyRequest(); _token = null; _code = null; State = null; ReadIdentity();
             }
+            if (_createNativeId != null)
+            {
+                MatchSnapshot ready = _mod.Snapshot;
+                if (Time.unscaledTime >= _createDeadline) { _createNativeId = null; Message = "未进入所选观战，创建已取消"; }
+                else if (ready != null && ready.LiveObserver && !ready.Ended && ready.IsEightPlayerMatch() && NativeRoomSpectate.CurrentRoomId() == _createNativeId)
+                { _createNativeId = null; Connect("", true); return; }
+                else return;
+            }
             if (_match != null)
             {
                 if (_match.Expired(Time.unscaledTime)) { _match = null; Message = "未在90秒内进入目标实时观战，匹配已取消；没有扣除积分"; }
@@ -172,11 +200,11 @@ namespace YxPrediction
                         var data = root["data"] as Dictionary<string, object>;
                         if (Json.GetString(_sent, "action", "") == "register")
                         { _token = Json.GetString(data, "token", ""); SaveIdentity(); connect = true; }
-                        else if (Json.GetString(_sent, "action", "") == "random") selected = new RoomMatch(data, Time.unscaledTime);
+                        else if ((Json.GetString(_sent, "action", "") == "random" || Json.GetString(_sent, "action", "") == "lookup")) selected = new RoomMatch(data, Time.unscaledTime);
                         else
                         {
                             State = RoomState.Read(data); _code = State.Code;
-                            if (_joiningMatch && Json.GetString(_sent, "action", "") == "join") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
+                            if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
                             SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : "资金池参考赔率随投入变化；最终赔率以封盘资金池为准";
                         }

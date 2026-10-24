@@ -15,23 +15,71 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly NativeTheme _theme;
         readonly UiKit _ui;
-        GameObject _root, _lobbyLauncher;
+        GameObject _root, _menu, _joinForm, _menuChoices;
+        TextMeshProUGUI _menuMessage;
+        NativeButton _menuMatch;
+        readonly LobbyRoomEntry _entry;
         UiInput _code;
         TextMeshProUGUI _status, _message;
         readonly Row[] _rows = new Row[8];
         bool _visible;
         float _next;
         public RoomPanel(PredictionMod mod, ModContext ctx, NativeTheme theme)
-        { _mod = mod; _ctx = ctx; _theme = theme; _ui = new UiKit(ctx); ctx.Input.RegisterHotkey("onlineRoom", "Ctrl+Shift+P", Toggle); }
+        { _mod = mod; _ctx = ctx; _theme = theme; _ui = new UiKit(ctx); ctx.Input.RegisterHotkey("onlineRoom", "Ctrl+Shift+P", Toggle); _entry = new LobbyRoomEntry(ctx, theme, Toggle); }
         public void Toggle()
         {
+            if (_visible) { Close(); return; }
             if (!PredictionVisibility.CanShow() && !NativeRoomSpectate.IsLobby) return;
-            if (_root == null) Build();
-            _visible = !_visible;
-            if (_root != null) { _root.SetActive(_visible); _root.transform.SetAsLastSibling(); }
+            _visible = true; ShowPresentation(); BackChoices();
         }
-        public void Open() { if (!_visible) Toggle(); }
-        void Close() { _visible = false; if (_root != null) _root.SetActive(false); }
+        public void Open() { _visible = true; ShowPresentation(); }
+        void Close()
+        {
+            _visible = false;
+            if (_root != null) _root.SetActive(false);
+            if (_menu != null) _menu.SetActive(false);
+        }
+        bool HasCurrentRoom()
+        {
+            return _mod.Online.State != null && _mod.Snapshot != null && _mod.Online.State.GameId == _mod.Snapshot.Id && PredictionVisibility.CanShow();
+        }
+        void ShowPresentation()
+        {
+            bool connected = HasCurrentRoom();
+            if (connected && _root == null) Build();
+            if (!connected && _menu == null) BuildMenu();
+            GameObject shown = connected ? _root : _menu;
+            bool newlyOpened = shown != null && !shown.activeSelf;
+            if (_root != null) _root.SetActive(_visible && connected);
+            if (_menu != null) _menu.SetActive(_visible && !connected);
+            if (shown != null && _visible && newlyOpened) shown.transform.SetAsLastSibling();
+        }
+        void BuildMenu()
+        {
+            _menu = _ui.Panel("PredictionRoomMenu", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(580f, 230f), NativeTheme.LacquerBlack);
+            if (_menu == null) return;
+            _theme.ApplyWindowFrame(_menu.GetComponent<Image>());
+            var title = _ui.Label(_menu.transform, "title", "联机预测", new Vector2(24f, -14f), new Vector2(400f, 36f), 24);
+            _theme.ApplyTextStyle(title, 24, true, TextAlignmentOptions.Left);
+            _theme.CreateButtonTopLeft(_menu.transform, "closeMenu", "×", 518f, -12f, 42f, 38f, NativeBtnStyle.Close, Close, 24);
+            _menuChoices = new GameObject("Choices", typeof(RectTransform));
+            _menuChoices.transform.SetParent(_menu.transform, false);
+            NativeTheme.SetTopLeft(_menuChoices.transform as RectTransform, 0f, -66f, 580f, 70f);
+            _theme.CreateButtonTopLeft(_menuChoices.transform, "menuJoin", "加入", 24f, 0f, 164f, 60f, NativeBtnStyle.Primary, ShowJoin, 24);
+            _theme.CreateButtonTopLeft(_menuChoices.transform, "menuCreate", "创建", 208f, 0f, 164f, 60f, NativeBtnStyle.Primary, Create, 24);
+            _menuMatch = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuMatch", "匹配", 392f, 0f, 164f, 60f, NativeBtnStyle.Primary, RandomJoin, 24);
+            _joinForm = new GameObject("JoinForm", typeof(RectTransform));
+            _joinForm.transform.SetParent(_menu.transform, false);
+            NativeTheme.SetTopLeft(_joinForm.transform as RectTransform, 0f, -66f, 580f, 74f);
+            _code = _ui.NumberInput(_joinForm.transform, "roomCode", new Vector2(24f, 0f), new Vector2(204f, 54f), 24, Ignore);
+            _theme.CreateButtonTopLeft(_joinForm.transform, "joinCode", "加入房间", 248f, 0f, 164f, 54f, NativeBtnStyle.Primary, Join, 22);
+            _theme.CreateButtonTopLeft(_joinForm.transform, "backChoices", "返回", 432f, 0f, 124f, 54f, NativeBtnStyle.Secondary, BackChoices, 22);
+            _joinForm.SetActive(false);
+            _menuMessage = _ui.Label(_menu.transform, "menuMessage", "", new Vector2(24f, -150f), new Vector2(532f, 62f), 18);
+            _theme.ApplyTextStyle(_menuMessage, 18, false, TextAlignmentOptions.Left); _menuMessage.enableWordWrapping = true;
+        }
+        void ShowJoin() { if (_joinForm != null) _joinForm.SetActive(true); if (_menuChoices != null) _menuChoices.SetActive(false); }
+        void BackChoices() { if (_joinForm != null) _joinForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(true); }
         void Build()
         {
             _root = _ui.Panel("PredictionOnlineRoom", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1140f, 650f), NativeTheme.LacquerBlack);
@@ -39,10 +87,6 @@ namespace YxPrediction
             _theme.ApplyWindowFrame(_root.GetComponent<Image>());
             Label("title", "联机名次预测 · 独立娱乐积分", 20, -12, 690, 34, 24);
             _theme.CreateButtonTopLeft(_root.transform, "close", "关闭", 1030, -12, 90, 34, NativeBtnStyle.Close, Close, 20);
-            Label("codeLabel", "六位房间号", 20, -62, 130, 36, 20);
-            _code = _ui.NumberInput(_root.transform, "roomCode", new Vector2(154, -62), new Vector2(150, 38), 22, Ignore);
-            _theme.CreateButtonTopLeft(_root.transform, "create", "创建房间", 320, -62, 130, 38, NativeBtnStyle.Primary, Create, 20);
-            _theme.CreateButtonTopLeft(_root.transform, "join", "加入房间", 464, -62, 130, 38, NativeBtnStyle.Primary, Join, 20);
             _theme.CreateButtonTopLeft(_root.transform, "leave", "离开房间", 608, -62, 130, 38, NativeBtnStyle.Secondary, Leave, 20);
             _theme.CreateButtonTopLeft(_root.transform, "random", "随机加入", 752, -62, 142, 38, NativeBtnStyle.Primary, RandomJoin, 20);
             _theme.CreateButtonTopLeft(_root.transform, "cancelMatch", "取消匹配", 908, -62, 142, 38, NativeBtnStyle.Secondary, CancelMatch, 20);
@@ -60,23 +104,23 @@ namespace YxPrediction
         static void Ignore(string value) { }
         void Create() { _mod.Online.Connect("", true); }
         void Join() { _mod.Online.Connect(_code.Text, false); }
-        void RandomJoin() { _mod.Online.RandomJoin(); }
+        void RandomJoin() { if (_mod.Online.Matching) _mod.Online.CancelMatch(); else _mod.Online.RandomJoin(); }
         void CancelMatch() { _mod.Online.CancelMatch(); }
         void Leave() { _mod.Online.Leave(); }
         public void Update()
         {
             bool lobby = NativeRoomSpectate.IsLobby;
-            if (_lobbyLauncher != null) _lobbyLauncher.SetActive(lobby && !_visible);
-            if (lobby && _lobbyLauncher == null)
-            {
-                _lobbyLauncher = _ui.Panel("PredictionRoomLauncher", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-16f, 0f), new Vector2(174f, 48f), NativeTheme.LacquerBlack);
-                if (_lobbyLauncher != null) _theme.CreateButtonTopLeft(_lobbyLauncher.transform, "openRooms", "联机预测", 4f, -4f, 166f, 40f, NativeBtnStyle.Primary, Toggle, 22);
-            }
-            if ((!PredictionVisibility.CanShow() && !lobby) || (!lobby && GameBridge.IsPlayingBattle())) { Close(); return; }
-            if (!_visible || _root == null) return;
-            var rect = _root.transform as RectTransform; var parent = rect.parent as RectTransform;
-            float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / 1140f, (parent.rect.height - 180f) / 650f)));
+            _entry.Update();
+            if ((!PredictionVisibility.CanShow() && !lobby) || (!lobby && GameBridge.IsPlayingBattle()) || (lobby && !_entry.Visible)) { Close(); return; }
+            if (!_visible) return;
+            ShowPresentation();
+            bool connected = HasCurrentRoom();
+            GameObject shown = connected ? _root : _menu;
+            if (shown == null) return;
+            var rect = shown.transform as RectTransform; var parent = rect.parent as RectTransform;
+            float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / rect.rect.width, (parent.rect.height - 180f) / rect.rect.height)));
             rect.localScale = new Vector3(scale,scale,1);
+            if (!connected) { if (_menuMessage != null) _menuMessage.text = _mod.Online.Message; if (_menuMatch != null) _menuMatch.SetText(_mod.Online.Matching ? "取消" : "匹配"); return; }
             if (Time.unscaledTime < _next) return; _next = Time.unscaledTime + 0.2f;
             RoomState r = _mod.Online.State;
             _status.text = r == null ? "未连接 · 大厅可随机加入已有投入的房间；同局观战可创建或输入房号加入"
@@ -134,7 +178,7 @@ namespace YxPrediction
                 _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == _chosen ? "增持" : "换预测" : "投入");
             }
         }
-        public void Destroy() { _ui.DestroyAll(); _root = null; }
+        public void Destroy() { _entry.Destroy(); _ui.DestroyAll(); _root = null; _menu = null; }
     }
 }
 #endif

@@ -18,7 +18,7 @@ namespace YxPrediction
         public const float MinimizedHeight = 56f;
         public const float PeekAlpha = 0.18f;
 
-        public const float BetBarWidth = 940f;
+        public const float BetBarWidth = 1028f;
         public const float BetBarHeight = 66f;
         public const float BetBarHandY = 326f;
         public const float BetBarTalentsY = 48f;

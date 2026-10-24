@@ -319,6 +319,11 @@ namespace YxPrediction
             if (label != null)
             {
                 ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
+                // SDK button text has its own inner RectTransform; keep usable width explicit.
+                RectTransform textRect = label.rectTransform;
+                textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
+                textRect.offsetMin = new Vector2(4f, 1f); textRect.offsetMax = new Vector2(-4f, -1f);
+                label.margin = Vector4.zero;
                 label.text = text;
                 label.raycastTarget = false;
             }
@@ -349,6 +354,11 @@ namespace YxPrediction
             if (label != null)
             {
                 ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
+                // SDK button text has its own inner RectTransform; keep usable width explicit.
+                RectTransform textRect = label.rectTransform;
+                textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
+                textRect.offsetMin = new Vector2(4f, 1f); textRect.offsetMax = new Vector2(-4f, -1f);
+                label.margin = Vector4.zero;
                 label.text = text;
                 label.raycastTarget = false;
             }

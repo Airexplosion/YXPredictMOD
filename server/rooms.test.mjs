@@ -152,3 +152,24 @@ test('random discovery endpoint requires bearer auth and cannot bypass same-game
     assert.equal((await request({action:'join',code:selected.code,gameId:selected.gameId})).status,200);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
+test('manual lookup discovers unfunded rooms without membership or spending and hides credentials',()=>{
+  const x=setup();const visitor=x.rooms.register('lookup-guest').token;
+  assert.throws(()=>x.rooms.lookup(visitor,x.code));
+  x.snapshot.gameRoomId='lookup-native';x.rooms.sync(x.code,x.a,x.snapshot);
+  const before=structuredClone(x.rooms.state);const found=x.rooms.lookup(visitor,x.code);
+  assert.equal(found.gameRoomId,'lookup-native');assert.deepEqual(Object.keys(found).sort(),['code','gameId','gameRoomId','members','round']);
+  assert.deepEqual(x.rooms.state,before);assert.throws(()=>x.rooms.view(x.code,visitor));
+  x.snapshot.open=false;x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(x.rooms.lookup(visitor,x.code).code,x.code);
+  x.advance(15001);assert.throws(()=>x.rooms.lookup(visitor,x.code));
+});
+test('lookup HTTP route authenticates and never bypasses normal join checks',async()=>{
+  const x=setup();x.snapshot.gameRoomId='lookup-http';x.rooms.sync(x.code,x.a,x.snapshot);
+  const key=x.rooms.register('lookup-http-guest').token;const server=http.createServer(createHandler(x.rooms));
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/v1/room`;
+  try{
+    const request=token=>fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({action:'lookup',code:x.code})});
+    assert.equal((await request('invalid')).status,401);
+    const response=await request(key);assert.equal(response.status,200);const data=(await response.json()).data;assert.equal(data.gameId,x.snapshot.id);
+    assert.throws(()=>x.rooms.view(x.code,key));assert.equal(x.rooms.account(key).balance,1000);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});

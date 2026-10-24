@@ -67,7 +67,6 @@ namespace YxPrediction
             if (Online != null) Online.Update();
             if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();
-            TalentOrbLayout.Update();
             if (_betBar != null) _betBar.Update();
             if (_launcher != null) _launcher.Update();
             if (_panel != null) _panel.Update();
@@ -84,7 +83,6 @@ namespace YxPrediction
             if (_betBar != null) _betBar.Destroy();
             if (_panel != null) _panel.Destroy();
             if (Horses != null) Horses.Destroy();
-            TalentOrbLayout.Restore();
 #endif
         }
 

@@ -63,6 +63,15 @@ export class Rooms {
       return this.view(code, key);
     });
   }
+  lookup(key, code) {
+    this.account(key);
+    requireThat(typeof code === 'string' && /^[0-9]{6}$/.test(code) && this.state.rooms[code], '房间不存在', 404);
+    const r = this.state.rooms[code];
+    requireThat(!r.ended && !r.settled && (r.members.includes(key) || r.members.length < 32)
+      && this.now() - (this.syncTimes.get(code) ?? -Infinity) <= 15000
+      && typeof r.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(r.gameRoomId), '房间已结束、已满或房主离线', 409);
+    return { code: r.code, gameId: r.gameId, gameRoomId: r.gameRoomId, round: r.round, members: r.members.length };
+  }
   random(key, excludedCode = '') {
     this.account(key);
     requireThat(typeof excludedCode === 'string' && (excludedCode === '' || /^[0-9]{6}$/.test(excludedCode)), '排除房间号无效');
