@@ -56,7 +56,7 @@ namespace YxPrediction
             {
                 _root = _ui.Panel("PredictionRoomLauncher", Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(180f, 54f), Color.clear, false);
                 if (_root == null) return;
-                _button = _theme.CreateButtonTopLeft(_root.transform, "openRooms", "联机预测", 0f, 0f, 180f, 54f, NativeBtnStyle.Primary, _toggle, 22);
+                _button = _theme.CreateButtonTopLeft(_root.transform, "openRooms", "名次预测", 0f, 0f, 180f, 54f, NativeBtnStyle.Primary, _toggle, 22);
             }
             var rect = _root.transform as RectTransform;
             var parent = rect.parent as RectTransform;

@@ -21,6 +21,10 @@ namespace YxPrediction
         string _endpoint, _token, _code, _afterRegister;
         float _next;
         RoomMatch _match;
+        string _membersRoom;
+        readonly List<string> _seenMembers = new List<string>();
+        public string JoinNotice { get; private set; }
+        float _noticeUntil;
         string _createNativeId, _lookupCode;
         float _createDeadline;
         bool _joiningMatch;
@@ -135,6 +139,13 @@ namespace YxPrediction
         }
         void Send(Dictionary<string, object> body)
         {
+            if (!string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(GameClientUtil.uid))
+            {
+                var identity = new Dictionary<string, object>();
+                string name = GameDataManager.username.Value;
+                identity["name"] = string.IsNullOrEmpty(name) ? _name.Value : name; identity["uid"] = GameClientUtil.uid;
+                body["identity"] = identity;
+            }
             Uri uri;
             if (!Uri.TryCreate(_endpoint, UriKind.Absolute, out uri) || (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)))
             { Message = "服务器须使用HTTPS（本机测试允许HTTP）"; return; }
@@ -152,8 +163,28 @@ namespace YxPrediction
             }
             catch { DestroyRequest(); Message = "请求未完成，等待重连确认"; _next = Time.unscaledTime + 3f; }
         }
+        void ObserveMembers(RoomState state)
+        {
+            bool first = _membersRoom != state.Code;
+            if (first) { _seenMembers.Clear(); _membersRoom = state.Code; }
+            string notice = "";
+            for(int i=0;i<state.MemberIds.Length;i++)
+            {
+                if (_seenMembers.Contains(state.MemberIds[i])) continue;
+                _seenMembers.Add(state.MemberIds[i]);
+                string name = state.MemberNames[i] + "（ID " + (string.IsNullOrEmpty(state.MemberUids[i]) ? state.MemberIds[i] : state.MemberUids[i]) + "）";
+                if (!first) notice += (notice.Length > 0 ? "、" : "") + name;
+            }
+            if (notice.Length > 0)
+            {
+                JoinNotice = notice + " 加入房间"; _noticeUntil = Time.unscaledTime + 8f;
+                _ctx.Log.Info(JoinNotice);
+                HintMessagePanel.Show(JoinNotice);
+            }
+        }
         public void Update()
         {
+            if (JoinNotice != null && Time.unscaledTime > _noticeUntil) JoinNotice = null;
             if (_endpoint != _url.Value.Trim().TrimEnd('/'))
             {
                 // Never send a saved credential to a different server.
@@ -203,7 +234,7 @@ namespace YxPrediction
                         else if ((Json.GetString(_sent, "action", "") == "random" || Json.GetString(_sent, "action", "") == "lookup")) selected = new RoomMatch(data, Time.unscaledTime);
                         else
                         {
-                            State = RoomState.Read(data); _code = State.Code;
+                            State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
                             SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : "资金池参考赔率随投入变化；最终赔率以封盘资金池为准";

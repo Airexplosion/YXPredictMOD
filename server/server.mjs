@@ -23,6 +23,7 @@ export function createHandler(rooms) {
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RoomError('JSON无效'); }
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
       const key = req.headers.authorization?.replace(/^Bearer /, '');
+      if (body.action !== 'register' && body.identity !== undefined) rooms.identify(key, body.identity);
       let result;
       switch (body.action) {
         case 'register': result = rooms.register(body.name); break;

@@ -8,6 +8,7 @@ namespace YxPrediction
     public sealed class RoomState
     {
         public string Code, GameId;
+        public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
         public bool Host, Open, Settled;
         public int Version, Round, Members;
         public long Balance, Payout;
@@ -21,6 +22,13 @@ namespace YxPrediction
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
+            var members = Json.GetArray(d, "memberDetails");
+            if (members != null)
+            {
+                if (members.Count > 32) throw new FormatException("房间成员数量无效");
+                r.MemberIds = new string[members.Count]; r.MemberNames = new string[members.Count]; r.MemberUids = new string[members.Count];
+                for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]=Json.GetString(member,"name",""); r.MemberUids[i]=Json.GetString(member,"uid",""); }
+            }
             var players = d["players"] as List<object>; var ranks = d["ranks"] as List<object>;
             var positions = d["positions"] as List<object>; var pools = d["totals"] as List<object>;
             if (players == null || players.Count != 8 || ranks == null || ranks.Count != 8 || positions == null || positions.Count != 8 || pools == null || pools.Count != 8) throw new FormatException("房间响应维度错误");

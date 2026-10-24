@@ -63,6 +63,8 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly UiKit _ui;
         bool _harvested;
+        Button _nativeButton;
+        TMP_InputField _nativeInput;
 
         Sprite _windowSprite;
         Sprite _bannerSprite;
@@ -104,11 +106,24 @@ namespace YxPrediction
             if (_harvested) return;
             try
             {
+                if (NativeRoomSpectate.IsLobby)
+                {
+                    string selected;
+                    Button native = LobbyRoomEntry.SelectedButton(out selected);
+                    if (native != null) _nativeButton = native;
+                    return;
+                }
                 BattleManager manager = BattleManager.Instance;
                 if (manager == null) return;
                 FieldInfo fi = manager.GetType().GetField("m_BattlePanel", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 BattlePanel bp = fi == null ? null : fi.GetValue(manager) as BattlePanel;
-                if (bp == null) return;
+                if (bp == null)
+                {
+                    string selected;
+                    Button native = LobbyRoomEntry.SelectedButton(out selected);
+                    if (native != null) _nativeButton = native;
+                    return;
+                }
 
                 // 安全遍历 BattlePanel 下的原生预制体组件，不激活任何未初始化的 Panel
                 Transform[] transforms = bp.transform.GetComponentsInChildren<Transform>(true);
@@ -116,6 +131,8 @@ namespace YxPrediction
                 {
                     Transform t = transforms[i];
                     string name = t.name;
+                    if (_nativeButton == null && (name == "ReadyCountdownButton" || name == "ConfirmBtn" || name == "CardScrollOperationButton" || name == "RefreshButton" || name == "ReadyButton" || name == "ReplayButton")) _nativeButton = t.GetComponent<Button>();
+                    if (_nativeInput == null) _nativeInput = t.GetComponent<TMP_InputField>();
 
                     if (_windowSprite == null && name == "Window" && t.parent != null && t.parent.name == "ScoreboardPanel")
                     {
@@ -152,7 +169,7 @@ namespace YxPrediction
                         var img = t.GetComponent<Image>();
                         if (img != null && img.sprite != null) _primaryBtnSprite = img.sprite;
                     }
-                    else if (_secondaryBtnSprite == null && (name == "RefreshButton" || name == "CardScrollOperationButton"))
+                    else if (_secondaryBtnSprite == null && (name == "RefreshButton" || name == "ReadyButton" || name == "ReplayButton" || name == "CardScrollOperationButton"))
                     {
                         var img = t.GetComponent<Image>();
                         if (img != null && img.sprite != null) _secondaryBtnSprite = img.sprite;
@@ -169,6 +186,7 @@ namespace YxPrediction
                     }
                 }
 
+                if (_nativeButton == null) { Button[] buttons = bp.transform.GetComponentsInChildren<Button>(true); for (int j = 0; j < buttons.Length; j++) if (!buttons[j].name.StartsWith("Btn") && buttons[j].GetComponent<Image>() != null) { _nativeButton = buttons[j]; break; } }
                 if (_windowSprite != null && _bannerSprite != null)
                 {
                     _harvested = true;
@@ -299,6 +317,7 @@ namespace YxPrediction
             rect.sizeDelta = new Vector2(width, height);
         }
 
+        public void StyleInput(Transform root, int fontSize) { if (root == null) return; Harvest(); NativeControlStyle.Input(root.GetComponent<TMP_InputField>(), _nativeInput, 5, fontSize); }
         static void EmptyClick() { }
 
         public NativeButton CreateButtonTopLeft(Transform parent, string name, string text, float x, float y, float width, float height, NativeBtnStyle style, Action onClick, int fontSize = 15)
@@ -470,6 +489,7 @@ namespace YxPrediction
             }
 
             btn.colors = colors;
+            if (_nativeButton != null) NativeControlStyle.Button(btn, _nativeButton, label == null ? "" : label.text, label == null ? 20f : label.fontSize);
         }
     }
 }

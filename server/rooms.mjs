@@ -1,4 +1,4 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes, randomInt, createHash } from 'node:crypto';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -25,6 +25,13 @@ export class Rooms {
       const key = token(); this.state.accounts[key] = { name: name.trim(), balance: 1000 };
       return { token: key, balance: 1000 };
     });
+  }
+  identify(key, identity) {
+    const account = this.account(key);
+    requireThat(identity && typeof identity.name === 'string' && identity.name.trim().length > 0 && identity.name.length <= 64
+      && typeof identity.uid === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(identity.uid), '游戏身份格式无效');
+    if (account.name === identity.name && account.uid === identity.uid) return;
+    this.commit(() => { account.name = identity.name.trim(); account.uid = identity.uid; });
   }
   room(code, key) {
     this.account(key);
@@ -160,7 +167,7 @@ export class Rooms {
   view(code, key) {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
-    return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, round: r.round, version: r.version,
+    return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
       open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }

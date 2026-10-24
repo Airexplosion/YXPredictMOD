@@ -173,3 +173,11 @@ test('lookup HTTP route authenticates and never bypasses normal join checks',asy
     assert.throws(()=>x.rooms.view(x.code,key));assert.equal(x.rooms.account(key).balance,1000);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
+test('member views identify arrivals without exposing bearer keys; repeat join is idempotent',()=>{
+ const x=setup();x.rooms.identify(x.a,{name:'游戏甲',uid:'uid-a'});x.rooms.identify(x.b,{name:'游戏乙',uid:'uid-b'});
+ const view=x.rooms.view(x.code,x.a);assert.equal(view.memberDetails.length,2);assert.equal(view.memberDetails[1].name,'游戏乙');assert.equal(view.memberDetails[1].uid,'uid-b');
+ assert.ok(!JSON.stringify(view).includes(x.a));assert.ok(!JSON.stringify(view).includes(x.b));
+ x.rooms.join(x.code,x.b,x.snapshot.id);assert.equal(x.rooms.view(x.code,x.a).memberDetails.length,2);
+ assert.throws(()=>x.rooms.identify(x.b,{name:'x',uid:'bad id'}));
+ const restored=new Rooms(structuredClone(x.rooms.state));assert.deepEqual(restored.view(x.code,x.a).memberDetails,view.memberDetails);
+});
