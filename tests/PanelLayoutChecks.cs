@@ -7,6 +7,19 @@ internal static partial class Program
     {
         Check("real Node room response decodes shared pools and personal position", RoomWireFixture.Verify);
 
+        Check("random room waits for matching live snapshot and rejects timeout", delegate
+        {
+            MatchSnapshot snapshot = Snapshot(1);
+            var data = new Dictionary<string, object>(); data["code"] = "123456"; data["gameId"] = snapshot.Id; data["gameRoomId"] = "native-room_1";
+            var match = new RoomMatch(data, 10);
+            True(match.CanJoin(snapshot, 11));
+            snapshot.LiveObserver = false; True(!match.CanJoin(snapshot, 11)); snapshot.LiveObserver = true;
+            snapshot.Ended = true; True(!match.CanJoin(snapshot, 11)); snapshot.Ended = false;
+            string id = snapshot.Id; snapshot.Id = "another-game"; True(!match.CanJoin(snapshot, 11)); snapshot.Id = id;
+            True(!match.CanJoin(null, 11)); True(!match.CanJoin(snapshot, 100)); True(match.Expired(100));
+            snapshot.Players[1] = snapshot.Players[0]; True(!match.CanJoin(snapshot, 11));
+        });
+
         Check("enlarged overview fits common canvases with top and bottom clearance", delegate
         {
             double[] widths = { 1920, 1600, 1280, 1024 };

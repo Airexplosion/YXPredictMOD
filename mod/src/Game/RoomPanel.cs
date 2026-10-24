@@ -15,7 +15,7 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly NativeTheme _theme;
         readonly UiKit _ui;
-        GameObject _root;
+        GameObject _root, _lobbyLauncher;
         UiInput _code;
         TextMeshProUGUI _status, _message;
         readonly Row[] _rows = new Row[8];
@@ -25,11 +25,12 @@ namespace YxPrediction
         { _mod = mod; _ctx = ctx; _theme = theme; _ui = new UiKit(ctx); ctx.Input.RegisterHotkey("onlineRoom", "Ctrl+Shift+P", Toggle); }
         public void Toggle()
         {
-            if (!PredictionVisibility.CanShow()) return;
+            if (!PredictionVisibility.CanShow() && !NativeRoomSpectate.IsLobby) return;
             if (_root == null) Build();
             _visible = !_visible;
             if (_root != null) { _root.SetActive(_visible); _root.transform.SetAsLastSibling(); }
         }
+        public void Open() { if (!_visible) Toggle(); }
         void Close() { _visible = false; if (_root != null) _root.SetActive(false); }
         void Build()
         {
@@ -43,6 +44,8 @@ namespace YxPrediction
             _theme.CreateButtonTopLeft(_root.transform, "create", "创建房间", 320, -62, 130, 38, NativeBtnStyle.Primary, Create, 20);
             _theme.CreateButtonTopLeft(_root.transform, "join", "加入房间", 464, -62, 130, 38, NativeBtnStyle.Primary, Join, 20);
             _theme.CreateButtonTopLeft(_root.transform, "leave", "离开房间", 608, -62, 130, 38, NativeBtnStyle.Secondary, Leave, 20);
+            _theme.CreateButtonTopLeft(_root.transform, "random", "随机加入", 752, -62, 142, 38, NativeBtnStyle.Primary, RandomJoin, 20);
+            _theme.CreateButtonTopLeft(_root.transform, "cancelMatch", "取消匹配", 908, -62, 142, 38, NativeBtnStyle.Secondary, CancelMatch, 20);
             _status = Label("status", "请在管理器 MOD 配置 online.server 与昵称，再创建或加入房间", 20, -112, 1090, 34, 20);
             Label("headers", "选手                         预测名次        投入积分       操作                                    持仓 / 资金池参考赔率", 20, -152, 1090, 30, 18);
             for (int i = 0; i < 8; i++) _rows[i] = new Row(this, i);
@@ -57,17 +60,26 @@ namespace YxPrediction
         static void Ignore(string value) { }
         void Create() { _mod.Online.Connect("", true); }
         void Join() { _mod.Online.Connect(_code.Text, false); }
+        void RandomJoin() { _mod.Online.RandomJoin(); }
+        void CancelMatch() { _mod.Online.CancelMatch(); }
         void Leave() { _mod.Online.Leave(); }
         public void Update()
         {
-            if (!PredictionVisibility.CanShow() || GameBridge.IsPlayingBattle()) { Close(); return; }
+            bool lobby = NativeRoomSpectate.IsLobby;
+            if (_lobbyLauncher != null) _lobbyLauncher.SetActive(lobby && !_visible);
+            if (lobby && _lobbyLauncher == null)
+            {
+                _lobbyLauncher = _ui.Panel("PredictionRoomLauncher", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-16f, 0f), new Vector2(174f, 48f), NativeTheme.LacquerBlack);
+                if (_lobbyLauncher != null) _theme.CreateButtonTopLeft(_lobbyLauncher.transform, "openRooms", "联机预测", 4f, -4f, 166f, 40f, NativeBtnStyle.Primary, Toggle, 22);
+            }
+            if ((!PredictionVisibility.CanShow() && !lobby) || (!lobby && GameBridge.IsPlayingBattle())) { Close(); return; }
             if (!_visible || _root == null) return;
             var rect = _root.transform as RectTransform; var parent = rect.parent as RectTransform;
             float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / 1140f, (parent.rect.height - 180f) / 650f)));
             rect.localScale = new Vector3(scale,scale,1);
             if (Time.unscaledTime < _next) return; _next = Time.unscaledTime + 0.2f;
             RoomState r = _mod.Online.State;
-            _status.text = r == null ? "未连接 · 服务地址和昵称在管理器配置 online 分组设置"
+            _status.text = r == null ? "未连接 · 大厅可随机加入已有投入的房间；同局观战可创建或输入房号加入"
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
                 + (r.Settled ? "已结算" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 分" + (r.Host ? " · 你是房主" : "");
             _message.text = _mod.Online.Message;

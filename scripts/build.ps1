@@ -1,4 +1,4 @@
-﻿param([switch]$CoreOnly, [switch]$Demo)
+param([switch]$CoreOnly, [switch]$Demo)
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $env:DOTNET_CLI_HOME = Join-Path $root '.cache/dotnet-home'
@@ -15,6 +15,7 @@ try {
     if (!(Test-Path -LiteralPath 'vendor/yixianpai-mod-sdk/sdk/net40/Yx.ModSdk.Core.dll')) { throw '先运行 scripts/restore-sdk.ps1。' }
     Invoke-Dotnet restore tests/PredictionChecks.csproj --configfile NuGet.Config
     Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-restore
+    Invoke-Dotnet run --project tests/GameEntryChecks/GameEntryChecks.csproj
     & (Join-Path $PSScriptRoot 'check-interpreter.ps1')
     if ($Demo) { Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --demo }
     if (!$CoreOnly -and !(Test-Path -LiteralPath 'refs/UnityEngine.UnityWebRequestModule.dll')) { throw '完整游戏版需要先运行 scripts/prepare-game.ps1。纯逻辑验证可用 -CoreOnly。' }

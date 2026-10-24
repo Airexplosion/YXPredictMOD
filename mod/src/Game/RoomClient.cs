@@ -20,9 +20,12 @@ namespace YxPrediction
         Dictionary<string, object> _sent, _pending;
         string _endpoint, _token, _code, _afterRegister;
         float _next;
+        RoomMatch _match;
+        bool _joiningMatch;
+        public bool Matching { get { return _match != null; } }
         public RoomState State { get; private set; }
         public string Message { get; private set; }
-        public bool Busy { get { return _request != null || _pending != null; } }
+        public bool Busy { get { return _request != null || _pending != null || _match != null; } }
         public RoomClient(PredictionMod mod, ModContext ctx)
         {
             _mod = mod; _ctx = ctx;
@@ -51,6 +54,7 @@ namespace YxPrediction
         public static Dictionary<string, object> Snapshot(MatchSnapshot s)
         {
             var d = new Dictionary<string, object>(); d["id"] = s.Id; d["round"] = s.Round;
+            d["gameRoomId"] = NativeRoomSpectate.CurrentRoomId();
             d["closedThrough"] = s.ResultsThroughRound; d["open"] = s.TradingOpen && s.LiveObserver; d["ended"] = s.Ended;
             var players = new List<object>(); var ranks = new List<object>();
             for (int i = 0; i < 8; i++)
@@ -74,11 +78,27 @@ namespace YxPrediction
         }
         void ConnectReady()
         {
+            if (_afterRegister == "random") { _afterRegister = null; var random = Body("random"); random["exclude"] = _code ?? ""; Send(random); return; }
             MatchSnapshot s = _mod.Snapshot;
             if (s == null || !s.LiveObserver) { Message = "观战已离开，请重新连接"; return; }
             var body = Body(_afterRegister); body["gameId"] = s.Id;
             if (_afterRegister == "create") body["snapshot"] = Snapshot(s);
             _afterRegister = null; Send(body);
+        }
+        public void RandomJoin()
+        {
+            if (Busy) { Message = "等待上一操作完成，或取消当前匹配"; return; }
+            if (!NativeRoomSpectate.IsLobby) { Message = "请先通过游戏返回大厅，再随机加入其他对局"; return; }
+            if (State != null && State.Host && !State.Settled) { Message = "你仍是未结束房间的房主，请先完成对局或明确离开原房间"; return; }
+            _afterRegister = "random";
+            if (string.IsNullOrEmpty(_token)) { var register = Body("register"); register["name"] = _name.Value; Send(register); }
+            else ConnectReady();
+        }
+        public void CancelMatch()
+        {
+            if (_match == null) return;
+            _match = null;
+            Message = "已取消匹配，不加入预测房间；原生观战确认框请按游戏自己的取消按钮关闭";
         }
         public void Leave()
         {
@@ -120,10 +140,21 @@ namespace YxPrediction
                 if (Busy) { Message = "服务器地址已变更；先恢复旧地址完成在途操作"; return; }
                 DestroyRequest(); _token = null; _code = null; State = null; ReadIdentity();
             }
+            if (_match != null)
+            {
+                if (_match.Expired(Time.unscaledTime)) { _match = null; Message = "未在90秒内进入目标实时观战，匹配已取消；没有扣除积分"; }
+                else if (_match.CanJoin(_mod.Snapshot, Time.unscaledTime))
+                {
+                    var join = Body("join"); join["code"] = _match.Code; join["gameId"] = _match.GameId;
+                    _match = null; _joiningMatch = true; Send(join);
+                }
+                else return;
+            }
             if (_request != null)
             {
                 if (!_request.isDone) return;
                 bool connect = false;
+                RoomMatch selected = null;
                 try
                 {
                     if (_request.isNetworkError || _request.responseCode >= 500) throw new InvalidOperationException("网络未确认");
@@ -132,6 +163,7 @@ namespace YxPrediction
                     var root = Json.ParseObject(text);
                     if (!Json.GetBool(root, "ok", false))
                     {
+                        _joiningMatch = false;
                         Message = Json.GetString(root, "error", "请求失败");
                         if (_pending != null) { _pending = null; SaveIdentity(); }
                     }
@@ -140,9 +172,11 @@ namespace YxPrediction
                         var data = root["data"] as Dictionary<string, object>;
                         if (Json.GetString(_sent, "action", "") == "register")
                         { _token = Json.GetString(data, "token", ""); SaveIdentity(); connect = true; }
+                        else if (Json.GetString(_sent, "action", "") == "random") selected = new RoomMatch(data, Time.unscaledTime);
                         else
                         {
                             State = RoomState.Read(data); _code = State.Code;
+                            if (_joiningMatch && Json.GetString(_sent, "action", "") == "join") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
                             SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : "资金池参考赔率随投入变化；最终赔率以封盘资金池为准";
                         }
@@ -150,6 +184,16 @@ namespace YxPrediction
                 }
                 catch { Message = _pending != null ? "网络未确认：暂停新操作并用同一编号重试，避免重复扣分" : "房间连接失败，稍后自动重连"; }
                 DestroyRequest(); _next = Time.unscaledTime + 1.5f;
+                if (selected != null)
+                {
+                    string error;
+                    if (NativeRoomSpectate.Request(selected.NativeRoomId, out error))
+                    {
+                        _match = selected;
+                        Message = "已匹配房间 " + selected.Code + "，请确认游戏原生观战提示；进入相同实时对局后自动加入，不会自动投入积分";
+                    }
+                    else Message = error;
+                }
                 if (connect) ConnectReady(); return;
             }
             if (Time.unscaledTime < _next) return;

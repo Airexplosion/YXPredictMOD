@@ -111,3 +111,44 @@ test('unchanged host heartbeat does not invalidate member quotes',()=>{
   x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(x.rooms.view(x.code,x.b).version,before);
   x.rooms.trade(x.code,x.b,{kind:'buy',player:0,rank:1,stake:10,operation:'stable-heartbeat',version:before});
 });
+test('random selects a funded fresh open room, discloses no credentials and does not join or spend',()=>{
+  const x=setup();const visitor=x.rooms.register('visitor').token;
+  assert.throws(()=>x.rooms.random(visitor));
+  x.snapshot.gameRoomId='native-room_123';x.rooms.sync(x.code,x.a,x.snapshot);
+  assert.throws(()=>x.rooms.random(visitor));x.trade(x.a,0,1,10);
+  const before=structuredClone(x.rooms.state);const selected=x.rooms.random(visitor);
+  assert.equal(selected.code,x.code);assert.equal(selected.gameRoomId,'native-room_123');
+  assert.deepEqual(Object.keys(selected).sort(),['code','gameId','gameRoomId','members','round']);
+  assert.deepEqual(x.rooms.state,before);assert.throws(()=>x.rooms.view(x.code,visitor));
+  assert.throws(()=>x.rooms.join(selected.code,visitor,'different-game'));
+  x.rooms.join(selected.code,visitor,selected.gameId);assert.equal(x.rooms.view(x.code,visitor).balance,1000);
+});
+test('random excludes stale, closed, settled, full and explicitly excluded rooms',()=>{
+  const x=setup();x.snapshot.gameRoomId='native-room';x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,10);
+  assert.throws(()=>x.rooms.random(x.b,x.code));x.advance(15001);assert.throws(()=>x.rooms.random(x.b));
+  x.rooms.sync(x.code,x.a,x.snapshot);x.snapshot.open=false;x.rooms.sync(x.code,x.a,x.snapshot);assert.throws(()=>x.rooms.random(x.b));
+  x.snapshot.open=true;x.rooms.sync(x.code,x.a,x.snapshot);
+  for(let i=2;i<32;i++){const key=x.rooms.register('guest'+i).token;x.rooms.join(x.code,key,x.snapshot.id);}
+  assert.throws(()=>x.rooms.random(x.b));x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.a,x.snapshot);assert.throws(()=>x.rooms.random(x.b));
+});
+test('random chooses across multiple eligible rooms and native room identity cannot be replaced',()=>{
+  const x=setup();x.snapshot.gameRoomId='native-one';x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,10);
+  const second={...x.snapshot,id:'game:2',gameRoomId:'native-two'};const room=x.rooms.create(x.b,second);
+  x.rooms.trade(room.code,x.b,{kind:'buy',player:0,rank:1,stake:10,operation:'random-second-pool',version:room.version});
+  assert.equal(x.rooms.random(x.a,x.code).code,room.code);assert.equal(x.rooms.random(x.a,room.code).code,x.code);
+  assert.throws(()=>x.rooms.sync(x.code,x.a,{...x.snapshot,gameRoomId:'another-native-room'}));
+  assert.equal(x.rooms.state.rooms[x.code].gameRoomId,'native-one');
+});
+test('random discovery endpoint requires bearer auth and cannot bypass same-game join',async()=>{
+  const x=setup();x.snapshot.gameRoomId='native-http-room';x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,10);
+  const key=x.rooms.register('random-http-visitor').token;const server=http.createServer(createHandler(x.rooms));
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/v1/room`;
+  try{
+    const request=(body,token=key)=>fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify(body)});
+    assert.equal((await request({action:'random'},'wrong')).status,401);
+    const selected=(await (await request({action:'random'})).json()).data;assert.equal(selected.gameRoomId,'native-http-room');
+    assert.equal((await request({action:'join',code:selected.code,gameId:'wrong-game'})).status,400);
+    assert.throws(()=>x.rooms.view(x.code,key));
+    assert.equal((await request({action:'join',code:selected.code,gameId:selected.gameId})).status,200);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});

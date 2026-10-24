@@ -28,6 +28,7 @@ export function createHandler(rooms) {
         case 'register': result = rooms.register(body.name); break;
         case 'create': result = rooms.create(key, body.snapshot); break;
         case 'join': result = rooms.join(body.code, key, body.gameId); break;
+        case 'random': result = rooms.random(key, body.exclude ?? ''); break;
         case 'view': result = rooms.view(body.code, key); break;
         case 'sync': result = rooms.sync(body.code, key, body.snapshot); break;
         case 'trade': result = rooms.trade(body.code, key, body); break;

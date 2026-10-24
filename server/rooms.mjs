@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -39,6 +39,7 @@ export class Rooms {
       && s.players.every(x => x && typeof x.uid === 'string' && x.uid.length > 0 && x.uid.length <= 128
       && typeof x.name === 'string' && x.name.length <= 128), '需要完整八人名单');
     requireThat(Array.isArray(s.ranks) && s.ranks.length === 8 && s.ranks.every(x => integer(x, 0, 8)), '名次无效');
+    requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
     return s;
   }
   create(key, snapshot) {
@@ -62,10 +63,22 @@ export class Rooms {
       return this.view(code, key);
     });
   }
+  random(key, excludedCode = '') {
+    this.account(key);
+    requireThat(typeof excludedCode === 'string' && (excludedCode === '' || /^[0-9]{6}$/.test(excludedCode)), '排除房间号无效');
+    const candidates = Object.values(this.state.rooms).filter(r => r.code !== excludedCode && this.isOpen(r)
+      && !r.settled && r.members.length < 32 && typeof r.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(r.gameRoomId)
+      && Object.values(r.positions).some(positions => positions.some(p => p && p.stake > 0)));
+    requireThat(candidates.length > 0, '暂无房主在线、已有人投入且可加入的开放房间', 404);
+    const r = candidates[randomInt(candidates.length)];
+    // Selection grants no membership and spends nothing. Join verifies the actual observed game later.
+    return { code: r.code, gameId: r.gameId, gameRoomId: r.gameRoomId, round: r.round, members: r.members.length };
+  }
   apply(r, s) {
     const before = JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks]);
     requireThat(r.gameId === s.id && r.players.every(p => s.players.some(q => q.uid === p.uid)), '房间名单或对局不一致');
     requireThat(s.round >= r.round, '拒绝旧回合状态');
+    if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
