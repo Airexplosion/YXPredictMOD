@@ -12,6 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="src\**\*.cs" />
+    <Compile Include="../sdk-extensions/*.cs" Condition="'$(YxHasGameRefs)' == 'true'" LinkBase="Sdk" />
+    <Reference Include="System" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.Core.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
@@ -48,6 +50,7 @@
   <Target Name="RequireSdk" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="!Exists('$(YxSdkDir)net40\Yx.ModSdk.Core.dll')" Text="先运行 scripts/restore-sdk.ps1 恢复固定版本 SDK。" />
     <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.UnityWebRequestModule.dll')" Text="需要 UnityWebRequest 引用，请运行 scripts/prepare-game.ps1。" />
+    <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)LucidSight.Runtime.ColyseusSDK.dll')" Text="需要当前游戏ColyseusSDK引用，请运行 scripts/prepare-game.ps1。" />
     <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.ImageConversionModule.dll')" Text="需要 ImageConversion 引用，请运行 scripts/prepare-game.ps1。" />
   </Target>
 </Project>

@@ -1,3 +1,5 @@
+> 开发候选：多人预测房间、旧版原生UI组件、Elo分帧解析与加载提示。此分支源码版本0.7.2；正式Release、更新目录与历史包仍由原项目维护，合并本PR不会自动发布候选包。新增行为/规则/构建与验证范围见 [候选实现说明](docs/multiplayer-prediction.md)。
+
 # 天机赌马 · 弈仙牌 MOD
 
 作者：@TeraE / @Airexplosion。整合「田忌赛马」MOD，特别鸣谢原作者 @弈黑白B&W；感谢 @hiddensquid 提供的 Elo 榜。

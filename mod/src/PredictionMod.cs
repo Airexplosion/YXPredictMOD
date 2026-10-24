@@ -13,12 +13,18 @@ namespace YxPrediction
         public string Message { get; private set; }
         public string QueryStatus { get; private set; }
         public string PreparationError { get; private set; }
+        public readonly RankSelection Drafts = new RankSelection();
         string _lastPreparationError;
         ConfigEntry<bool> _enabled;
 #if YX_GAME
+        public RoomClient Online { get; private set; }
+        public RoomPanel OnlinePanel { get; private set; }
         GameBridge _bridge;
-        PredictionPanel _panel;
-        PredictionLauncher _launcher;
+        NativeTheme _theme;
+        PanelLayout _layout;
+        CharacterBetBar _betBar;
+        PredictionOverviewEntry _overviewEntry;
+        TalentOrbit _talents;
         public TianJiFeature Horses { get; private set; }
 #endif
 
@@ -31,27 +37,40 @@ namespace YxPrediction
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
             else { Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value))); Save(); }
-            Message = "进入八人观战后自动准备赔率；点击「天机赌马」打开面板";
+            Message = "进入八人观战后自动准备赔率；可在角色下方手牌区或点击「预测总览」下注";
 #if YX_GAME
+            _theme = new NativeTheme(ctx);
+            Online = new RoomClient(this, ctx);
+            OnlinePanel = new RoomPanel(this, ctx, _theme);
+            var savedWin = ctx.Data.Get<Dictionary<string, object>>(PanelLayout.WindowSaveKey, null);
+            var savedBar = ctx.Data.Get<Dictionary<string, object>>(PanelLayout.BetBarSaveKey, null);
+            _layout = new PanelLayout(savedWin, savedBar);
+
             _bridge = new GameBridge(this, ctx);
             Horses = new TianJiFeature(this, ctx, _bridge);
-            _panel = new PredictionPanel(this, ctx);
-            _launcher = new PredictionLauncher(ctx, _panel);
+            _betBar = new CharacterBetBar(this, ctx, _theme);
+            _overviewEntry = new PredictionOverviewEntry(this, ctx, _theme);
+            _talents = new TalentOrbit(ctx);
+
             ctx.Events.OnNetIn<Proto.GameStatus>(_bridge.OnStatus);
             ctx.Events.OnBattleEnded(_bridge.OnBattleEnded);
             ctx.Events.OnNetIn<Proto.BattleResult>(_bridge.OnBattleResult);
             ctx.Events.OnNetIn<Proto.AllBattleResults>(_bridge.OnAllBattleResults);
 #endif
-            ctx.Log.Info("天机赌马已加载：本地积分模式，认证时长接口未接入");
+            ctx.Log.Info("观战预测已加载：本地积分模式，原生UI融合，认证时长接口未接入");
         }
 
         public override void OnUpdate()
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
+            _theme.RefreshSource();
+            if (Online != null) Online.Update();
+            if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();
-            if (_launcher != null) _launcher.Update();
-            if (_panel != null) _panel.Update();
+            if (_betBar != null) _betBar.Update();
+            if (_overviewEntry != null) _overviewEntry.Update();
+            if (_talents != null) _talents.Update();
 #endif
         }
 
@@ -59,8 +78,11 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Destroy();
-            if (_launcher != null) _launcher.Destroy();
-            if (_panel != null) _panel.Destroy();
+            if (Online != null) Online.Destroy();
+            if (OnlinePanel != null) OnlinePanel.Destroy();
+            if (_betBar != null) _betBar.Destroy();
+            if (_overviewEntry != null) _overviewEntry.Destroy();
+            if (_talents != null) _talents.Destroy();
             if (Horses != null) Horses.Destroy();
 #endif
         }
@@ -83,6 +105,7 @@ namespace YxPrediction
             try
             {
                 Market m = Book.Observe(snapshot, ratings);
+                Drafts.Observe(m);
                 if (revision != Book.Revision) Save();
                 if (m == null) return;
                 PreparationError = null;

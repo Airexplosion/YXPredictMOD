@@ -27,10 +27,11 @@ namespace YxPrediction
         public readonly HorseRoster Roster = new HorseRoster();
         BattleManager _manager;
         FieldInfo _battlePanelField;
+        static readonly FieldInfo ReadyField = typeof(BattlePanel).GetField("m_ReadyLayer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         float _nextUpdate;
         string _lastError;
         readonly Dictionary<string, FieldInfo> _scoreFields = new Dictionary<string, FieldInfo>();
-        public bool Enabled { get { return _enabled.Value; } }
+        public bool Enabled { get { return _enabled.Value; } set { _enabled.Value = value; _nextUpdate = 0; } }
 
         sealed class Score
         {
@@ -117,20 +118,50 @@ namespace YxPrediction
         }
         public HorseMember Find(string uid)
         { return Enabled && _mod.Snapshot != null && Roster.MatchId == _mod.Snapshot.Id ? Roster.Find(uid) : null; }
+        public Sprite GetSprite(string title) { return _assets.Get(title, _ctx); }
+
+        public HorseMember FindMember(string uid)
+        { return _mod.Snapshot != null && Roster.MatchId == _mod.Snapshot.Id ? Roster.Find(uid) : null; }
+
+        public string RankScoreTag(string uid)
+        {
+            if (_scores != null && _scoreMatchId == Roster.MatchId)
+            {
+                for (int i = 0; i < _scores.Length; i++)
+                {
+                    if (_scores[i].Uid == uid && _scores[i].Value >= 0)
+                    {
+                        return (_scores[i].DaoXin ? "道心分 " : "天梯分 ") + PredictionMod.N(_scores[i].Value);
+                    }
+                }
+            }
+            return "";
+        }
+
         public string Describe(string uid)
         {
             HorseMember member = Find(uid);
+            return FormatMember(member, uid);
+        }
+
+        public string DescribeFull(string uid)
+        {
+            HorseMember member = FindMember(uid);
+            return FormatMember(member, uid);
+        }
+
+        string FormatMember(HorseMember member, string uid)
+        {
             if (member == null) return "";
             if (member.IsAi) return member.Title + " · " + member.Explanation;
             if (member.Profile == null || !member.Profile.Rating.Found) return "暂无公开Elo，不参与称号评定";
             string text = member.Caption + " · " + member.Explanation;
             if (member.Profile.DaoXinGames >= 0) text += " · 道心对局 " + PredictionMod.N(member.Profile.DaoXinGames) + "场";
-            if (_scores != null && _scoreMatchId == Roster.MatchId)
-                for (int i = 0; i < _scores.Length; i++)
-                    if (_scores[i].Uid == uid && _scores[i].Value >= 0)
-                        text += (_scores[i].DaoXin ? " · 道心分 " : " · 天梯分 ") + PredictionMod.N(_scores[i].Value);
+            string tag = RankScoreTag(uid);
+            if (!string.IsNullOrEmpty(tag)) text += " · " + tag;
             return text;
         }
+
         public void Update()
         {
             try
@@ -207,7 +238,7 @@ namespace YxPrediction
                 _battlePanelField = manager.GetType().GetField("m_BattlePanel", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             }
             var panel = _battlePanelField == null ? null : _battlePanelField.GetValue(manager) as BattlePanel;
-            var layer = panel == null ? null : panel.readyLayer;
+            var layer = panel == null || ReadyField == null ? null : ReadyField.GetValue(panel) as ReadyLayer;
             var items = layer == null ? null : layer.battlePlayerInfoItems;
             if (items == null) { ClearPlates(); return; }
             for (int i = _plates.Count - 1; i >= 0; i--)
@@ -291,7 +322,7 @@ namespace YxPrediction
                 : plate.Label.rectTransform.rect;
             plate.HoverArea = HorsePlateLayout.HoverBounds(plate.Avatar.rectTransform, plate.Name.rectTransform, plate.Label.rectTransform, captionGlyph);
         }
-        static Color ColorOf(string title)
+        public static Color ColorOf(string title)
         {
             switch (title)
             {

@@ -14,6 +14,7 @@ internal static partial class Program
 
     static int Main(string[] args)
     {
+        if (args.Length > 1 && args[0] == "--rule-parity") { ExportRuleParity(args[1]); return 0; }
         if (args.Length > 0 && args[0] == "--demo") { Demo(); return 0; }
         Check("equal Elo gives uniform rank probabilities", delegate
         {
@@ -262,6 +263,7 @@ internal static partial class Program
         RankSelectionChecks();
         GameRankChecks();
         HorseChecks();
+        PanelLayoutChecks();
         Console.WriteLine("Passed: " + _passed + "; Failed: " + _failed);
         return _failed == 0 ? 0 : 1;
     }

@@ -15,11 +15,23 @@ namespace YxPrediction
         readonly List<string> _order = new List<string>();
         UnityWebRequest _request;
         string _suffix;
+        EloShardScan _scan;
+        string[] _scanTargets;
+        readonly List<string> _covered=new List<string>();
+        readonly List<string> _wanted=new List<string>();
+        readonly Dictionary<string,HorseProfile> _profiles=new Dictionary<string,HorseProfile>();
         public string Summary { get; private set; }
         public EloClient(ModContext ctx) { _ctx = ctx; }
 
         public Rating[] Get(Player[] players)
         {
+            for(int i=0;i<players.Length;i++)
+                if(EloData.IsPublicUid(players[i].Uid)&&!_wanted.Contains(players[i].Uid))
+                {
+                    _wanted.Add(players[i].Uid);
+                    if(_wanted.Count>256){string oldest=_wanted[0];_wanted.RemoveAt(0);_profiles.Remove(oldest);_covered.Remove(oldest);}
+                }
+            for(int i=0;i<players.Length;i++) if(EloData.IsPublicUid(players[i].Uid)&&!_covered.Contains(players[i].Uid)) { Dictionary<string,object> existing;string key=players[i].Uid.Substring(22);if(_shards.TryGetValue(key,out existing)&&existing!=null)_shards.Remove(key); }
             var ratings = new Rating[8];
             bool waiting = false;
             int found = 0, missing = 0, failed = 0, invalid = 0, ai = 0, completed = 0;
@@ -29,18 +41,22 @@ namespace YxPrediction
                 if (!EloData.IsPublicUid(players[i].Uid)) { invalid++; completed++; ratings[i] = Rating.Unknown(); continue; }
                 string uid = players[i].Uid;
                 string suffix = uid.Substring(uid.Length - 2);
+                HorseProfile cached;
+                if(_profiles.TryGetValue(uid,out cached)){completed++;ratings[i]=cached.Rating;if(cached.Rating.Found)found++;else missing++;continue;}
                 Dictionary<string, object> shard;
                 if (!_shards.TryGetValue(suffix, out shard))
                 {
                     waiting = true;
-                    if (_request == null) Begin(uid, suffix);
+                    if (_request == null && _scan == null) Begin(uid, suffix);
                     continue;
                 }
                 completed++;
                 if (shard == null) { failed++; ratings[i] = Rating.Unknown(); continue; }
                 try
                 {
-                    ratings[i] = EloData.ReadPlayer(shard, uid);
+                    HorseProfile profile;
+                    if(!_profiles.TryGetValue(uid,out profile)){profile=HorseProfile.Read(shard,uid);_profiles[uid]=profile;}
+                    ratings[i] = profile.Rating;
                     if (ratings[i].Found) found++; else missing++;
                 }
                 catch (Exception ex)
@@ -60,12 +76,10 @@ namespace YxPrediction
             var profiles = new HorseProfile[8];
             for (int i = 0; i < 8; i++)
             {
-                Dictionary<string, object> shard;
+                HorseProfile cached;
                 string uid = players[i].Uid;
-                if (players[i].IsAi || !EloData.IsPublicUid(uid) || !_shards.TryGetValue(uid.Substring(uid.Length - 2), out shard) || shard == null)
-                { profiles[i] = new HorseProfile(Rating.Unknown()); continue; }
-                try { profiles[i] = HorseProfile.Read(shard, uid); }
-                catch { profiles[i] = new HorseProfile(Rating.Unknown()); }
+                if(!players[i].IsAi && _profiles.TryGetValue(uid,out cached)) profiles[i]=cached;
+                else profiles[i]=new HorseProfile(Rating.Unknown());
             }
             return profiles;
         }
@@ -89,25 +103,33 @@ namespace YxPrediction
 
         public void Update()
         {
+            if(_scan!=null)
+            {
+                var timer=System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    do {_scan.Step(256);} while(!_scan.Done && timer.ElapsedMilliseconds<1);
+                    if(!_scan.Done)return;
+                    Remember(_suffix,_scan.Rows);for(int i=0;i<_scanTargets.Length;i++)if(!_covered.Contains(_scanTargets[i]))_covered.Add(_scanTargets[i]);_scan=null;
+                    if(timer.ElapsedMilliseconds>=8)_ctx.Log.Warn("Elo选定资料解析耗时 "+PredictionMod.N(timer.ElapsedMilliseconds)+"ms");
+                }
+                catch(Exception ex){_ctx.Log.Warn("Elo分帧解析失败："+ex.Message);Remember(_suffix,null);_scan=null;}
+                return;
+            }
             if (_request == null || !_request.isDone) return;
-            Dictionary<string, object> data = null;
             try
             {
-                if (_request.isNetworkError || _request.isHttpError) throw new InvalidOperationException(_request.error);
-                string json = _request.downloadHandler.text;
-                if (json == null || json.Length > 2097152) throw new FormatException("响应体超出限制");
-                data = Json.ParseObject(json);
-                if (data == null) throw new FormatException("响应不是JSON对象");
+                if(_request.isNetworkError||_request.isHttpError)throw new InvalidOperationException(_request.error);
+                string text=_request.downloadHandler.text;
+                var targets=new List<string>();for(int i=0;i<_wanted.Count;i++)if(_wanted[i].Substring(22)==_suffix)targets.Add(_wanted[i]);_scanTargets=targets.ToArray();_scan=new EloShardScan(text,_scanTargets);
             }
-            catch (Exception ex) { _ctx.Log.Warn("Elo查询失败，本次使用标注的3000基准：" + ex.Message); }
-            Remember(_suffix, data);
-            _request.Dispose();
-            _request = null;
+            catch(Exception ex){_ctx.Log.Warn("Elo查询失败："+ex.Message);Remember(_suffix,null);}
+            _request.Dispose();_request=null;
         }
 
         void Remember(string suffix, Dictionary<string, object> data)
         {
-            if (!_shards.ContainsKey(suffix)) _order.Add(suffix);
+            if (!_order.Contains(suffix)) _order.Add(suffix);
             _shards[suffix] = data;
             if (_order.Count > 16)
             {
@@ -118,6 +140,7 @@ namespace YxPrediction
 
         public void Destroy()
         {
+            _scan = null;
             if (_request == null) return;
             _request.Abort(); _request.Dispose(); _request = null;
         }

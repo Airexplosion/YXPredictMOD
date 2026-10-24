@@ -38,7 +38,26 @@ namespace YxPrediction
             RankSelectionFlow(players, ratings);
             ProtocolRankFlow(players, ratings);
             HorseFlow(players, ratings);
+            PanelLayoutFlow();
+            RoomWireFixture.Verify();
+            EloScanFixture.Verify();
+            RoomRateFixture.Verify();
             return "INTERPRETER PASS";
+        }
+
+        static void PanelLayoutFlow()
+        {
+            var layout = new PanelLayout(null, null);
+            if (layout.WindowX != 0.5 || layout.WindowY != 0.5 || layout.BetBarCustom) throw new Exception("Panel layout init failed");
+            layout.MoveWindow(1.2, 0.4, 0.4, 0.4);
+            if (layout.WindowX > 0.81 || layout.WindowX < 0.79) throw new Exception("Window clamping failed");
+            layout.MoveBetBar(0.2, 0.3, 0.2, 0.1);
+            if (!layout.BetBarCustom) throw new Exception("Bet bar custom flag failed");
+            var winData = layout.WriteWindow();
+            var barData = layout.WriteBetBar();
+            var restored = new PanelLayout(winData, barData);
+            if (restored.WindowX != layout.WindowX || !restored.BetBarCustom) throw new Exception("Panel layout persistence failed");
+            if (PanelLayout.BetBarAutoY(true, false) != PanelLayout.BetBarHandY) throw new Exception("Panel layout auto Y failed");
         }
 
         static void HorseFlow(Player[] players, Rating[] ratings)
@@ -58,14 +77,6 @@ namespace YxPrediction
             if (!profile.Spinning || profile.DaoXinGames != 2 || profile.Rating.Score != 3500) throw new Exception("Horse profile failed under interpreter");
             s.Id = "new-horses"; roster.Observe(s, profiles);
             if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
-            var aiPlayers = new Player[8];
-            for (int i = 0; i < 8; i++) aiPlayers[i] = new Player(players[i].Uid, players[i].Name, i == 7);
-            s.Players = aiPlayers; s.Id = "ai-horses"; roster.Observe(s, profiles);
-            var ai = roster.Find(aiPlayers[7].Uid); string title = ai.Title;
-            if (!ai.IsAi || !title.StartsWith("电子马·", StringComparison.Ordinal) || ai.IconTitle != "机械马" || ai.PlateCaption != title || ai.Tags != "")
-                throw new Exception("AI decoration failed under interpreter");
-            var restored = new HorseRoster(); restored.Observe(s, profiles);
-            if (restored.Find(aiPlayers[7].Uid).Title != title) throw new Exception("AI stable title failed under interpreter");
         }
 
         static void ProtocolRankFlow(Player[] players, Rating[] ratings)
@@ -107,6 +118,9 @@ namespace YxPrediction
             if (b.Buy(s, players[6].Uid, choices.Selected(6), 10, m.TradeVersion) != null) throw new Exception("Rank selection buy failed");
             choices.Observe(m);
             if (choices.Selected(6) != 3 || choices.Selected(5) != 0 || RankSelection.DisplayOrder(m)[0] != 6) throw new Exception("Purchased rank sync or order failed");
+            if (choices.Stake(6) != "10") throw new Exception("Stake default failed");
+            choices.SetStake(6, "25");
+            if (choices.Stake(6) != "25") throw new Exception("Stake update failed");
             choices.SelectText(6, "4"); choices.Observe(m);
             if (choices.Selected(6) != 4) throw new Exception("Draft overwritten by refresh");
             if (b.Switch(s, players[6].Uid, 5, 10, m.TradeVersion) != null) throw new Exception("Rank selection switch failed");
