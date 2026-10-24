@@ -256,6 +256,7 @@ internal static partial class Program
                 s.Ended = true; s.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }; mod.AcceptSnapshot(s, null); Equal(mod.Book.Balance, 1051L);
             }
         });
+        MarketCapacityChecks();
         TradingChecks();
         LifeChecks();
         LifeShareChecks();

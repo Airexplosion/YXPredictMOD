@@ -166,8 +166,9 @@ namespace YxPrediction
             if (Time.unscaledTime < _next) return; _next = Time.unscaledTime + 0.2f;
             RoomState r = CurrentView();
             bool loading=r==null;
-            if(_loading!=null){_loading.SetActive(loading&&!_minimized);if(loading){_loading.transform.SetAsLastSibling();_loadingLabel.text="数据加载中…"+((char)10).ToString()+(_mod.PreparationError??_mod.QueryStatus??_mod.Message??"等待八人观战数据");}}
-            _status.text = r == null ? "Elo / 对局数据加载中…"
+            string blocked=_mod.PreparationError??_mod.PreparationBlockedReason;
+            if(_loading!=null){_loading.SetActive(loading&&!_minimized);if(loading){_loading.transform.SetAsLastSibling();_loadingLabel.text=(blocked==null?"数据加载中…":"暂时无法开盘")+((char)10).ToString()+(blocked??_mod.QueryStatus??_mod.Message??"等待八人观战数据");}}
+            _status.text = r == null ? (blocked==null?"Elo / 对局数据加载中…":"开盘受阻，请查看下方原因")
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
                 + (r.Settled ? "已结算" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 分" + (r.Host ? " · 你是房主" : "");
             if (HasCurrentRoom())
@@ -177,9 +178,9 @@ namespace YxPrediction
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
                 _message.text = _feedback ?? _mod.Online.JoinNotice ?? (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members);
             }
-            else _message.text = _feedback ?? _mod.PreparationError ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
+            else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
-            if(_showTrend && _mod.Current==null){_trendName.text="数据加载中…";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");_swapChart.ShowWaiting("加载中…");}
+            if(_showTrend && _mod.Current==null){_trendName.text=blocked==null?"数据加载中…":"开盘受阻";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");_swapChart.ShowWaiting("加载中…");}
             if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);_swapChart.Refresh(_mod.Current,_trendPlayer);}
         }
         public void SetFeedback(string message) { _feedback = message; }

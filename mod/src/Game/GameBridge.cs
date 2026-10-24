@@ -278,7 +278,7 @@ namespace YxPrediction
                 _mod.SetQueryStatus(_ratingMarketId == snapshot.Id ? _marketSummary : "本局沿用已保存的Elo快照；动态盘口按公开局势更新报价");
             }
             _mod.AcceptSnapshot(snapshot, ratings);
-            if (_mod.Current == null && _mod.PreparationError == null) _mod.SetStatus(ratings == null ? _elo.Summary : "未完成盘口已达12局，须等待已有对局结算");
+            if (_mod.Current == null && _mod.PreparationError == null && _mod.PreparationBlockedReason == null) _mod.SetStatus(ratings == null ? _elo.Summary : "盘口尚未准备，请等待对局状态同步");
         }
 
         static MatchSnapshot Read(Proto.GameStatus status, out string reason)
