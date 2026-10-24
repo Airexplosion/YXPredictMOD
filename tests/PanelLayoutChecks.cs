@@ -5,6 +5,21 @@ internal static partial class Program
 {
     static void PanelLayoutChecks()
     {
+        Check("real Node room response decodes shared pools and personal position", RoomWireFixture.Verify);
+
+        Check("enlarged overview fits common canvases with top and bottom clearance", delegate
+        {
+            double[] widths = { 1920, 1600, 1280, 1024 };
+            double[] heights = { 1080, 900, 720, 768 };
+            for (int i = 0; i < widths.Length; i++)
+            {
+                double scale = PanelLayout.WindowScale(widths[i], heights[i], false);
+                True(PanelLayout.WindowWidth * scale <= widths[i] - 31);
+                True(PanelLayout.WindowHeight * scale <= heights[i] - 179);
+            }
+            Near(PanelLayout.WindowScale(1920, 1080, false), 1.25);
+        });
+
         Check("panel layout defaults to center and smart auto docking", delegate
         {
             var layout = new PanelLayout(null, null);

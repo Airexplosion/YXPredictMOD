@@ -146,6 +146,7 @@ namespace YxPrediction
             string focusUid = FocusSelection.Uid(_mod.Snapshot);
             string marketId = _mod.Snapshot == null ? null : _mod.Snapshot.Id;
 
+            FitWindow();
             HandleBannerDrag();
 
             if (Time.unscaledTime >= _nextRefresh || focusUid != _lastFocusUid || marketId != _lastMarketId)
@@ -200,7 +201,7 @@ namespace YxPrediction
                 NativeTheme.SetTopLeft(titleRect, 24f, -10f, 210f, 34f);
                 _titleLabel = titleGo.GetComponent<TextMeshProUGUI>();
                 _theme.ApplyTextStyle(_titleLabel, 22, true, TextAlignmentOptions.Left);
-                _titleLabel.text = "弈仙预测总览";
+                _titleLabel.text = "单机预测总览";
                 _titleLabel.color = NativeTheme.AntiqueGold;
                 _titleLabel.raycastTarget = false;
 
@@ -208,10 +209,11 @@ namespace YxPrediction
                 var statusGo = new GameObject("StatusLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 statusGo.transform.SetParent(banner, false);
                 var statusRect = statusGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(statusRect, 240f, -13f, 250f, 28f);
+                NativeTheme.SetTopLeft(statusRect, 240f, -4f, 250f, 46f);
                 _statusLabel = statusGo.GetComponent<TextMeshProUGUI>();
                 _theme.ApplyTextStyle(_statusLabel, 15, false, TextAlignmentOptions.Left);
                 _statusLabel.color = NativeTheme.TextParchment;
+                _statusLabel.enableWordWrapping = true;
                 _statusLabel.raycastTarget = false;
 
                 // 顶栏功能按钮（清晰字号与充裕间距，杜绝挤压）
@@ -222,6 +224,8 @@ namespace YxPrediction
                 _btnPeek = _theme.CreateButtonTopLeft(banner, "BtnPeek", "透视", 864f, -11f, 54f, 32f, NativeBtnStyle.Secondary, OnPeekClicked, 14);
                 _btnMinimize = _theme.CreateButtonTopLeft(banner, "BtnMinimize", "折起", 924f, -11f, 54f, 32f, NativeBtnStyle.Secondary, OnMinimizeClicked, 14);
                 _btnClose = _theme.CreateButtonTopLeft(banner, "BtnClose", "×", 984f, -11f, 44f, 32f, NativeBtnStyle.Close, Close, 20);
+
+                _theme.CreateButtonTopLeft(banner, "BtnOnline", "联机", 1036f, -11f, 80f, 32f, NativeBtnStyle.Primary, OpenOnline, 18);
 
                 // 历史前后翻页
                 _btnPrevHistory = _theme.CreateButtonTopLeft(banner, "BtnPrevHist", "◀ 上局", 340f, -12f, 68f, 28f, NativeBtnStyle.Pill, OnPrevHistory, 13);
@@ -265,13 +269,15 @@ namespace YxPrediction
                 var footerGo = new GameObject("FooterLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 footerGo.transform.SetParent(_bodyContainer.transform, false);
                 var footerRect = footerGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(footerRect, 10f, -(PanelLayout.WindowHeight - 90f), PanelLayout.WindowWidth - 44f, 24f);
+                NativeTheme.SetTopLeft(footerRect, 10f, -(PanelLayout.WindowHeight - 110f), PanelLayout.WindowWidth - 44f, 44f);
                 _footerLabel = footerGo.GetComponent<TextMeshProUGUI>();
                 _theme.ApplyTextStyle(_footerLabel, 14, false, TextAlignmentOptions.Center);
                 _footerLabel.color = NativeTheme.TextParchment;
+                _footerLabel.enableWordWrapping = true;
                 _footerLabel.raycastTarget = false;
 
                 _trendTabContainer.SetActive(false);
+                FitWindow();
             }
             catch (Exception ex)
             {
@@ -390,6 +396,18 @@ namespace YxPrediction
             _lifeShareChart = new LifeChart(_ui, parent, TrendChartData.ShareMetric, 550f, -96f, 520f, 380f, _theme);
         }
 
+        void FitWindow()
+        {
+            if (_parent == null || _rect == null) return;
+            Rect bounds = _parent.rect;
+            float height = _layout.IsMinimized ? PanelLayout.MinimizedHeight : PanelLayout.WindowHeight;
+            float scale = (float)PanelLayout.WindowScale(bounds.width, bounds.height, _layout.IsMinimized);
+            _rect.localScale = new Vector3(scale, scale, 1f);
+            _layout.MoveWindow(_layout.WindowX, _layout.WindowY, PanelLayout.WindowWidth * scale / bounds.width, height * scale / bounds.height);
+            _rect.anchorMin = _rect.anchorMax = new Vector2((float)_layout.WindowX, (float)_layout.WindowY);
+            _rect.anchoredPosition = Vector2.zero;
+        }
+
         void HandleBannerDrag()
         {
             if (_enableAfterFrame >= 0 && Time.frameCount > _enableAfterFrame)
@@ -430,7 +448,7 @@ namespace YxPrediction
                 {
                     double newX = _startX + (local.x - _downLocal.x) / bounds.width;
                     double newY = _startY + (local.y - _downLocal.y) / bounds.height;
-                    _layout.MoveWindow(newX, newY, bounds.width, bounds.height);
+                    _layout.MoveWindow(newX, newY, _rect.rect.width * _rect.localScale.x / bounds.width, _rect.rect.height * _rect.localScale.y / bounds.height);
                     if (_rect != null)
                     {
                         var anchor = new Vector2((float)_layout.WindowX, (float)_layout.WindowY);
@@ -644,13 +662,17 @@ namespace YxPrediction
             }
         }
 
+        void OpenOnline() { Close(); _mod.OnlinePanel.Toggle(); }
+
         void OnPeekClicked()
         {
             _layout.IsPeek = !_layout.IsPeek;
             if (_canvasGroup != null)
             {
-                _canvasGroup.alpha = _layout.IsPeek ? PanelLayout.PeekAlpha : 1f;
-                _canvasGroup.blocksRaycasts = !_layout.IsPeek;
+                _bodyCanvasGroup.alpha = _layout.IsPeek ? PanelLayout.PeekAlpha : 1f;
+                _bodyCanvasGroup.blocksRaycasts = !_layout.IsPeek;
+                _root.GetComponent<Image>().raycastTarget = !_layout.IsPeek;
+                _root.GetComponent<Image>().enabled = !_layout.IsPeek;
             }
             _btnPeek.SetText(_layout.IsPeek ? "退出透视" : "透视");
         }

@@ -76,11 +76,11 @@ namespace YxPrediction
             for (int i = 0; i < seed.Length; i++) value = (value * 31 + seed[i]) % 1000003;
             switch (value % 5)
             {
-                case 0: return "傀儡·地狱";
-                case 1: return "傀儡·极难";
-                case 2: return "傀儡·困难";
-                case 3: return "傀儡·中等";
-                default: return "傀儡·简单";
+                case 0: return "电子马·地狱";
+                case 1: return "电子马·极难";
+                case 2: return "电子马·困难";
+                case 3: return "电子马·中等";
+                default: return "电子马·简单";
             }
         }
         public string Title { get { return IsAi ? _aiTitle : (DarkHorse ? "黑马" : BaseTitle); } }

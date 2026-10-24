@@ -4,23 +4,24 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using Yx.ModSdk.Unity;
 
 namespace YxPrediction
 {
     /// <summary>
-    /// 将手牌区下方的仙命天赋圆标重构为围绕左侧人物角色头像的环绕法宝阵列（弧形排列）。
+    /// 将仙命图标放到左下人物旁的紧凑双列，避免误以顶栏头像为布局中心。
     /// 清空手牌中央底部区域，使下注条与手牌互不阻挡。
     /// </summary>
     public static class TalentOrbLayout
     {
-        // 围绕头像右侧弧形参数（以屏幕左下角或头像中心为参照）
-        const float CenterX = 165f;
-        const float CenterY = 165f;
-        const float OrbitRadius = 138f;
-        const float StartAngleDeg = 75f;   // 顶部偏右
-        const float EndAngleDeg = -25f;    // 底部偏右
-        const float DegToRad = 0.0174532925f;
-
+        sealed class Saved
+        {
+            public BattleTalentIconItem Item;
+            public Transform Parent;
+            public Vector3 Position, BasePosition, Applied;
+            public int Talent;
+        }
+        static readonly List<Saved> _saved = new List<Saved>();
         static float _nextUpdate;
 
         static FieldInfo _oppTalentsField;
@@ -30,6 +31,7 @@ namespace YxPrediction
 
         public static void Update()
         {
+            if (!PredictionVisibility.CanShow() || GameBridge.IsPlayingBattle()) { Restore(); return; }
             if (Time.unscaledTime < _nextUpdate) return;
             _nextUpdate = Time.unscaledTime + 0.15f;
 
@@ -68,27 +70,7 @@ namespace YxPrediction
             var talents = _oppTalentsField.GetValue(opp) as IList;
             if (talents == null || talents.Count == 0) return;
 
-            Vector2 center = new Vector2(CenterX, CenterY);
-            if (opp.bpInfoItem != null && opp.bpInfoItem.transform != null)
-            {
-                var rt = opp.bpInfoItem.transform as RectTransform;
-                if (rt != null && rt.parent != null)
-                {
-                    Vector3 worldPos = rt.TransformPoint(Vector3.zero);
-                    for (int i = 0; i < talents.Count; i++)
-                    {
-                        var item = talents[i] as BattleTalentIconItem;
-                        if (item != null && item.transform != null && item.transform.parent != null)
-                        {
-                            center = item.transform.parent.InverseTransformPoint(worldPos);
-                            center.y += 20f;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            ApplyArcLayout(talents, center);
+            ApplyCompactLayout(talents);
         }
 
         static void RearrangeSelfTalents(BattlePanel bp)
@@ -97,7 +79,7 @@ namespace YxPrediction
             {
                 _readyLayerField = typeof(BattlePanel).GetField("m_ReadyLayer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             }
-            ReadyLayer ready = bp.readyLayer;
+            ReadyLayer ready = _readyLayerField == null ? null : _readyLayerField.GetValue(bp) as ReadyLayer;
             if (ready == null && _readyLayerField != null)
             {
                 ready = _readyLayerField.GetValue(bp) as ReadyLayer;
@@ -122,30 +104,14 @@ namespace YxPrediction
             var items = _selfTalentsField.GetValue(selfInfo) as IList;
             if (items == null || items.Count == 0) return;
 
-            Vector2 center = new Vector2(CenterX, CenterY);
-            if (selfInfo.transform != null)
-            {
-                var rt = selfInfo.transform as RectTransform;
-                if (rt != null)
-                {
-                    Vector3 worldPos = rt.TransformPoint(new Vector3(145f, 145f, 0f));
-                    for (int i = 0; i < items.Count; i++)
-                    {
-                        var item = items[i] as BattleTalentIconItem;
-                        if (item != null && item.transform != null && item.transform.parent != null)
-                        {
-                            center = item.transform.parent.InverseTransformPoint(worldPos);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            ApplyArcLayout(items, center);
+            ApplyCompactLayout(items);
         }
 
-        static void ApplyArcLayout(IList items, Vector2 center)
+        static void ApplyCompactLayout(IList items)
         {
+            Canvas canvas = Ui.FindRootCanvas();
+            var canvasRect = canvas == null ? null : canvas.transform as RectTransform;
+            if (canvasRect == null) return;
             int activeCount = 0;
             for (int i = 0; i < items.Count; i++)
             {
@@ -163,17 +129,30 @@ namespace YxPrediction
                 var item = items[i] as BattleTalentIconItem;
                 if (item == null || item.gameObject == null || !item.gameObject.activeSelf) continue;
 
-                float fraction = activeCount == 1 ? 0.5f : (float)index / (activeCount - 1);
-                float angleDeg = Mathf.Lerp(StartAngleDeg, EndAngleDeg, fraction);
-                float rad = angleDeg * DegToRad;
-
-                float targetX = center.x + OrbitRadius * Mathf.Cos(rad);
-                float targetY = center.y + OrbitRadius * Mathf.Sin(rad);
+                // Two short columns beside the lower-left portrait. 8 icons stay within
+                // x=235..309/y=108..330 of the canvas, away from the centered hand area.
+                float targetX = canvasRect.rect.xMin + 235f + (index % 2) * 74f;
+                float targetY = canvasRect.rect.yMin + 330f - (index / 2) * 74f;
 
                 var rect = item.transform as RectTransform;
                 if (rect != null)
                 {
-                    rect.anchoredPosition = new Vector2(targetX, targetY);
+                    Saved saved = null;
+                    for (int j = 0; j < _saved.Count; j++) if (object.ReferenceEquals(_saved[j].Item, item)) saved = _saved[j];
+                    if (saved == null)
+                    {
+                        saved = new Saved { Item = item };
+                        _saved.Add(saved);
+                        saved.Position = rect.localPosition; saved.BasePosition = item.basePos;
+                    }
+                    else if (saved.Parent != rect.parent || (rect.localPosition - saved.Applied).sqrMagnitude > 1f)
+                    {
+                        saved.Position = rect.localPosition; saved.BasePosition = item.basePos;
+                    }
+                    saved.Parent = rect.parent; saved.Talent = item.talentId;
+                    // Convert parent-local coordinates to world space, independently of the child's anchors.
+                    rect.position = canvasRect.TransformPoint(new Vector3(targetX, targetY, 0f));
+                    saved.Applied = rect.localPosition;
                     item.basePos = rect.localPosition;
                 }
 
@@ -183,6 +162,16 @@ namespace YxPrediction
 
         public static void Restore()
         {
+            for (int i = 0; i < _saved.Count; i++)
+            {
+                Saved saved = _saved[i];
+                if (saved.Item == null || saved.Item.transform == null) continue;
+                Transform rect = saved.Item.transform;
+                if (rect.parent != saved.Parent || saved.Item.talentId != saved.Talent || (rect.localPosition - saved.Applied).sqrMagnitude > 1f) continue;
+                rect.localPosition = saved.Position;
+                saved.Item.basePos = saved.BasePosition;
+            }
+            _saved.Clear();
         }
     }
 }

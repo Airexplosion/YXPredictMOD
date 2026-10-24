@@ -7,3 +7,6 @@ dist/
 vendor/
 sdk-download-test.txt
 data/elo-cache/
+
+room-data/
+server/room-data/

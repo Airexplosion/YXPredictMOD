@@ -129,6 +129,33 @@ namespace YxPrediction
             }
         }
 
+        // Read world corners and convert to the same canvas coordinates as the bet bar.
+        public static float BottomHandTop(RectTransform parent)
+        {
+            float top = 0f;
+            BattlePanel bp = GetBattlePanel();
+            if (bp == null || parent == null) return top;
+            CardPanel cp = bp.FindILRSubPanel<CardPanel>();
+            if (cp != null) top = HandTop(cp.GetHanCardContainer(), parent, top);
+            GameObject opponent = GameObject.Find("YxOpponentLastHand");
+            if (opponent != null) top = HandTop(opponent.transform, parent, top);
+            return top;
+        }
+
+        static float HandTop(Transform hand, RectTransform parent, float top)
+        {
+            if (hand == null || !hand.gameObject.activeInHierarchy) return top;
+            var corners = new Vector3[4];
+            for (int i = 0; i < hand.childCount; i++)
+            {
+                var child = hand.GetChild(i) as RectTransform;
+                if (child == null || !child.gameObject.activeInHierarchy) continue;
+                child.GetWorldCorners(corners);
+                for (int j = 0; j < 4; j++) top = Mathf.Max(top, parent.InverseTransformPoint(corners[j]).y - parent.rect.yMin);
+            }
+            return top;
+        }
+
         public static bool IsPlayingBattle()
         {
             var result = BattleApi.IsBattling();

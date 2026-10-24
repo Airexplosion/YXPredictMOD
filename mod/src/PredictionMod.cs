@@ -17,6 +17,8 @@ namespace YxPrediction
         string _lastPreparationError;
         ConfigEntry<bool> _enabled;
 #if YX_GAME
+        public RoomClient Online { get; private set; }
+        public RoomPanel OnlinePanel { get; private set; }
         GameBridge _bridge;
         NativeTheme _theme;
         PanelLayout _layout;
@@ -38,6 +40,8 @@ namespace YxPrediction
             Message = "进入八人观战后自动准备赔率；可在角色下方手牌区或点击「预测总览」下注";
 #if YX_GAME
             _theme = new NativeTheme(ctx);
+            Online = new RoomClient(this, ctx);
+            OnlinePanel = new RoomPanel(this, ctx, _theme);
             var savedWin = ctx.Data.Get<Dictionary<string, object>>(PanelLayout.WindowSaveKey, null);
             var savedBar = ctx.Data.Get<Dictionary<string, object>>(PanelLayout.BetBarSaveKey, null);
             _layout = new PanelLayout(savedWin, savedBar);
@@ -60,6 +64,8 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
+            if (Online != null) Online.Update();
+            if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();
             TalentOrbLayout.Update();
             if (_betBar != null) _betBar.Update();
@@ -72,6 +78,8 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Destroy();
+            if (Online != null) Online.Destroy();
+            if (OnlinePanel != null) OnlinePanel.Destroy();
             if (_launcher != null) _launcher.Destroy();
             if (_betBar != null) _betBar.Destroy();
             if (_panel != null) _panel.Destroy();

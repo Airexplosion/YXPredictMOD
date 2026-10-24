@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Yx.Shared;
 
 namespace YxPrediction
@@ -39,6 +39,7 @@ namespace YxPrediction
             ProtocolRankFlow(players, ratings);
             HorseFlow(players, ratings);
             PanelLayoutFlow();
+            RoomWireFixture.Verify();
             return "INTERPRETER PASS";
         }
 

@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="src\**\*.cs" />
+    <Reference Include="System" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.Core.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
@@ -28,7 +29,7 @@
       <Using Namespace="System" /><Using Namespace="System.IO" /><Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         // ILRuntime does not expose Assembly resource streams. Embed the original PNG bytes deterministically.
-        string[] titles = { "特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马" };
+        string[] titles = { "特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马", "圆形遮罩" };
         var source = new StringBuilder();
         source.AppendLine("// Generated from mod/assets/horse/*.png; do not edit.");
         source.AppendLine("namespace YxPrediction { internal static class HorseImageData { public static string Get(int index) { switch (index) {");

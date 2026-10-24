@@ -1,0 +1,17 @@
+# Independent free-points room server
+
+Node 22+; no third-party dependencies. Start with `node server/server.mjs` from the repository root, or run `node --test server/rooms.test.mjs` for tests.
+
+Environment: `ROOM_HOST` defaults to `127.0.0.1`, `ROOM_PORT` to `8123`, `ROOM_DATA` to `./room-data`. External clients require HTTPS; proxy `/prediction/` to `http://127.0.0.1:8123/` with the prefix removed. Preserve Authorization; set X-Real-IP from the actual remote client. Only a loopback proxy's X-Real-IP is trusted. Do not expose the internal HTTP port publicly.
+
+Production runs independently on the existing auth host, at `https://auth.kaigua.vip/prediction`, Windows task `yx-prediction`, source `C:/yx-prediction/app`, data `C:/yx-prediction/data`, wrapper `C:/yx-prediction/run.ps1`. The task starts on boot and restarts after failure. It uses no auth database, keys, environment file or license API. Nginx changes are limited to the new prefix; the prior vhost is backed up at `C:/yx-prediction/auth-vhost-before.conf`.
+
+`GET /healthz` reports health. `POST /v1/room` accepts register/create/join/view/sync/trade. Register returns a random bearer credential. Other operations require that credential; public views do not include other credentials. Game ID and roster must match. Only the host may synchronize results. Trading requires a current version and unique operation ID; repeated operation IDs return the latest state without charging again, even after settlement. Successful mutations are saved before responding; save errors roll back memory.
+
+Each account starts with 1000 free points. Pools are independent for each game player, split among exact-rank winners in proportion to their remaining contributions. No winner means a refund for that pool. Closing a position refunds 97% of its original contribution, not a speculative market price. Shares do not promise fixed odds; the final pool determines returns. No purchase, withdrawal, transfer or license-time conversion exists.
+
+The host is trusted to provide game results. This version does not prove official account ownership or independently verify game servers. Creating new local identities is possible; points have no redeemable value. Room codes are invitations, not passwords. There are limits of 32 members/room, 1000 rooms, 10000 identities, 20000 actions/room, 32KB requests and 600 requests/IP/minute. Completed rooms are retained for history; capacity cleanup and identity recovery are manual operational work for this initial version.
+
+Persistence: JSON snapshot with fsync and atomic rename, one writer per directory using a PID lock. Restart retains balances and holds but resets host heartbeat freshness. Crash-stale locks are reclaimed only when their PID no longer exists. An invalid lock fails closed. Back up `rooms.json` from the atomically replaced file, and retain its access restrictions; it contains bearer credentials. Do not commit data, logs or credentials. For upgrades, stop the task and verify its Node process has exited before replacing sources or copying data; restart and verify both room and existing auth health endpoints. No authentication service restart is needed.
+
+Tests include real HTTP clients and disk restart. Public deployment smoke tests used two synthetic identities and a completed synthetic game, without real game or license data. Real game UI and full-match acceptance remain pending.

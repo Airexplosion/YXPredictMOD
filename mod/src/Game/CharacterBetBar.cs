@@ -98,6 +98,8 @@ namespace YxPrediction
             if (_root == null || _rect == null) return;
 
             _root.SetActive(true);
+            float scale = Mathf.Min(1.25f, (_parent.rect.width - 32f) / PanelLayout.BetBarWidth);
+            _rect.localScale = new Vector3(scale, scale, 1f);
             UpdatePosition();
             HandlePointerGesture();
 
@@ -105,6 +107,7 @@ namespace YxPrediction
             {
                 _nextRefresh = Time.unscaledTime + 0.3f;
                 Refresh(focusUid);
+                ApplyCollapse();
             }
         }
 
@@ -201,7 +204,7 @@ namespace YxPrediction
                 stakePre.text = "投";
                 stakePre.color = NativeTheme.TextParchment;
 
-                _stakeInput = _ui.NumberInput(bar, "StakeInput", new Vector2(372f, -16f), new Vector2(52f, 34f), 16, OnStakeChanged);
+                _stakeInput = _ui.NumberInput(bar, "StakeInput", new Vector2(372f, -16f), new Vector2(52f, 34f), 18, OnStakeChanged);
                 Transform inputTransform = bar.Find("StakeInput");
                 if (inputTransform != null)
                 {
@@ -254,7 +257,9 @@ namespace YxPrediction
                     Rect bounds = _parent.rect;
                     if (bounds.width > 0 && bounds.height > 0)
                     {
+                        _layout.MoveBetBar(_layout.BetBarX, _layout.BetBarY, _rect.rect.width * _rect.localScale.x / bounds.width, _rect.rect.height * _rect.localScale.y / bounds.height);
                         var anchor = new Vector2((float)_layout.BetBarX, (float)_layout.BetBarY);
+                        _rect.pivot = new Vector2(0.5f, 0.5f);
                         _rect.anchorMin = _rect.anchorMax = anchor;
                         _rect.anchoredPosition = Vector2.zero;
                         return;
@@ -266,6 +271,15 @@ namespace YxPrediction
             bool hasHand, hasTalents;
             GameBridge.InspectBottomHandZone(out hasHand, out hasTalents);
             float targetY = PanelLayout.BetBarAutoY(hasHand, hasTalents);
+            if (hasHand) targetY = Mathf.Max(targetY, GameBridge.BottomHandTop(_parent) + 14f);
+            float availableTop = _parent.rect.height - 90f;
+            if (targetY + _rect.rect.height * _rect.localScale.y > availableTop)
+            {
+                // No safe space: collapse to a small handle rather than cover the cards.
+                _collapsed = true;
+                ApplyCollapse();
+                targetY = 14f;
+            }
 
             _rect.anchorMin = new Vector2(0.5f, 0f);
             _rect.anchorMax = new Vector2(0.5f, 0f);
@@ -278,6 +292,7 @@ namespace YxPrediction
             if (_enableAfterFrame >= 0 && Time.frameCount > _enableAfterFrame)
             {
                 _enableAfterFrame = -1;
+                _canvasGroup.blocksRaycasts = true;
             }
 
             Vector3 mouse = Input.mousePosition;
@@ -295,8 +310,9 @@ namespace YxPrediction
                 _dragged = false;
                 _downScreen = screen;
                 _downLocal = local;
-                _startX = _layout.BetBarX;
-                _startY = _layout.BetBarY;
+                Vector3 center = _parent.InverseTransformPoint(_rect.TransformPoint(_rect.rect.center));
+                _startX = (center.x - _parent.rect.xMin) / _parent.rect.width;
+                _startY = (center.y - _parent.rect.yMin) / _parent.rect.height;
             }
 
             if (!_pressed) return;
@@ -308,13 +324,15 @@ namespace YxPrediction
 
             if (_dragged)
             {
+                _canvasGroup.blocksRaycasts = false;
                 Rect bounds = _parent.rect;
                 if (bounds.width > 0 && bounds.height > 0)
                 {
                     double newX = _startX + (local.x - _downLocal.x) / bounds.width;
                     double newY = _startY + (local.y - _downLocal.y) / bounds.height;
-                    _layout.MoveBetBar(newX, newY, bounds.width, bounds.height);
+                    _layout.MoveBetBar(newX, newY, _rect.rect.width * _rect.localScale.x / bounds.width, _rect.rect.height * _rect.localScale.y / bounds.height);
                     var anchor = new Vector2((float)_layout.BetBarX, (float)_layout.BetBarY);
+                    _rect.pivot = new Vector2(0.5f, 0.5f);
                     _rect.anchorMin = _rect.anchorMax = anchor;
                     _rect.anchoredPosition = Vector2.zero;
                 }
@@ -332,6 +350,7 @@ namespace YxPrediction
             bool wasDragged = _dragged;
             _pressed = false;
             _dragged = false;
+            if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
             if (wasDragged)
             {
                 _enableAfterFrame = Time.frameCount;
@@ -465,6 +484,7 @@ namespace YxPrediction
 
         void OnBuyClicked()
         {
+            if (!CanClick()) return;
             int pIndex = GetFocusedPlayerIndex();
             if (pIndex < 0) return;
 
@@ -485,31 +505,33 @@ namespace YxPrediction
             string uid = snapshot.Players[pIndex].Uid;
             Position pos = market.Positions[pIndex];
             int action = pos.Claim > 0 ? (pos.Rank == rank ? 0 : 3) : 0;
-            _mod.Trade(action, uid, rank, stake, market.TradeVersion);
+            _mod.Trade(action, uid, rank, stake, market.TradeVersion, _lastFocusUid, _lastMarketId);
             Refresh(uid);
         }
 
         void OnSellHalfClicked()
         {
+            if (!CanClick()) return;
             int pIndex = GetFocusedPlayerIndex();
             if (pIndex < 0) return;
             MatchSnapshot snapshot = _mod.Snapshot;
             Market market = _panel.Shown();
             if (snapshot == null || market == null) return;
             string uid = snapshot.Players[pIndex].Uid;
-            _mod.Trade(1, uid, 0, 0, market.TradeVersion);
+            _mod.Trade(1, uid, 0, 0, market.TradeVersion, _lastFocusUid, _lastMarketId);
             Refresh(uid);
         }
 
         void OnSellAllClicked()
         {
+            if (!CanClick()) return;
             int pIndex = GetFocusedPlayerIndex();
             if (pIndex < 0) return;
             MatchSnapshot snapshot = _mod.Snapshot;
             Market market = _panel.Shown();
             if (snapshot == null || market == null) return;
             string uid = snapshot.Players[pIndex].Uid;
-            _mod.Trade(2, uid, 0, 0, market.TradeVersion);
+            _mod.Trade(2, uid, 0, 0, market.TradeVersion, _lastFocusUid, _lastMarketId);
             Refresh(uid);
         }
 
@@ -527,17 +549,34 @@ namespace YxPrediction
             _panel.Toggle();
         }
 
+        bool CanClick()
+        {
+            Vector3 mouse = Input.mousePosition;
+            return !_dragged && _enableAfterFrame < 0 && (!_pressed || (new Vector2(mouse.x, mouse.y) - _downScreen).sqrMagnitude < 36f);
+        }
+
         void OnCollapseClicked()
         {
+            if (!CanClick()) return;
             _collapsed = !_collapsed;
-            if (_rect != null)
+            if (!_collapsed) Refresh(_lastFocusUid);
+            ApplyCollapse();
+        }
+
+        void ApplyCollapse()
+        {
+            if (_root == null || _btnCollapse == null) return;
+            for (int i = 0; i < _root.transform.childCount; i++)
             {
-                _rect.sizeDelta = new Vector2(PanelLayout.BetBarWidth, _collapsed ? 36f : PanelLayout.BetBarHeight);
+                Transform child = _root.transform.GetChild(i);
+                if (child.gameObject == _btnCollapse.GameObject) continue;
+                if (_collapsed) child.gameObject.SetActive(false);
+                else if (child.name != "HorseIcon" && child.name != "BtnSellHalf" && child.name != "BtnSellAll") child.gameObject.SetActive(true);
             }
-            if (_btnCollapse != null)
-            {
-                _btnCollapse.SetText(_collapsed ? "▴" : "▾");
-            }
+            _rect.sizeDelta = new Vector2(_collapsed ? 120f : PanelLayout.BetBarWidth, _collapsed ? 42f : PanelLayout.BetBarHeight);
+            NativeTheme.SetTopLeft(_btnCollapse.GameObject.GetComponent<RectTransform>(), _collapsed ? 8f : 900f, _collapsed ? -4f : -17f, _collapsed ? 104f : 26f, 32f);
+            _btnCollapse.SetText(_collapsed ? "展开预测" : "▾");
+
         }
 
         int GetFocusedPlayerIndex()

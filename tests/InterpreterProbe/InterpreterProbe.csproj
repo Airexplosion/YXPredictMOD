@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="..\..\mod\src\Core\*.cs" />
     <Compile Include="Probe.cs" />
+    <Compile Include="..\RoomWireFixture.cs" />
     <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.Core.dll</HintPath><Private>false</Private></Reference>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>

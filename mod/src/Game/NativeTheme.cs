@@ -199,7 +199,11 @@ namespace YxPrediction
                 TMP_FontAsset fallback = Ui.FindFont();
                 if (fallback != null) label.font = fallback;
             }
-            label.fontSize = fontSize;
+            label.enableAutoSizing = false;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.richText = false;
+            label.fontSize = Math.Max(16, fontSize);
             label.fontStyle = bold ? FontStyles.Bold : FontStyles.Normal;
             label.alignment = align;
             label.color = TextParchment;

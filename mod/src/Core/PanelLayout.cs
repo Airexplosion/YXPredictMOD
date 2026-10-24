@@ -81,6 +81,12 @@ namespace YxPrediction
             BetBarCustom = false;
         }
 
+        public static double WindowScale(double width, double height, bool minimized)
+        {
+            double h = minimized ? MinimizedHeight : WindowHeight;
+            return Math.Max(0.1, Math.Min(1.25, Math.Min((width - 32) / WindowWidth, (height - 180) / h)));
+        }
+
         public static float BetBarAutoY(bool hasHandCards, bool hasCenteredTalents)
         {
             if (hasHandCards) return BetBarHandY;
