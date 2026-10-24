@@ -1,8 +1,8 @@
 {
-  "version": "0.3.10",
-  "tag": "v0.3.10",
-  "title": "v0.3.10 - 按查看与悬停覆盖头像",
-  "artifact": "dist/local.yxp.predictionpoints-0.3.10.zip",
-  "sha256": "e5225e15b925e71b5a36b2608dc7763a05a6cd14286912f0e8c8bd2ce37ef15e",
-  "notes": ".github/releases/v0.3.10.md"
+  "version": "0.3.11",
+  "tag": "v0.3.11",
+  "title": "v0.3.11 - AI称号更名电子马",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.11.zip",
+  "sha256": "8cecfd151af8ff7dda95cf3db66c5644df4df05b9848c71a290a992920d9df37",
+  "notes": ".github/releases/v0.3.11.md"
 }

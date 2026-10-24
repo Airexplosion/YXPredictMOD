@@ -62,7 +62,7 @@ namespace YxPrediction
             for (int i = 0; i < 8; i++) aiPlayers[i] = new Player(players[i].Uid, players[i].Name, i == 7);
             s.Players = aiPlayers; s.Id = "ai-horses"; roster.Observe(s, profiles);
             var ai = roster.Find(aiPlayers[7].Uid); string title = ai.Title;
-            if (!ai.IsAi || !title.StartsWith("傀儡·", StringComparison.Ordinal) || ai.IconTitle != "机械马" || ai.PlateCaption != title || ai.Tags != "")
+            if (!ai.IsAi || !title.StartsWith("电子马·", StringComparison.Ordinal) || ai.IconTitle != "机械马" || ai.PlateCaption != title || ai.Tags != "")
                 throw new Exception("AI decoration failed under interpreter");
             var restored = new HorseRoster(); restored.Observe(s, profiles);
             if (restored.Find(aiPlayers[7].Uid).Title != title) throw new Exception("AI stable title failed under interpreter");

@@ -17,7 +17,7 @@ internal static partial class Program
     {
         Check("AI titles cover exactly five decorative levels and share one mechanical icon", delegate
         {
-            string[] labels = { "傀儡·地狱", "傀儡·极难", "傀儡·困难", "傀儡·中等", "傀儡·简单" };
+            string[] labels = { "电子马·地狱", "电子马·极难", "电子马·困难", "电子马·中等", "电子马·简单" };
             var seen = new Dictionary<string, bool>();
             for (int n = 0; n < 40; n++)
             {

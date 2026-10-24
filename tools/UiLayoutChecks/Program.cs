@@ -99,7 +99,7 @@ internal static class Program
         var ui = new Yx.ModSdk.Unity.UiKit();
         var caption = new HorseCaption(ui, root);
         True(ui.Labels.Count == 9 && ui.Labels[8] == caption.Text, "Caption needs eight black edges behind one colored face");
-        foreach (string value in new string[] { "中等马 3710", "特等马 4266", "傀儡·地狱" })
+        foreach (string value in new string[] { "中等马 3710", "特等马 4266", "电子马·地狱" })
         {
             var color = new Color(1, 0.83f, 0.28f, 1);
             caption.Set(value, color); caption.Set(value, color);
