@@ -31,7 +31,7 @@ namespace YxPrediction
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
             else { Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value))); Save(); }
-            Message = "进入八人观战后自动准备赔率；点击「名次预测」打开面板";
+            Message = "进入八人观战后自动准备赔率；点击「天机赌马」打开面板";
 #if YX_GAME
             _bridge = new GameBridge(this, ctx);
             Horses = new TianJiFeature(this, ctx, _bridge);
@@ -42,7 +42,7 @@ namespace YxPrediction
             ctx.Events.OnNetIn<Proto.BattleResult>(_bridge.OnBattleResult);
             ctx.Events.OnNetIn<Proto.AllBattleResults>(_bridge.OnAllBattleResults);
 #endif
-            ctx.Log.Info("观战预测已加载：本地积分模式，认证时长接口未接入");
+            ctx.Log.Info("天机赌马已加载：本地积分模式，认证时长接口未接入");
         }
 
         public override void OnUpdate()

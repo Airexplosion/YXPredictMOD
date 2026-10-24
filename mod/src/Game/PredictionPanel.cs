@@ -154,7 +154,7 @@ namespace YxPrediction
             _detailToggle.SetText(_detailed ? "简洁模式" : "详细数据");
             _simpleStakeHeading.gameObject.SetActive(!_history); _simpleActionsHeading.gameObject.SetActive(!_history);
             UiTextBox.Place(_simpleResultHeading, _history ? 428 : 716, 0, _history ? 674 : 386, 28);
-            string title = _history ? "预测历史" : (_detailed ? "观战预测 · 本地积分" : "全部玩家");
+            string title = _history ? "天机赌马 · 历史" : (_detailed ? "天机赌马 · 本地积分" : "天机赌马 · 全部玩家");
             long value = 0;
             if (_detailed && market != null && market.IsTrading)
                 for (int i = 0; i < 8; i++) value += TradingOdds.Sale(market, i, false);
@@ -199,7 +199,7 @@ namespace YxPrediction
             _singleRow.PlayerIndex = index;
             _singleRow.Refresh(index < 0 ? null : market, changed);
             _singleHorse.text = _mod.Horses == null ? "" : _mod.Horses.Describe(_focusUid);
-            _singleHeader.text = "观战预测 v" + _version + "    余额 " + PredictionMod.N(_mod.Book.Balance);
+            _singleHeader.text = "天机赌马 v" + _version + "    余额 " + PredictionMod.N(_mod.Book.Balance);
             _singleMessage.text = _focusUid == null ? "等待当前观战对象，点击游戏中的玩家头像进行切换。" : _mod.Message;
             if (market != null && index >= 0 && (market.Settled || (market.IsTrading && market.Positions[index].Resolved)))
                 _singleMessage.text = "当前玩家名次已确定，结算结果见下方。";

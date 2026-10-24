@@ -98,7 +98,7 @@ namespace YxPrediction
             _rect = (RectTransform)_root.GetComponent(typeof(RectTransform));
             _parent = _root.transform.parent as RectTransform;
             _canvas = Ui.FindRootCanvas();
-            _button = _ui.TextButton(_root.transform, "openPrediction", "名次预测", new Vector2(2f, -2f), new Vector2(Width - 4f, Height - 4f), Click);
+            _button = _ui.TextButton(_root.transform, "openPrediction", "天机赌马", new Vector2(2f, -2f), new Vector2(Width - 4f, Height - 4f), Click);
             Place(_position.X, _position.Y);
         }
 

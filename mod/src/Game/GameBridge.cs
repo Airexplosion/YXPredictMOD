@@ -27,7 +27,7 @@ namespace YxPrediction
             _mod.SetQueryStatus(message);
             if (message == _lastDiagnostic) return;
             _lastDiagnostic = message;
-            _ctx.Log.Info("观战预测状态：" + message);
+            _ctx.Log.Info("天机赌马状态：" + message);
         }
 
         public void Update()
