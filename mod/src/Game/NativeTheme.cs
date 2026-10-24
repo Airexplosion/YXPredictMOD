@@ -181,7 +181,12 @@ namespace YxPrediction
             }
         }
 
-        public void ApplyTextStyle(TextMeshProUGUI label, int fontSize = 16, bool bold = false, TextAlignmentOptions align = TextAlignmentOptions.Center)
+        public void ApplyTextStyle(TextMeshProUGUI label, int fontSize = 16, bool bold = false)
+        {
+            ApplyTextStyle(label, fontSize, bold, TextAlignmentOptions.Center);
+        }
+
+        public void ApplyTextStyle(TextMeshProUGUI label, int fontSize, bool bold, TextAlignmentOptions align)
         {
             if (label == null) return;
             Harvest();
