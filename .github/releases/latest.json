@@ -1,8 +1,8 @@
 {
-  "version": "0.3.6",
-  "tag": "v0.3.6",
-  "title": "v0.3.6 - 天机赌马",
-  "artifact": "dist/local.yxp.predictionpoints-0.3.6.zip",
-  "sha256": "5baef0a0b55dc3ca6f4afb1cd5a941ed443710385b355e67c0acf7d5f582d069",
-  "notes": ".github/releases/v0.3.6.md"
+  "version": "0.3.7",
+  "tag": "v0.3.7",
+  "title": "v0.3.7 - 马图放大与文字层级",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.7.zip",
+  "sha256": "ec965166cccea16c1c5e269dc6bf9576c910f6709ad310b50d7408d9dc4cf1f1",
+  "notes": ".github/releases/v0.3.7.md"
 }

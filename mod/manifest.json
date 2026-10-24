@@ -1,7 +1,7 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "天机赌马",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "author": "@TeraE",
   "description": "实时观战积分预测、动态调仓、命元与占比走势；自己对局保留称号和马图。整合「田忌赛马」MOD，特别鸣谢原作者 @弈黑白B&W。仅使用本地积分，认证时长未接入。",
   "sdkVersion": ">=1.0.0 <2.0.0",

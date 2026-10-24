@@ -93,6 +93,64 @@ internal static class Program
         True(UiTextBox.Container(caption).Raised && !caption.rectTransform.Raised, "Only inner text was raised");
         Console.WriteLine("PASS history heading, nested glyph gap and complete label stacking");
     }
+    static void PaintOrder(Transform root, System.Collections.Generic.List<Transform> order)
+    {
+        order.Add(root);
+        for (int i = 0; i < root.childCount; i++) PaintOrder(root.GetChild(i), order);
+    }
+    static void HorseIconLayering()
+    {
+        foreach (float scale in new float[] { 1, 0.65f, 1.5f })
+        {
+            var canvas = Box(null, 300, 200, 1920, 1080); canvas.localScale = new Vector3(scale, scale, 1);
+            for (int slot = 0; slot < 8; slot++)
+            {
+                var item = Box(canvas, 300 + slot * 158, -30, 150, 200);
+                item.pivot = new Vector2(0.5f, slot % 2 == 0 ? 0.5f : 1);
+                var avatar = Box(item, 0, -20, 100, 100);
+                var name = Box(item, 0, -125, 150, 30);
+                name.pivot = new Vector2(0.5f, 0.5f); name.localScale = new Vector3(0.9f, 0.9f, 1);
+                var hud = Box(item, 0, 0, 30, 30);
+                var caption = Label(name, 0, -30, 150, 48);
+                var icon = Box(name, 0, 0, 56, 56);
+                var order = new System.Collections.Generic.List<Transform>(); PaintOrder(item, order);
+                True(order.IndexOf(icon) > order.IndexOf(name), "Old child icon should reproduce covering native ID");
+                for (int repeat = 0; repeat < 20; repeat++)
+                {
+                    HorsePlateLayout.PlaceIcon(icon, name, 3, -8);
+                    True(icon.parent == name.parent && name.parent == item, "Native ID was moved or icon stayed its child");
+                    True(icon.GetSiblingIndex() + 1 == name.GetSiblingIndex(), "Repeated placement reversed icon/text layers");
+                    True(avatar.GetSiblingIndex() < icon.GetSiblingIndex() && hud.GetSiblingIndex() > name.GetSiblingIndex(), "Native siblings were reordered");
+                    Near(icon.Width, 88); Near(icon.Height, 88);
+                    Vector3 expected = name.TransformPoint(new Vector3(3, -8, 0));
+                    Vector3 actual = icon.TransformPoint(new Vector3(0, 0, 0));
+                    Near(actual.x, expected.x); Near(actual.y, expected.y);
+                    order.Clear(); PaintOrder(item, order);
+                    True(order.IndexOf(icon) < order.IndexOf(name) && order.IndexOf(icon) < order.IndexOf(caption.rectTransform), "ID or caption painted behind icon");
+                }
+                var moved = Box(canvas, slot * 158, -60, 180, 210);
+                name.SetParent(moved, false);
+                HorsePlateLayout.PlaceIcon(icon, name, 3, -8);
+                True(icon.parent == moved && icon.GetSiblingIndex() < name.GetSiblingIndex(), "Icon did not follow reparented player ID");
+            }
+        }
+        Console.WriteLine("PASS 88px horse icons behind native ID and caption across eight slots, 20 refreshes, scaling and reparenting");
+    }
+    static void HorseBindings(string path)
+    {
+        using (ModuleDefinition module = ModuleDefinition.ReadModule(path))
+        {
+            TypeDefinition type = module.GetType("YxPrediction.TianJiFeature");
+            foreach (var method in type.Methods)
+            {
+                if (method.Name == "PositionPlate") True(Calls(method, "PlaceIcon"), "Horse layout not bound to production helper");
+                if (method.Name == "ClearPlates") True(Calls(method, "DestroyPlate"), "Clearing a match leaked independent icons");
+                if (method.Name == "RefreshPlates")
+                    True(Calls(method, "DestroyPlate") && Calls(method, "get_isActiveAndEnabled"), "Stale or hidden native IDs retained an independent icon");
+            }
+        }
+        Console.WriteLine("PASS compiled horse placement, independent icon cleanup and native ID visibility bindings");
+    }
     static void ObserverVisibility()
     {
         SceneLoader.currentSceneName = "Battle";
@@ -150,7 +208,7 @@ internal static class Program
     }
     static int Main(string[] args)
     {
-        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
+        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); HorseIconLayering(); HorseBindings(args[1]); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
         catch (Exception ex) { Console.WriteLine(ex); return 1; }
     }
 }

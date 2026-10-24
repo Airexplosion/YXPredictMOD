@@ -51,7 +51,7 @@ namespace YxPrediction
         {
             _mod = mod; _ctx = ctx; _bridge = bridge; _ui = new UiKit(ctx);
             _enabled = ctx.Config.Bind("tianji", "enabled", true, "显示田忌赛马称号；按公开Elo分档，仅作趣味参考");
-            _icons = ctx.Config.Bind("tianji", "icons", true, "在头像右侧显示马图图标，保留游戏原头像");
+            _icons = ctx.Config.Bind("tianji", "icons", true, "在ID及称号后方显示马图，保留游戏原头像");
             ctx.Events.OnNetIn<Proto.MatchPlayerInfosResp>(OnScores);
         }
         public void Toggle() { _enabled.Value = !_enabled.Value; _nextUpdate = 0; Update(); }
@@ -158,8 +158,8 @@ namespace YxPrediction
                 Plate plate = _plates[i];
                 bool present = false;
                 for (int j = 0; j < items.Count; j++) if (object.ReferenceEquals(items[j], plate.Item)) present = true;
-                if (!present || plate.Root == null || plate.Item.gameObject == null)
-                { if (plate.Root != null) _ui.Destroy(plate.Root); _plates.RemoveAt(i); }
+                if (!present || plate.Root == null || plate.Icon == null || plate.Item.gameObject == null)
+                { DestroyPlate(plate); _plates.RemoveAt(i); }
             }
             for (int i = 0; i < items.Count; i++)
             {
@@ -169,13 +169,13 @@ namespace YxPrediction
                 Plate plate = null;
                 for (int j = 0; j < _plates.Count; j++) if (object.ReferenceEquals(_plates[j].Item, item)) plate = _plates[j];
                 if (member == null || member.Title.Length == 0)
-                { if (plate != null) plate.Root.SetActive(false); continue; }
+                { if (plate != null) { plate.Root.SetActive(false); plate.Icon.gameObject.SetActive(false); } continue; }
                 if (plate == null)
                 {
                     var name = item.FindComponent<TextMeshProUGUI>("UsernameLabel", false);
                     var avatar = item.FindComponent<Image>("Avatar", false);
                     if (name == null || avatar == null) continue;
-                    // 文字与图标均归本玩家所有，图标的位置另以真实头像右侧为参照。
+                    // 称号跟随昵称；图标独立放在昵称之前，确保原生ID也绘制在图标上方。
                     GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(150, 48), Color.clear);
                     var rect = root.transform as RectTransform;
                     rect.anchorMin = rect.anchorMax = name.rectTransform.pivot;
@@ -187,9 +187,10 @@ namespace YxPrediction
                     label.fontStyle = FontStyles.Bold; label.alignment = TextAlignmentOptions.Top;
                     label.richText = false; label.raycastTarget = false; label.enableWordWrapping = false;
                     label.overflowMode = TextOverflowModes.Ellipsis;
-                    var iconRoot = _ui.Row(root.transform, "horseIcon", Vector2.zero, new Vector2(56, 56), Color.white);
+                    label.outlineColor = new Color(0, 0, 0, 0.95f); label.outlineWidth = 0.2f;
+                    var iconRoot = _ui.Row(name.transform.parent, "YXPredictHorseIcon", Vector2.zero,
+                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
                     var iconRect = iconRoot.transform as RectTransform;
-                    iconRect.anchorMin = iconRect.anchorMax = rect.pivot;
                     iconRect.pivot = new Vector2(0.5f, 0.5f);
                     var icon = iconRoot.GetComponent(typeof(Image)) as Image;
                     icon.raycastTarget = false; icon.preserveAspect = true;
@@ -201,7 +202,7 @@ namespace YxPrediction
                 plate.Label.text = member.PlateCaption;
                 plate.Label.color = member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title);
                 Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
-                plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null);
+                plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null && plate.Name.isActiveAndEnabled);
                 PositionPlate(plate);
             }
         }
@@ -219,11 +220,9 @@ namespace YxPrediction
             float captionTop = caption.size.y > 0
                 ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
             root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - 1 - captionTop);
-            // 图标中心贴头像右缘、稍低于中线。转换坐标而非固定屏幕像素，跟随头像排序与缩放。
-            Rect avatar = plate.Avatar.rectTransform.rect;
-            Vector3 point = plate.Avatar.rectTransform.TransformPoint(new Vector3(avatar.xMax, avatar.yMin + avatar.height * 0.35f, 0));
-            Vector3 local = root.InverseTransformPoint(point);
-            plate.Icon.rectTransform.anchoredPosition = new Vector2(local.x, local.y);
+            // 以ID字形下沿为图标中心，覆盖用户指定的ID/称号区域；文字始终在前。
+            HorsePlateLayout.PlaceIcon(plate.Icon.rectTransform, plate.Name.rectTransform,
+                bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom);
         }
         static Color ColorOf(string title)
         {
@@ -239,8 +238,13 @@ namespace YxPrediction
         }
         void ClearPlates()
         {
-            for (int i = 0; i < _plates.Count; i++) if (_plates[i].Root != null) _ui.Destroy(_plates[i].Root);
+            for (int i = 0; i < _plates.Count; i++) DestroyPlate(_plates[i]);
             _plates.Clear();
+        }
+        void DestroyPlate(Plate plate)
+        {
+            if (plate.Icon != null) _ui.Destroy(plate.Icon.gameObject);
+            if (plate.Root != null) _ui.Destroy(plate.Root);
         }
         public void Destroy() { ClearPlates(); _ui.DestroyAll(); _assets.Destroy(); Roster.Clear(); }
     }
