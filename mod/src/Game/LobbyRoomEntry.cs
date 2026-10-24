@@ -72,7 +72,9 @@ namespace YxPrediction
             rect.sizeDelta = new Vector2(180f, 54f);
             var image = native.GetComponent<Image>();
             if (image != null && image.sprite != null && _button != null && _button.Background != null)
-            { _button.Background.sprite = image.sprite; _button.Background.type = image.type; _button.Background.color = image.color; }
+            {
+                NativeControlStyle.Button(_button.Button, native, "名次预测", 22f);
+            }
         }
         public void Destroy() { _ui.DestroyAll(); _root = null; }
     }

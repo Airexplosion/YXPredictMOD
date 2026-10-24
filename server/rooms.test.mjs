@@ -181,3 +181,11 @@ test('member views identify arrivals without exposing bearer keys; repeat join i
  assert.throws(()=>x.rooms.identify(x.b,{name:'x',uid:'bad id'}));
  const restored=new Rooms(structuredClone(x.rooms.state));assert.deepEqual(restored.view(x.code,x.a).memberDetails,view.memberDetails);
 });
+test('selected game discovery hides create when room exists and create reuses it atomically',()=>{
+ const x=setup();x.snapshot.gameRoomId='selected-native';x.rooms.sync(x.code,x.a,x.snapshot);
+ const found=x.rooms.findByGame(x.b,'selected-native');assert.equal(found.exists,true);assert.equal(found.code,x.code);assert.equal(found.available,true);
+ assert.equal(x.rooms.findByGame(x.b,'absent-native').exists,false);
+ const again=x.rooms.create(x.b,x.snapshot);assert.equal(again.code,x.code);assert.equal(Object.keys(x.rooms.state.rooms).length,1);assert.equal(again.balance,1000);
+ x.advance(15001);assert.equal(x.rooms.findByGame(x.b,'selected-native').available,false);
+ x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(x.rooms.findByGame(x.b,'selected-native').exists,false);
+});

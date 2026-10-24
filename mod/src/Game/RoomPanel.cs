@@ -17,7 +17,8 @@ namespace YxPrediction
         readonly UiKit _ui;
         GameObject _root, _menu, _joinForm, _menuChoices;
         TextMeshProUGUI _menuMessage;
-        NativeButton _menuMatch;
+        NativeButton _menuMatch, _menuCreate, _menuJoin, _tableCreate, _tableJoin;
+        float _nextDiscovery;
         readonly LobbyRoomEntry _entry;
         UiInput _code;
         TextMeshProUGUI _status, _message;
@@ -31,7 +32,7 @@ namespace YxPrediction
         {
             if (_visible) { Close(); return; }
             if (!PredictionVisibility.CanShow() && !NativeRoomSpectate.IsLobby) return;
-            _connectionMenu = false; _visible = true; ShowPresentation(); BackChoices();
+            _connectionMenu = false; _visible = true; ShowPresentation(); BackChoices(); if (NativeRoomSpectate.IsLobby) _mod.Online.DiscoverSelected();
         }
         public void Open() { _connectionMenu = false; _visible = true; ShowPresentation(); }
         void Close()
@@ -60,14 +61,15 @@ namespace YxPrediction
             _menu = _ui.Panel("PredictionRoomMenu", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(580f, 230f), NativeTheme.LacquerBlack);
             if (_menu == null) return;
             _theme.ApplyWindowFrame(_menu.GetComponent<Image>());
-            var title = _ui.Label(_menu.transform, "title", "联机预测", new Vector2(24f, -14f), new Vector2(400f, 36f), 24);
+            _theme.DecorateWindow(_menu, "名次预测");
+            var title = _ui.Label(_menu.transform, "title", "名次预测", new Vector2(24f, -14f), new Vector2(400f, 36f), 24);
             _theme.ApplyTextStyle(title, 24, true, TextAlignmentOptions.Left);
             _theme.CreateButtonTopLeft(_menu.transform, "closeMenu", "×", 518f, -12f, 42f, 38f, NativeBtnStyle.Close, Close, 24);
             _menuChoices = new GameObject("Choices", typeof(RectTransform));
             _menuChoices.transform.SetParent(_menu.transform, false);
             NativeTheme.SetTopLeft(_menuChoices.transform as RectTransform, 0f, -66f, 580f, 70f);
-            _theme.CreateButtonTopLeft(_menuChoices.transform, "menuJoin", "加入", 24f, 0f, 164f, 60f, NativeBtnStyle.Primary, ShowJoin, 24);
-            _theme.CreateButtonTopLeft(_menuChoices.transform, "menuCreate", "创建", 208f, 0f, 164f, 60f, NativeBtnStyle.Primary, Create, 24);
+            _menuJoin = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuJoin", "加入", 24f, 0f, 164f, 60f, NativeBtnStyle.Primary, JoinCurrent, 24);
+            _menuCreate = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuCreate", "创建", 208f, 0f, 164f, 60f, NativeBtnStyle.Primary, Create, 24);
             _menuMatch = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuMatch", "匹配", 392f, 0f, 164f, 60f, NativeBtnStyle.Primary, RandomJoin, 24);
             _joinForm = new GameObject("JoinForm", typeof(RectTransform));
             _joinForm.transform.SetParent(_menu.transform, false);
@@ -80,6 +82,7 @@ namespace YxPrediction
             _theme.ApplyTextStyle(_menuMessage, 18, false, TextAlignmentOptions.Left); _menuMessage.enableWordWrapping = true;
         }
         void ShowConnectionMenu() { if (_menu == null) BuildMenu(); _connectionMenu = true; if (_root != null) _root.SetActive(false); ShowJoin(); if (_menu != null) _menu.SetActive(true); }
+        void JoinCurrent() { if (NativeRoomSpectate.IsLobby) _mod.Online.JoinSelected(); else ShowJoin(); }
         void ShowJoin() { if (_joinForm != null) _joinForm.SetActive(true); if (_menuChoices != null) _menuChoices.SetActive(false); }
         void BackChoices() { _connectionMenu = false; if (_joinForm != null) _joinForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(true); }
         void Build()
@@ -87,10 +90,11 @@ namespace YxPrediction
             _root = _ui.Panel("PredictionOnlineRoom", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1140f, 650f), NativeTheme.LacquerBlack);
             if (_root == null) return;
             _theme.ApplyWindowFrame(_root.GetComponent<Image>());
+            _theme.DecorateWindow(_root, "名次预测");
             Label("title", "名次预测", 20, -12, 690, 34, 24);
             _theme.CreateButtonTopLeft(_root.transform, "close", "关闭", 1030, -12, 90, 34, NativeBtnStyle.Close, Close, 20);
-            _theme.CreateButtonTopLeft(_root.transform, "create", "创建房间", 24, -62, 150, 38, NativeBtnStyle.Primary, Create, 20);
-            _theme.CreateButtonTopLeft(_root.transform, "join", "加入房间", 188, -62, 150, 38, NativeBtnStyle.Secondary, ShowConnectionMenu, 20);
+            _tableCreate = _theme.CreateButtonTopLeft(_root.transform, "create", "创建房间", 24, -62, 150, 38, NativeBtnStyle.Primary, Create, 20);
+            _tableJoin = _theme.CreateButtonTopLeft(_root.transform, "join", "加入房间", 188, -62, 150, 38, NativeBtnStyle.Secondary, ShowConnectionMenu, 20);
             _theme.CreateButtonTopLeft(_root.transform, "leave", "离开房间", 608, -62, 130, 38, NativeBtnStyle.Secondary, Leave, 20);
             _theme.CreateButtonTopLeft(_root.transform, "random", "房间选项", 752, -62, 142, 38, NativeBtnStyle.Primary, ShowConnectionMenu, 20);
             _status = Label("status", "请在管理器 MOD 配置 online.server 与昵称，再创建或加入房间", 20, -112, 1090, 34, 20);
@@ -107,7 +111,7 @@ namespace YxPrediction
         TextMeshProUGUI Label(string name, string value, float x, float y, float w, float h, int size)
         {
             var label = _ui.Label(_root.transform, name, value, new Vector2(x,y), new Vector2(w,h), size);
-            _theme.ApplyTextStyle(label,size,false,TextAlignmentOptions.Left); label.text = value; label.raycastTarget = false; return label;
+            _theme.ApplyTextStyle(label,size,false,TextAlignmentOptions.Left); if (name.StartsWith("header")) label.color=NativeTheme.AntiqueGold; label.text = value; label.raycastTarget = false; return label;
         }
         static void Ignore(string value) { }
         void Create() { _mod.Online.Connect("", true); }
@@ -128,8 +132,21 @@ namespace YxPrediction
             var rect = shown.transform as RectTransform; var parent = rect.parent as RectTransform;
             float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / rect.rect.width, (parent.rect.height - 180f) / rect.rect.height)));
             rect.localScale = new Vector3(scale,scale,1);
-            if (!connected) { if (_menuMessage != null) _menuMessage.text = _mod.Online.Message; if (_menuMatch != null) _menuMatch.SetText(_mod.Online.Matching ? "取消" : "匹配"); return; }
+            if (!connected)
+            {
+                if (lobby && Time.unscaledTime >= _nextDiscovery && !_mod.Online.Busy) { _nextDiscovery=Time.unscaledTime+3f; _mod.Online.DiscoverSelected(); }
+                string native; LobbyRoomEntry.SelectedButton(out native);
+                bool known = !lobby || (_mod.Online.DiscoveryReady && _mod.Online.DiscoveredNative == native);
+                bool exists = lobby && known && !string.IsNullOrEmpty(_mod.Online.DiscoveredCode);
+                if (_menuCreate != null) { _menuCreate.SetActive(!exists); _menuCreate.SetInteractable(known && !_mod.Online.Busy); }
+                if (_menuJoin != null) _menuJoin.SetInteractable(known && (!lobby || (exists && _mod.Online.DiscoveredAvailable)) && !_mod.Online.Busy);
+                if (_menuMessage != null) _menuMessage.text = !known ? "查询所选对局…" : exists ? "本局已有预测房间，点击加入即可观战" : _mod.Online.Message;
+                if (_menuMatch != null) _menuMatch.SetText(_mod.Online.Matching ? "取消" : "匹配");
+                return;
+            }
             if (Time.unscaledTime < _next) return; _next = Time.unscaledTime + 0.2f;
+            if (_tableCreate != null) _tableCreate.SetActive(!HasCurrentRoom());
+            if (_tableJoin != null) _tableJoin.SetActive(!HasCurrentRoom());
             RoomState r = CurrentView();
             _status.text = r == null ? "等待完整八人观战状态"
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
@@ -182,7 +199,7 @@ namespace YxPrediction
             {
                 _panel = panel; _index = index; float y = -188f - index * 50f;
                 string id = index.ToString(CultureInfo.InvariantCulture);
-                var background = panel._ui.Row(panel._root.transform, "rowBackground" + id, new Vector2(12f, y + 2f), new Vector2(1116f, 46f), index % 2 == 0 ? new Color(0.075f, 0.09f, 0.12f, 1f) : new Color(0.05f, 0.065f, 0.09f, 1f));
+                var background = panel._ui.Row(panel._root.transform, "rowBackground" + id, new Vector2(12f, y + 2f), new Vector2(1116f, 46f), index % 2 == 0 ? new Color(0.13f, 0.15f, 0.17f, 0.92f) : new Color(0.09f, 0.11f, 0.13f, 0.92f));
                 background.GetComponent<Image>().raycastTarget = false;
                 _name = panel.Label("name"+id, "—", 20,y,205,40,20);
                 panel._theme.CreateButtonTopLeft(panel._root.transform,"minus"+id,"−",230,y,34,38,NativeBtnStyle.Pill,Minus,22);

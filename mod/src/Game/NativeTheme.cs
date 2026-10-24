@@ -230,12 +230,23 @@ namespace YxPrediction
         public void ApplyWindowFrame(Image image)
         {
             if (image == null) return;
-            // The native scoreboard sprite includes opaque white paper, not just a border.
-            // A solid dark surface keeps contrast independent of the selected game panel.
-            image.sprite = null;
+            Harvest();
+            image.sprite = _windowSprite;
             image.material = null;
-            image.type = Image.Type.Simple;
-            image.color = LacquerBlack;
+            image.type = _windowSprite == null ? Image.Type.Simple : Image.Type.Sliced;
+            image.color = new Color(0.20f, 0.24f, 0.28f, 0.99f);
+        }
+        public void DecorateWindow(GameObject root, string title)
+        {
+            if (root == null || root.transform.Find("NativeDarkSurface") != null) return;
+            var body = new GameObject("NativeDarkSurface", typeof(RectTransform), typeof(UnityEngine.CanvasRenderer), typeof(Image));
+            body.transform.SetParent(root.transform,false);
+            var rect = body.GetComponent<RectTransform>(); rect.anchorMin=Vector2.zero;rect.anchorMax=Vector2.one;rect.offsetMin=new Vector2(12f,12f);rect.offsetMax=new Vector2(-12f,-48f);
+            var image=body.GetComponent<Image>();image.color=new Color(0.075f,0.095f,0.11f,0.97f);image.raycastTarget=false;body.transform.SetAsFirstSibling();
+            var banner = new GameObject("NativeTitleBanner",typeof(RectTransform),typeof(UnityEngine.CanvasRenderer),typeof(Image));
+            banner.transform.SetParent(root.transform,false);
+            var br=banner.GetComponent<RectTransform>();br.anchorMin=new Vector2(0,1);br.anchorMax=new Vector2(1,1);br.pivot=new Vector2(0.5f,1);br.sizeDelta=new Vector2(-16f,44f);br.anchoredPosition=new Vector2(0,-4f);
+            ApplyBanner(banner.GetComponent<Image>());banner.GetComponent<Image>().color=new Color(0.38f,0.36f,0.44f,1f);banner.GetComponent<Image>().raycastTarget=false;banner.transform.SetSiblingIndex(1);
         }
 
         public void ApplyBanner(Image image)
@@ -484,15 +495,15 @@ namespace YxPrediction
 
             btn.colors = colors;
             if (_nativeButton != null) NativeControlStyle.Button(btn, _nativeButton, label == null ? "" : label.text, label == null ? 20f : label.fontSize);
-            // Preserve native button silhouettes while keeping readable dark-theme contrast.
-            if (img != null) img.color = new Color(0.28f, 0.31f, 0.37f, 1f);
-            colors = btn.colors;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.15f, 1.15f, 1.15f, 1f);
-            colors.pressedColor = new Color(0.72f, 0.75f, 0.8f, 1f);
-            colors.disabledColor = new Color(0.45f, 0.48f, 0.53f, 1f);
-            btn.colors = colors;
-            if (label != null) label.color = TextParchment;
+            // Do not multiply the original native button tint again: dark templates became black.
+            if (_nativeButton != null)
+            {
+                var source = _nativeButton.targetGraphic as Image;
+                if (img != null) img.color = source == null ? Color.white : source.color;
+                btn.colors = _nativeButton.colors;
+                var nativeLabel = _nativeButton.GetComponentInChildren<TextMeshProUGUI>(true);
+                if (label != null && nativeLabel != null) label.color = nativeLabel.color;
+            }
         }
     }
 }

@@ -27,6 +27,28 @@ namespace YxPrediction
         float _noticeUntil;
         string _createNativeId, _lookupCode;
         float _createDeadline;
+        string _discoverNative;
+        public string DiscoveredNative { get; private set; }
+        public string DiscoveredCode { get; private set; }
+        public bool DiscoveryReady { get; private set; }
+        public bool DiscoveredAvailable { get; private set; }
+        public void DiscoverSelected()
+        {
+            string native;
+            if (LobbyRoomEntry.SelectedButton(out native) == null) return;
+            if (DiscoveredNative != native) { DiscoveredNative = native; DiscoveryReady = false; DiscoveredCode = null; }
+            if (Busy) return;
+            _discoverNative = native; _afterRegister = "findGame";
+            if (string.IsNullOrEmpty(_token)) { var register=Body("register"); register["name"]=_name.Value; Send(register); }
+            else ConnectReady();
+        }
+        public void JoinSelected()
+        {
+            string native;
+            if (LobbyRoomEntry.SelectedButton(out native) == null || native != DiscoveredNative || !DiscoveryReady || string.IsNullOrEmpty(DiscoveredCode)) { Message="等待当前对局房间状态"; DiscoverSelected(); return; }
+            if (!DiscoveredAvailable) { Message="本局房间已满或房主离线"; return; }
+            Connect(DiscoveredCode, false);
+        }
         bool _joiningMatch;
         public bool Matching { get { return _match != null || _createNativeId != null; } }
         public RoomState State { get; private set; }
@@ -79,6 +101,10 @@ namespace YxPrediction
             {
                 if (create)
                 {
+                    string native;
+                    LobbyRoomEntry.SelectedButton(out native);
+                    if (native != DiscoveredNative || !DiscoveryReady) { Message="正在查询本局房间，请稍后点击"; DiscoverSelected(); return; }
+                    if (!string.IsNullOrEmpty(DiscoveredCode)) { JoinSelected(); return; }
                     string target, error;
                     if (!LobbyRoomEntry.SpectateSelected(out target, out error)) { Message = error; return; }
                     _createNativeId = target; _createDeadline = Time.unscaledTime + 90f;
@@ -101,6 +127,7 @@ namespace YxPrediction
         }
         void ConnectReady()
         {
+            if (_afterRegister == "findGame") { _afterRegister=null; var find=Body("findGame"); find["nativeId"]=_discoverNative; Send(find); return; }
             if (_afterRegister == "lookup") { _afterRegister = null; var lookup = Body("lookup"); lookup["code"] = _lookupCode; Send(lookup); return; }
             if (_afterRegister == "random") { _afterRegister = null; var random = Body("random"); random["exclude"] = _code ?? ""; Send(random); return; }
             MatchSnapshot s = _mod.Snapshot;
@@ -231,6 +258,11 @@ namespace YxPrediction
                         var data = root["data"] as Dictionary<string, object>;
                         if (Json.GetString(_sent, "action", "") == "register")
                         { _token = Json.GetString(data, "token", ""); SaveIdentity(); connect = true; }
+                        else if (Json.GetString(_sent,"action","") == "findGame")
+                        {
+                            string native=Json.GetString(data,"nativeId","");
+                            if (native == DiscoveredNative) { DiscoveryReady=true; DiscoveredCode=Json.GetBool(data,"exists",false)?Json.GetString(data,"code",""):null; DiscoveredAvailable=Json.GetBool(data,"available",false); }
+                        }
                         else if ((Json.GetString(_sent, "action", "") == "random" || Json.GetString(_sent, "action", "") == "lookup")) selected = new RoomMatch(data, Time.unscaledTime);
                         else
                         {
@@ -246,7 +278,12 @@ namespace YxPrediction
                 if (selected != null)
                 {
                     string error;
-                    if (NativeRoomSpectate.Request(selected.NativeRoomId, out error))
+                    string currentNative;
+                    var nativeButton=LobbyRoomEntry.SelectedButton(out currentNative);
+                    bool entered;
+                    if (nativeButton != null && currentNative == selected.NativeRoomId) entered=LobbyRoomEntry.SpectateSelected(out currentNative,out error);
+                    else entered=NativeRoomSpectate.Request(selected.NativeRoomId,out error);
+                    if (entered)
                     {
                         _match = selected;
                         Message = "已匹配房间 " + selected.Code + "，请确认游戏原生观战提示；进入相同实时对局后自动加入，不会自动投入积分";

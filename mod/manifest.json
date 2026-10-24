@@ -1,7 +1,7 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "观战名次预测（积分）",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "author": "Local",
   "description": "统一名次预测暗夜界面；原生按钮轮廓、深色高对比配色；合入0.3.13悬停露出人物头像及反向切换。",
   "sdkVersion": ">=1.0.0 <2.0.0",

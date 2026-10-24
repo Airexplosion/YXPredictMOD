@@ -49,9 +49,24 @@ export class Rooms {
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
     return s;
   }
+  findByGame(key, nativeId) {
+    this.account(key);
+    requireThat(typeof nativeId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(nativeId), '游戏房间标识无效');
+    const rooms = Object.values(this.state.rooms).filter(r => r.gameRoomId === nativeId && !r.ended && !r.settled);
+    rooms.sort((a,b) => (this.syncTimes.get(b.code) ?? 0) - (this.syncTimes.get(a.code) ?? 0));
+    const r = rooms[0];
+    if (!r) return { nativeId, exists: false, available: false };
+    return { nativeId, exists: true, available: (r.members.includes(key) || r.members.length < 32) && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000,
+      code: r.code, gameId: r.gameId, gameRoomId: nativeId, round: r.round, members: r.members.length };
+  }
   create(key, snapshot) {
     this.account(key); const s = this.snapshot(snapshot);
     requireThat(!s.ended, '已结束的对局不能创建房间');
+    const existing = Object.values(this.state.rooms).find(r => !r.ended && !r.settled && (r.gameId === s.id || (s.gameRoomId && r.gameRoomId === s.gameRoomId)));
+    if (existing) {
+      requireThat(existing.host === key || this.now() - (this.syncTimes.get(existing.code) ?? -Infinity) <= 15000, '本局房间房主离线，请稍后重试', 409);
+      return this.join(existing.code, key, s.id);
+    }
     requireThat(Object.keys(this.state.rooms).length < 1000, '房间已满');
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
