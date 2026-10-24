@@ -44,7 +44,7 @@ namespace YxPrediction
         {
             public BattlePlayerInfoItem Item;
             public GameObject Root;
-            public TextMeshProUGUI Name, Label, Rating;
+            public TextMeshProUGUI Name, Label;
             public Image Avatar, Icon;
         }
         public TianJiFeature(PredictionMod mod, ModContext ctx, GameBridge bridge)
@@ -175,34 +175,30 @@ namespace YxPrediction
                     var avatar = item.FindComponent<Image>("Avatar", false);
                     if (name == null || avatar == null) continue;
                     // 文字与图标均归本玩家所有，图标的位置另以真实头像右侧为参照。
-                    GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(150, 50), Color.clear);
+                    GameObject root = _ui.Row(name.transform, "YXPredictHorse", Vector2.zero, new Vector2(150, 48), Color.clear);
                     var rect = root.transform as RectTransform;
                     rect.anchorMin = rect.anchorMax = name.rectTransform.pivot;
                     rect.pivot = new Vector2(0.5f, 1);
                     var background = root.GetComponent(typeof(Image)) as Image;
                     if (background != null) background.raycastTarget = false;
-                    var label = _ui.Label(root.transform, "caption", "", Vector2.zero, new Vector2(150, 26), 22);
+                    // 为字体本身的行高留足空间，再按实际字形顶边贴齐ID，避免大字号整行被裁掉。
+                    var label = _ui.Label(root.transform, "caption", "", Vector2.zero, new Vector2(150, 48), 22);
                     label.fontStyle = FontStyles.Bold; label.alignment = TextAlignmentOptions.Top;
                     label.richText = false; label.raycastTarget = false; label.enableWordWrapping = false;
                     label.overflowMode = TextOverflowModes.Ellipsis;
-                    var rating = _ui.Label(root.transform, "rating", "", new Vector2(0, -26), new Vector2(150, 24), 18);
-                    rating.alignment = TextAlignmentOptions.Top;
-                    rating.richText = false; rating.raycastTarget = false; rating.enableWordWrapping = false;
-                    rating.overflowMode = TextOverflowModes.Ellipsis;
                     var iconRoot = _ui.Row(root.transform, "horseIcon", Vector2.zero, new Vector2(56, 56), Color.white);
                     var iconRect = iconRoot.transform as RectTransform;
                     iconRect.anchorMin = iconRect.anchorMax = rect.pivot;
                     iconRect.pivot = new Vector2(0.5f, 0.5f);
                     var icon = iconRoot.GetComponent(typeof(Image)) as Image;
                     icon.raycastTarget = false; icon.preserveAspect = true;
-                    plate = new Plate { Item = item, Root = root, Name = name, Label = label, Rating = rating, Avatar = avatar, Icon = icon };
+                    plate = new Plate { Item = item, Root = root, Name = name, Label = label, Avatar = avatar, Icon = icon };
                     _plates.Add(plate);
                 }
                 plate.Root.SetActive(true);
-                plate.Label.text = member.Caption;
-                plate.Rating.text = "Elo " + member.Profile.Rating.Score.ToString("0", CultureInfo.InvariantCulture)
-                    + " ±" + member.Profile.Rating.Sigma.ToString("0", CultureInfo.InvariantCulture);
-                plate.Label.color = ColorOf(member.Title); plate.Rating.color = ColorOf(member.Title);
+                // 挂签只保留主称号和分数；赛季附加标签仍在单人说明及详细数据中显示。
+                plate.Label.text = member.Title + " " + member.Profile.Rating.Score.ToString("0", CultureInfo.InvariantCulture);
+                plate.Label.color = ColorOf(member.Title);
                 Sprite sprite = _icons.Value ? _assets.Get(member.Title, _ctx) : null;
                 plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null);
                 PositionPlate(plate);
@@ -210,14 +206,16 @@ namespace YxPrediction
         }
         static void PositionPlate(Plate plate)
         {
-            // 昵称的Rect可能远大于实际文字；按文字网格的底部放置，避免与ID重叠。
+            // 同时扣除两种字体的排版留白，将称号的字形顶边放在ID字形底边下方1单位。
             plate.Name.ForceMeshUpdate(false, false);
+            plate.Label.ForceMeshUpdate(false, false);
             Bounds bounds = plate.Name.textBounds;
+            Bounds caption = plate.Label.textBounds;
             Rect nameRect = plate.Name.rectTransform.rect;
             var root = plate.Root.transform as RectTransform;
-            root.anchoredPosition = bounds.size.y > 0
-                ? new Vector2(bounds.center.x, bounds.min.y - 4)
-                : new Vector2(nameRect.center.x, nameRect.yMin - 4);
+            float bottom = bounds.size.y > 0 ? bounds.min.y : nameRect.yMin;
+            float captionTop = caption.size.y > 0 ? caption.max.y : 0;
+            root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - 1 - captionTop);
             // 图标中心贴头像右缘、稍低于中线。转换坐标而非固定屏幕像素，跟随头像排序与缩放。
             Rect avatar = plate.Avatar.rectTransform.rect;
             Vector3 point = plate.Avatar.rectTransform.TransformPoint(new Vector3(avatar.xMax, avatar.yMin + avatar.height * 0.35f, 0));
