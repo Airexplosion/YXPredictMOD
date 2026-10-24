@@ -13,6 +13,7 @@ namespace YxPrediction
         public string Message { get; private set; }
         public string QueryStatus { get; private set; }
         public string PreparationError { get; private set; }
+        public string PreparationBlockedReason { get; private set; }
         public readonly RankSelection Drafts = new RankSelection();
         string _lastPreparationError;
         ConfigEntry<bool> _enabled;
@@ -95,6 +96,7 @@ namespace YxPrediction
         {
             bool switched = Snapshot == null || snapshot == null || Snapshot.Id != snapshot.Id;
             Snapshot = snapshot;
+            PreparationBlockedReason = null;
             if (switched) { PreparationError = null; _lastPreparationError = null; }
             if (snapshot == null) return;
             var backup = BookCodec.Write(Book);
@@ -107,7 +109,16 @@ namespace YxPrediction
                 Market m = Book.Observe(snapshot, ratings);
                 Drafts.Observe(m);
                 if (revision != Book.Revision) Save();
-                if (m == null) return;
+                if (m == null)
+                {
+                    if (snapshot.LiveObserver && snapshot.IsEightPlayerMatch() && ratings != null
+                        && Book.Find(snapshot.Id) == null && !Book.HasNewMarketCapacity)
+                    {
+                        PreparationBlockedReason = "无法开盘：12局已有投注记录尚未结算，积分与持仓已保留";
+                        Message = PreparationBlockedReason;
+                    }
+                    return;
+                }
                 PreparationError = null;
                 _lastPreparationError = null;
                 if (revision == Book.Revision && !switched && wasOpen == m.TradingWindowOpen && previousWait == m.TradingWaitReason) return;

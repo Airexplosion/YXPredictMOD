@@ -32,6 +32,7 @@ namespace YxPrediction
             book = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));
             book.Observe(snapshot, null);
             if (book.Balance != expected || book.Find("probe").RuleVersion != 2) throw new Exception("Adjacent reward persistence failed");
+            CapacityFlow(players, ratings);
             TradingFlow(players, ratings);
             LifeFlow(players, ratings);
             SharedTrendsFlow(players, ratings);
@@ -43,6 +44,26 @@ namespace YxPrediction
             EloScanFixture.Verify();
             RoomRateFixture.Verify();
             return "INTERPRETER PASS";
+        }
+
+        static void CapacityFlow(Player[] players, Rating[] ratings)
+        {
+            var empty = new PredictionBook(1000);
+            var funded = new PredictionBook(1000);
+            for (int i = 0; i < 12; i++)
+            {
+                string id = "capacity-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var s = new MatchSnapshot { Id = id, Round = 1, LiveObserver = true, Players = players };
+                empty.Markets.Add(new Market(id, players, ratings, Odds.Rates(ratings, 2), 2));
+                funded.Markets.Add(new Market(id, players, ratings, Odds.Rates(ratings, 2), 2));
+                if (funded.Bet(s, players[0].Uid, 1, 1) != null) throw new Exception("Capacity fixture bet failed");
+            }
+            var next = new MatchSnapshot { Id = "capacity-next", Round = 1, LiveObserver = true, Players = players };
+            if (!empty.HasNewMarketCapacity || empty.Observe(next, ratings) == null || empty.Markets.Count != 12 || empty.Balance != 1000)
+                throw new Exception("Passive markets exhausted capacity");
+            funded = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(funded))));
+            if (funded.HasNewMarketCapacity || funded.Observe(next, ratings) != null || funded.Markets.Count != 12 || funded.Balance != 988)
+                throw new Exception("Capacity discarded funded markets");
         }
 
         static void PanelLayoutFlow()
