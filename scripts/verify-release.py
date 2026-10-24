@@ -9,6 +9,7 @@ import zipfile
 
 MOD_ID = "local.yxp.predictionpoints"
 ICONS = ("特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马")
+ASSETS = ICONS + ("圆形遮罩",)
 
 
 def require(condition, message):
@@ -47,7 +48,7 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     require(manifest["updateUrl"] == "https://github.com/" + repository, "Wrong update repository")
     prefix = MOD_ID + "/"
     files = {"manifest.json", "plugins/PredictionPoints.dll", "README.md", "assets/horse/NOTICE.md"}
-    files.update("assets/horse/" + name + ".png" for name in ICONS)
+    files.update("assets/horse/" + name + ".png" for name in ASSETS)
     expected = {prefix + name for name in files}
     with zipfile.ZipFile(artifact) as archive:
         names = archive.namelist()
@@ -81,4 +82,4 @@ if __name__ == "__main__":
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
             for key in ("version", "tag", "artifact", "notes", "sha256", "title", "name"):
                 output.write(key + "=" + data[key] + "\n")
-    print("RELEASE CHECK PASS: " + data["tag"] + "; 11 files; ZIP/source/catalog checksums verified")
+    print("RELEASE CHECK PASS: " + data["tag"] + "; 12 files; ZIP/source/catalog checksums verified")

@@ -25,7 +25,7 @@ class ReleasePackageTests(unittest.TestCase):
         for relative in (".github/releases/latest.json", self.meta["artifact"], self.meta["notes"],
                          "mods.json", "mod/manifest.json", "mod/README.md", "mod/assets/horse/NOTICE.md"):
             self.copy(relative)
-        for icon in RELEASE.ICONS:
+        for icon in RELEASE.ASSETS:
             self.copy("mod/assets/horse/" + icon + ".png")
 
     def copy(self, relative):
@@ -52,7 +52,7 @@ class ReleasePackageTests(unittest.TestCase):
         catalog["mods"][0]["sha256"] = digest
         self.write_json("mods.json", catalog)
 
-    def test_current_eleven_file_package_with_icons_is_accepted(self):
+    def test_current_package_with_icons_and_circle_mask_is_accepted(self):
         result = RELEASE.verify(self.root)
         self.assertEqual(result["tag"], self.meta["tag"])
         self.assertEqual(result["title"], self.meta["title"])
@@ -60,6 +60,11 @@ class ReleasePackageTests(unittest.TestCase):
 
     def test_missing_mechanical_icon_is_rejected_even_with_valid_checksum(self):
         self.rewrite_archive(lambda entries: [(name, data) for name, data in entries if not name.endswith("/机械马.png")])
+        with self.assertRaisesRegex(ValueError, "ZIP contents"):
+            RELEASE.verify(self.root)
+
+    def test_missing_circle_mask_is_rejected_even_with_valid_checksum(self):
+        self.rewrite_archive(lambda entries: [(name, data) for name, data in entries if not name.endswith("/圆形遮罩.png")])
         with self.assertRaisesRegex(ValueError, "ZIP contents"):
             RELEASE.verify(self.root)
 

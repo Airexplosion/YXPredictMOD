@@ -43,10 +43,11 @@ namespace YxPrediction
         sealed class Plate
         {
             public BattlePlayerInfoItem Item;
-            public GameObject Root;
+            public GameObject Root, IconFrame;
             public TextMeshProUGUI Name, Label;
             public HorseCaption Caption;
             public Image Avatar, Icon;
+            public Sprite Clip;
         }
         public TianJiFeature(PredictionMod mod, ModContext ctx, GameBridge bridge)
         {
@@ -159,7 +160,7 @@ namespace YxPrediction
                 Plate plate = _plates[i];
                 bool present = false;
                 for (int j = 0; j < items.Count; j++) if (object.ReferenceEquals(items[j], plate.Item)) present = true;
-                if (!present || plate.Root == null || plate.Icon == null || plate.Item.gameObject == null)
+                if (!present || plate.Root == null || plate.IconFrame == null || plate.Icon == null || plate.Item.gameObject == null)
                 { DestroyPlate(plate); _plates.RemoveAt(i); }
             }
             for (int i = 0; i < items.Count; i++)
@@ -170,7 +171,7 @@ namespace YxPrediction
                 Plate plate = null;
                 for (int j = 0; j < _plates.Count; j++) if (object.ReferenceEquals(_plates[j].Item, item)) plate = _plates[j];
                 if (member == null || member.Title.Length == 0)
-                { if (plate != null) { plate.Root.SetActive(false); plate.Icon.gameObject.SetActive(false); } continue; }
+                { if (plate != null) { plate.Root.SetActive(false); plate.IconFrame.SetActive(false); } continue; }
                 if (plate == null)
                 {
                     var name = item.FindComponent<TextMeshProUGUI>("UsernameLabel", false);
@@ -189,16 +190,28 @@ namespace YxPrediction
                         new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
                     var iconRect = iconRoot.transform as RectTransform;
                     iconRect.pivot = new Vector2(0.5f, 0.5f);
-                    var icon = iconRoot.GetComponent(typeof(Image)) as Image;
+                    var maskImage = iconRoot.GetComponent(typeof(Image)) as Image;
+                    Sprite clip = _assets.CircleMask(_ctx);
+                    maskImage.sprite = clip; maskImage.raycastTarget = false;
+                    var mask = iconRoot.AddComponent(typeof(Mask)) as Mask;
+                    mask.showMaskGraphic = false;
+                    var face = _ui.Row(iconRoot.transform, "horseImage", Vector2.zero,
+                        new Vector2(HorsePlateLayout.IconSize, HorsePlateLayout.IconSize), Color.white);
+                    var faceRect = face.transform as RectTransform;
+                    faceRect.anchorMin = new Vector2(0, 0); faceRect.anchorMax = new Vector2(1, 1);
+                    faceRect.offsetMin = faceRect.offsetMax = Vector2.zero;
+                    var icon = face.GetComponent(typeof(Image)) as Image;
                     icon.raycastTarget = false; icon.preserveAspect = true;
-                    plate = new Plate { Item = item, Root = root, Name = name, Label = caption.Text, Caption = caption, Avatar = avatar, Icon = icon };
+                    plate = new Plate { Item = item, Root = root, Name = name, Label = caption.Text, Caption = caption,
+                        Avatar = avatar, Icon = icon, IconFrame = iconRoot, Clip = clip };
                     _plates.Add(plate);
                 }
                 plate.Root.SetActive(true);
                 // 挂签只保留主称号和分数；赛季附加标签仍在单人说明及详细数据中显示。
                 plate.Caption.Set(member.PlateCaption, member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title));
                 Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
-                plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null && plate.Name.isActiveAndEnabled);
+                plate.Icon.sprite = sprite;
+                plate.IconFrame.SetActive(sprite != null && plate.Clip != null && plate.Name.isActiveAndEnabled);
                 PositionPlate(plate);
             }
         }
@@ -217,7 +230,7 @@ namespace YxPrediction
                 ? UiTextBox.PointIn(root, plate.Label, new Vector3(caption.center.x, caption.max.y, 0)).y : 0;
             root.anchoredPosition = new Vector2(bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom - HorseCaption.GapBelowName - captionTop);
             // 以ID字形下沿为图标中心，覆盖用户指定的ID/称号区域；文字始终在前。
-            HorsePlateLayout.PlaceIcon(plate.Icon.rectTransform, plate.Name.rectTransform,
+            HorsePlateLayout.PlaceIcon(plate.IconFrame.transform as RectTransform, plate.Name.rectTransform,
                 bounds.size.y > 0 ? bounds.center.x : nameRect.center.x, bottom);
         }
         static Color ColorOf(string title)
@@ -239,7 +252,7 @@ namespace YxPrediction
         }
         void DestroyPlate(Plate plate)
         {
-            if (plate.Icon != null) _ui.Destroy(plate.Icon.gameObject);
+            if (plate.IconFrame != null) _ui.Destroy(plate.IconFrame);
             if (plate.Root != null) _ui.Destroy(plate.Root);
         }
         public void Destroy() { ClearPlates(); _ui.DestroyAll(); _assets.Destroy(); Roster.Clear(); }

@@ -142,6 +142,7 @@ internal static class Program
                 var hud = Box(item, 0, 0, 30, 30);
                 var caption = Label(name, 0, -30, 150, 48);
                 var icon = Box(name, 0, 0, 56, 56);
+                var face = Box(icon, 0, 0, 88, 88);
                 var order = new System.Collections.Generic.List<Transform>(); PaintOrder(item, order);
                 True(order.IndexOf(icon) > order.IndexOf(name), "Old child icon should reproduce covering native ID");
                 for (int repeat = 0; repeat < 20; repeat++)
@@ -156,6 +157,7 @@ internal static class Program
                     Near(actual.x, expected.x); Near(actual.y, expected.y);
                     order.Clear(); PaintOrder(item, order);
                     True(order.IndexOf(icon) < order.IndexOf(name) && order.IndexOf(icon) < order.IndexOf(caption.rectTransform), "ID or caption painted behind icon");
+                    True(face.parent == icon && order.IndexOf(face) < order.IndexOf(name), "Masked image escaped its frame or covered native ID");
                 }
                 var moved = Box(canvas, slot * 158, -60, 180, 210);
                 name.SetParent(moved, false);
@@ -178,6 +180,7 @@ internal static class Program
                 {
                     True(Calls(method, "DestroyPlate") && Calls(method, "get_isActiveAndEnabled"), "Stale or hidden native IDs retained an independent icon");
                     True(Calls(method, "Set"), "HorseCaption outline not updated from production title");
+                    True(Calls(method, "CircleMask") && Calls(method, "set_showMaskGraphic"), "Circular native UI mask is missing");
                 }
             }
         }

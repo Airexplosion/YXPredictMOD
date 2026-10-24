@@ -7,9 +7,9 @@ namespace YxPrediction
 {
     public sealed class HorseAssets
     {
-        readonly Sprite[] _sprites = new Sprite[7];
-        readonly Texture2D[] _textures = new Texture2D[7];
-        readonly bool[] _attempted = new bool[7];
+        readonly Sprite[] _sprites = new Sprite[8];
+        readonly Texture2D[] _textures = new Texture2D[8];
+        readonly bool[] _attempted = new bool[8];
         static int Index(string title)
         {
             switch (title)
@@ -28,6 +28,11 @@ namespace YxPrediction
         {
             int index = Index(title);
             if (index < 0) return null;
+            return Load(index, ctx);
+        }
+        public Sprite CircleMask(ModContext ctx) { return Load(7, ctx); }
+        Sprite Load(int index, ModContext ctx)
+        {
             if (_attempted[index]) return _sprites[index];
             _attempted[index] = true;
             Texture2D texture = null;
