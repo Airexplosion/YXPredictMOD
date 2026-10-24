@@ -102,6 +102,7 @@ namespace YxPrediction
         {
             HorseMember member = Find(uid);
             if (member == null) return "";
+            if (member.IsAi) return member.Title + " · " + member.Explanation;
             if (member.Profile == null || !member.Profile.Rating.Found) return "暂无公开Elo，不参与称号评定";
             string text = member.Caption + " · " + member.Explanation;
             if (member.Profile.DaoXinGames >= 0) text += " · 道心对局 " + PredictionMod.N(member.Profile.DaoXinGames) + "场";
@@ -197,9 +198,9 @@ namespace YxPrediction
                 }
                 plate.Root.SetActive(true);
                 // 挂签只保留主称号和分数；赛季附加标签仍在单人说明及详细数据中显示。
-                plate.Label.text = member.Title + " " + member.Profile.Rating.Score.ToString("0", CultureInfo.InvariantCulture);
-                plate.Label.color = ColorOf(member.Title);
-                Sprite sprite = _icons.Value ? _assets.Get(member.Title, _ctx) : null;
+                plate.Label.text = member.PlateCaption;
+                plate.Label.color = member.IsAi ? new Color(0.55f, 0.9f, 0.9f) : ColorOf(member.Title);
+                Sprite sprite = _icons.Value ? _assets.Get(member.IconTitle, _ctx) : null;
                 plate.Icon.sprite = sprite; plate.Icon.gameObject.SetActive(sprite != null);
                 PositionPlate(plate);
             }

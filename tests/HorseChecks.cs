@@ -15,6 +15,69 @@ internal static partial class Program
     { snapshot.States[index] = new PlayerState(100, wins, losses, 0); }
     static void HorseChecks()
     {
+        Check("AI titles cover exactly five decorative levels and share one mechanical icon", delegate
+        {
+            string[] labels = { "傀儡·地狱", "傀儡·极难", "傀儡·困难", "傀儡·中等", "傀儡·简单" };
+            var seen = new Dictionary<string, bool>();
+            for (int n = 0; n < 40; n++)
+            {
+                var s = Snapshot(1); s.Id = "ai-match-" + n;
+                for (int i = 0; i < 8; i++) s.Players[i] = new Player("ai-" + i, "AI", true);
+                var roster = new HorseRoster(); roster.Observe(s, null);
+                for (int i = 0; i < 8; i++)
+                {
+                    var member = roster.Find(s.Players[i].Uid); bool allowed = false;
+                    for (int j = 0; j < labels.Length; j++) if (member.Title == labels[j]) allowed = true;
+                    True(allowed); True(member.IsAi); Equal(member.IconTitle, "机械马");
+                    Equal(member.PlateCaption, member.Title); seen[member.Title] = true;
+                }
+            }
+            Equal(seen.Count, 5);
+        });
+        Check("AI title survives repeated updates new rounds profile arrival and UID reordering", delegate
+        {
+            var s = Snapshot(1); s.Players[7] = new Player("robot", "AI", true);
+            var roster = new HorseRoster(); roster.Observe(s, null);
+            string title = roster.Find("robot").Title;
+            var profiles = HorseProfiles();
+            for (int i = 0; i < 20; i++) { s.Round = i + 1; roster.Observe(s, profiles); Equal(roster.Find("robot").Title, title); }
+            Player first = s.Players[0]; s.Players[0] = new Player("robot", "renamed AI", true); s.Players[7] = first;
+            roster.Observe(s, null);
+            Equal(roster.Find("robot").Title, title); Equal(roster.Find("robot").Name, "renamed AI");
+        });
+        Check("AI decoration restores without saves and refreshes its seed for a different match", delegate
+        {
+            var s = Snapshot(1); s.Players[0] = new Player("robot", "AI", true);
+            var first = new HorseRoster(); first.Observe(s, null); string title = first.Find("robot").Title;
+            var reloaded = new HorseRoster(); reloaded.Observe(s, null); Equal(reloaded.Find("robot").Title, title);
+            bool changed = false;
+            for (int i = 0; i < 20; i++) { s.Id = "other-" + i; reloaded.Observe(s, null); if (reloaded.Find("robot").Title != title) changed = true; }
+            True(changed);
+        });
+        Check("AI never enters real Elo tiers even with a stale found profile", delegate
+        {
+            var s = Snapshot(1); var profiles = HorseProfiles();
+            for (int i = 1; i < 8; i++) s.Players[i] = new Player("ai-" + i, "AI", true);
+            profiles[1] = new HorseProfile(new Rating(10000, 10, true));
+            profiles[7] = new HorseProfile(new Rating(100, 10, true));
+            var roster = new HorseRoster(); roster.Observe(s, profiles);
+            Equal(roster.Find(s.Players[0].Uid).Title, "中等马");
+            Equal(roster.Find(s.Players[0].Uid).PlateCaption, "中等马 4400");
+            profiles[0] = new HorseProfile(Rating.Unknown()); roster.Observe(s, profiles);
+            Equal(roster.Find(s.Players[0].Uid).Title, "");
+        });
+        Check("AI victories and elimination never turn a puppet into a dark or carousel horse", delegate
+        {
+            var s = Snapshot(1); s.Players[7] = new Player("robot", "AI", true);
+            var profiles = HorseProfiles(); var roster = new HorseRoster(); roster.Observe(s, profiles);
+            var member = roster.Find("robot"); string title = member.Title;
+            s.Round = 2; HorseWins(s, 7, 1); roster.Observe(s, profiles);
+            s.Round = 3; HorseWins(s, 7, 2); roster.Observe(s, profiles);
+            Equal(member.Title, title); True(!member.DarkHorse); Equal(member.ConsecutiveWins, 0); Equal(member.Tags, "");
+            True(member.Explanation.Contains("不代表实际难度")); Equal(member.PlateCaption, title);
+            s.States[7] = new PlayerState(-1, 2, 0, 8); roster.Observe(s, profiles);
+            Equal(member.Title, title); Equal(member.IconTitle, "机械马");
+        });
         Check("horse profile reads exact UID even when two players share their name", delegate
         {
             var shard = Json.ParseObject("{\"one\":{\"name\":\"same\",\"rating\":4100,\"sigma\":100,\"dx\":20,\"games\":50},\"two\":{\"name\":\"same\",\"rating\":3200,\"sigma\":200}}");

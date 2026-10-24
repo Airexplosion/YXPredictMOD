@@ -58,6 +58,14 @@ namespace YxPrediction
             if (!profile.Spinning || profile.DaoXinGames != 2 || profile.Rating.Score != 3500) throw new Exception("Horse profile failed under interpreter");
             s.Id = "new-horses"; roster.Observe(s, profiles);
             if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
+            var aiPlayers = new Player[8];
+            for (int i = 0; i < 8; i++) aiPlayers[i] = new Player(players[i].Uid, players[i].Name, i == 7);
+            s.Players = aiPlayers; s.Id = "ai-horses"; roster.Observe(s, profiles);
+            var ai = roster.Find(aiPlayers[7].Uid); string title = ai.Title;
+            if (!ai.IsAi || !title.StartsWith("傀儡·", StringComparison.Ordinal) || ai.IconTitle != "机械马" || ai.PlateCaption != title || ai.Tags != "")
+                throw new Exception("AI decoration failed under interpreter");
+            var restored = new HorseRoster(); restored.Observe(s, profiles);
+            if (restored.Find(aiPlayers[7].Uid).Title != title) throw new Exception("AI stable title failed under interpreter");
         }
 
         static void ProtocolRankFlow(Player[] players, Rating[] ratings)

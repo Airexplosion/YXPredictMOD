@@ -28,7 +28,7 @@
       <Using Namespace="System" /><Using Namespace="System.IO" /><Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         // ILRuntime does not expose Assembly resource streams. Embed the original PNG bytes deterministically.
-        string[] titles = { "特等马", "上等马", "中等马", "牛马", "海马", "黑马" };
+        string[] titles = { "特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马" };
         var source = new StringBuilder();
         source.AppendLine("// Generated from mod/assets/horse/*.png; do not edit.");
         source.AppendLine("namespace YxPrediction { internal static class HorseImageData { public static string Get(int index) { switch (index) {");
