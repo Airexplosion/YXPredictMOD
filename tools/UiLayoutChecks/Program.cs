@@ -93,9 +93,64 @@ internal static class Program
         True(UiTextBox.Container(caption).Raised && !caption.rectTransform.Raised, "Only inner text was raised");
         Console.WriteLine("PASS history heading, nested glyph gap and complete label stacking");
     }
+    static void ObserverVisibility()
+    {
+        SceneLoader.currentSceneName = "Battle";
+        BattleManager.Instance = null;
+        True(!PredictionVisibility.CanShow(), "Missing manager exposed prediction");
+        var manager = new BattleManager(); BattleManager.Instance = manager;
+        True(!PredictionVisibility.CanShow(), "Missing game status exposed prediction");
+        var status = new Proto.GameStatus(); manager.currentGameStatus = status;
+        // 穷举观战/实时观战/裁判、参赛、回放标志；参赛和回放始终优先阻止显示。
+        for (int flags = 0; flags < 64; flags++)
+        {
+            manager.isSpectating = (flags & 1) != 0;
+            manager.isRealtimeSpectating = (flags & 2) != 0;
+            manager.isJudge = (flags & 4) != 0;
+            status.Participating = (flags & 8) != 0;
+            manager.replaying = (flags & 16) != 0;
+            status.gameMode = (flags & 32) != 0 ? Proto.GameMode.ReviewMode : Proto.GameMode.Normal;
+            bool allowed = (flags & 7) != 0 && (flags & 56) == 0;
+            True(PredictionVisibility.CanShow() == allowed, "Wrong observer access flags " + flags);
+            SceneLoader.currentSceneName = "MainMenu";
+            True(!PredictionVisibility.CanShow(), "Prediction remained visible outside Battle");
+            SceneLoader.currentSceneName = "Battle";
+        }
+        manager.isSpectating = true; manager.isRealtimeSpectating = false; manager.isJudge = false;
+        manager.replaying = false; status.gameMode = Proto.GameMode.Normal; status.Participating = false;
+        True(PredictionVisibility.CanShow(), "Spectator entry unavailable");
+        status.Participating = true; // 淘汰参赛者可能同时带有isSpectating，仍不可显示。
+        True(!PredictionVisibility.CanShow(), "Eliminated participant exposed prediction");
+        status.Participating = false;
+        True(PredictionVisibility.CanShow(), "Returning to live spectating did not restore entry");
+        Console.WriteLine("PASS observer-only visibility: 64 role combinations, scenes and mode transitions");
+    }
+    static void VisibilityBindings(string path)
+    {
+        using (ModuleDefinition module = ModuleDefinition.ReadModule(path))
+        {
+            string[] types = { "PredictionLauncher", "PredictionLauncher", "PredictionPanel", "PredictionPanel", "PredictionMod", "PredictionMod" };
+            string[] methods = { "Update", "Click", "Update", "Toggle", "PlaceBet", "Trade" };
+            for (int i = 0; i < types.Length; i++)
+            {
+                TypeDefinition type = module.GetType("YxPrediction." + types[i]);
+                MethodDefinition target = null;
+                foreach (var method in type.Methods) if (method.Name == methods[i]) target = method;
+                True(target != null && Calls(target, "CanShow"), "Missing live guard: " + types[i] + "." + methods[i]);
+            }
+            TypeDefinition horses = module.GetType("YxPrediction.TianJiFeature");
+            foreach (var method in horses.Methods)
+                if (method.HasBody) True(!Calls(method, "CanShow") && !Calls(method, "IsLiveObserver"), "Horse titles incorrectly restricted to observers");
+            TypeDefinition mod = module.GetType("YxPrediction.PredictionMod");
+            foreach (var method in mod.Methods)
+                if (method.Name == "OnUpdate")
+                    True(!Calls(method, "CanShow") && !Calls(method, "IsLiveObserver"), "Prediction gate blocked shared state and title updates");
+        }
+        Console.WriteLine("PASS compiled launcher/panel/trade guards and independent title updates");
+    }
     static int Main(string[] args)
     {
-        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); Console.WriteLine("UI LAYOUT PASS (coordinate model; no game rendering)"); return 0; }
+        try { SdkContract(args[0]); ReproduceOldFailure(); Modes(1); Modes(0.65f); HeaderAndGlyph(); ObserverVisibility(); VisibilityBindings(args[1]); Console.WriteLine("UI LAYOUT / VISIBILITY PASS (models and compiled bindings; no game rendering)"); return 0; }
         catch (Exception ex) { Console.WriteLine(ex); return 1; }
     }
 }

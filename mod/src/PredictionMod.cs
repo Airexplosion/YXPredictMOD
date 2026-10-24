@@ -110,6 +110,7 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Poll(); // 点击时重新检查游戏状态。
+            if (!PredictionVisibility.CanShow()) return Report("仅限实时观战，参赛或回放时不可下注");
 #endif
             if (expectedFocusUid != null && (expectedFocusUid != uid || FocusSelection.Uid(Snapshot) != expectedFocusUid)) return Report("观战对象已切换，请查看当前玩家后再操作");
             if (expectedMarketId != null && (Snapshot == null || Snapshot.Id != expectedMarketId)) return Report("观战对局已切换，请查看当前对局后再操作");
@@ -134,6 +135,7 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Poll();
+            if (!PredictionVisibility.CanShow()) return Report("仅限实时观战，参赛或回放时不可调仓");
 #endif
             if (expectedFocusUid != null && (expectedFocusUid != uid || FocusSelection.Uid(Snapshot) != expectedFocusUid)) return Report("观战对象已切换，请查看当前玩家后再操作");
             if (expectedMarketId != null && (Snapshot == null || Snapshot.Id != expectedMarketId)) return Report("观战对局已切换，请查看当前对局后再操作");

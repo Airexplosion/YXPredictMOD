@@ -37,12 +37,14 @@ namespace YxPrediction
         public PredictionPanel(PredictionMod mod, ModContext ctx) { _mod = mod; _ui = new UiKit(ctx); _version = ctx.Version; }
         public void Toggle()
         {
+            if (!PredictionVisibility.CanShow()) { Close(); return; }
             if (_visible) { Close(); return; }
             if (_root == null) Build();
             if (_root != null && _singleRoot != null) { _visible = true; _expanded = false; _history = false; _detailed = false; Refresh(); }
         }
         public void Update()
         {
+            if (!PredictionVisibility.CanShow()) { Close(); return; }
             if (!_visible || _root == null) return;
             if (_waitForFocusRelease && !Input.GetMouseButton(0))
             { _waitForFocusRelease = false; _singleEnableAfterFrame = Time.frameCount; _nextRefresh = 0; }

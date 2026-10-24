@@ -208,9 +208,7 @@ namespace YxPrediction
                 id = "start:" + status.beginTs.ToString(CultureInfo.InvariantCulture) + ":" + string.Join(",", ids);
             }
             BattleManager manager = BattleManager.Instance;
-            bool observer = manager != null && !manager.replaying && status.gameMode != Proto.GameMode.ReviewMode
-                && (manager.isSpectating || manager.isRealtimeSpectating || manager.isJudge)
-                && !GameStatusExtension.SelfIsPlayer(status);
+            bool observer = PredictionVisibility.IsLiveObserver(manager, status);
             reason = manager == null ? "等待观战管理器" : "游戏尚未确认观战状态";
             if (manager != null && (manager.replaying || status.gameMode == Proto.GameMode.ReviewMode)) reason = "当前为历史回放，不能下注";
             else if (GameStatusExtension.SelfIsPlayer(status)) reason = "当前账号在参赛名单中，不能下注";

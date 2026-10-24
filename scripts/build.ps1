@@ -24,7 +24,7 @@ try {
     Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll check --warn-as-error --manifest mod/manifest.json mod/plugins/PredictionPoints.dll
     if (!$CoreOnly) {
         Invoke-Dotnet restore tools/UiLayoutChecks/UiLayoutChecks.csproj --configfile NuGet.Config
-        Invoke-Dotnet run --project tools/UiLayoutChecks/UiLayoutChecks.csproj --no-restore -- (Join-Path $root 'vendor/yixianpai-mod-sdk/sdk/net40/Yx.ModSdk.dll')
+        Invoke-Dotnet run --project tools/UiLayoutChecks/UiLayoutChecks.csproj --no-restore -- (Join-Path $root 'vendor/yixianpai-mod-sdk/sdk/net40/Yx.ModSdk.dll') (Join-Path $root 'mod/plugins/PredictionPoints.dll')
         Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll pack mod --out dist
         # 上游pack只收manifest/plugins/assets/data；在同一包根补入使用说明。
         Add-Type -AssemblyName System.IO.Compression.FileSystem
