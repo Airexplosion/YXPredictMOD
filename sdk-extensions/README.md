@@ -1,5 +1,5 @@
-# Source compatibility shim
+# Classic UI compatibility sources
 
-NativeControlStyle.cs is byte-identical to the new SDK source at yxp-modloader/sdk/Yx.ModSdk/Unity/NativeControlStyle.cs (SDK commit 63e39872c5fa9126cf816150e9685598cc2812d3). It is compiled only for the game build, to support older deployed SDK binaries. No game implementation or vendor DLL is included. Remove this compile include when requiring an SDK release which supplies the helper, and then reference the SDK class directly.
+NativeControlStyle.cs, NativePanelTheme.cs, NativePredictionRow.cs and NativePredictionWindow.cs are byte-identical to yxp-modloader/sdk/Yx.ModSdk/Unity and public SDK source/Unity. The public SDK commit is e61c5e8a5bc0755b2612bedf2cd7a73bc3ddae7b; documentation: https://github.com/Airexplosion/yixianpai-mod-sdk/blob/main/docs/classic-prediction-ui.md .
 
-The authoritative API belongs in SDK; this is a compatibility source copy, not a new mod-specific implementation. Keep both files byte-identical when updating it.
+The sources compile into this MOD for compatibility with older manager SDK binaries. The public SDK also provides Yx.ModSdk.ClassicUi.dll and a sample. Do not link both the source copies and add-on assembly in the same MOD. No game or Unity implementation or vendor DLL is included. Keep all copies byte-identical when updating. Business/network/identity logic remains in the MOD.

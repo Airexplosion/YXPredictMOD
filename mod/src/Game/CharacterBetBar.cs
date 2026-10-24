@@ -12,7 +12,7 @@ namespace YxPrediction
         readonly UiKit _ui;
         GameObject _root;
         UiInput _stake;
-        NativeButton _buy, _half, _sell;
+        NativePanelButton _buy, _half, _sell;
         TMPro.TextMeshProUGUI _name, _rank, _holding;
         int _selected = 1, _index = -1;
         string _uid, _game;
@@ -26,18 +26,18 @@ namespace YxPrediction
             _theme.ApplyWindowFrame(_root.GetComponent<UnityEngine.UI.Image>());
             _name = _ui.Label(_root.transform,"name","",new Vector2(12,-16),new Vector2(160,38),20);
             _theme.ApplyTextStyle(_name, 20, false, TMPro.TextAlignmentOptions.Left);
-            _theme.CreateButtonTopLeft(_root.transform,"minus","−",176,-16,40,38,NativeBtnStyle.Secondary,Minus,22);
+            _theme.CreateButtonTopLeft(_root.transform,"minus","−",176,-16,40,38,NativePanelButtonStyle.Secondary,Minus,22);
             _rank = _ui.Label(_root.transform,"rank","",new Vector2(222,-16),new Vector2(68,38),20);
             _theme.ApplyTextStyle(_rank, 20, true, TMPro.TextAlignmentOptions.Center);
-            _theme.CreateButtonTopLeft(_root.transform,"plus","+",296,-16,40,38,NativeBtnStyle.Secondary,Plus,22);
+            _theme.CreateButtonTopLeft(_root.transform,"plus","+",296,-16,40,38,NativePanelButtonStyle.Secondary,Plus,22);
             _stake = _ui.NumberInput(_root.transform,"StakeInput",new Vector2(350,-16),new Vector2(90,38),5,Ignore); _stake.SetText("10"); _theme.StyleInput(_root.transform.Find("StakeInput"),22);
-            _buy = _theme.CreateButtonTopLeft(_root.transform,"buy","投入",452,-16,88,38,NativeBtnStyle.Primary,Buy,20);
-            _half = _theme.CreateButtonTopLeft(_root.transform,"half","退半",548,-16,78,38,NativeBtnStyle.Secondary,Half,20);
-            _sell = _theme.CreateButtonTopLeft(_root.transform,"sell","清仓",634,-16,78,38,NativeBtnStyle.Secondary,Sell,20);
+            _buy = _theme.CreateButtonTopLeft(_root.transform,"buy","投入",452,-16,88,38,NativePanelButtonStyle.Primary,Buy,20);
+            _half = _theme.CreateButtonTopLeft(_root.transform,"half","退半",548,-16,78,38,NativePanelButtonStyle.Secondary,Half,20);
+            _sell = _theme.CreateButtonTopLeft(_root.transform,"sell","清仓",634,-16,78,38,NativePanelButtonStyle.Secondary,Sell,20);
             _holding = _ui.Label(_root.transform,"holding","",new Vector2(724,-16),new Vector2(150,38),18);
             _theme.ApplyTextStyle(_holding, 18, false, TMPro.TextAlignmentOptions.Left);
-            _theme.CreateButtonTopLeft(_root.transform,"overview","总览",880,-16,76,38,NativeBtnStyle.Secondary,Overview,20);
-            _theme.CreateButtonTopLeft(_root.transform,"collapse","收",964,-16,40,38,NativeBtnStyle.Secondary,Collapse,18);
+            _theme.CreateButtonTopLeft(_root.transform,"overview","总览",880,-16,76,38,NativePanelButtonStyle.Secondary,Overview,20);
+            _theme.CreateButtonTopLeft(_root.transform,"collapse","收",964,-16,40,38,NativePanelButtonStyle.Secondary,Collapse,18);
         }
         public void Update()
         {

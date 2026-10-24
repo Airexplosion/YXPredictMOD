@@ -1,9 +1,9 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "观战名次预测（积分）",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "author": "Local",
-  "description": "恢复旧版个人赌马面板的完整行布局并接入联机：马牌、命元胜负、独立赔率、投入及持仓；保留输入与成员提醒修复。",
+  "description": "完整恢复旧版个人预测窗体并用于联机；旧标题栏、内衬、马牌/倍率/下注布局，透视与折起。通用组件已进入公开SDK。",
   "sdkVersion": ">=1.0.0 <2.0.0",
   "entry": "plugins/PredictionPoints.dll",
   "entryType": "YxPrediction.PredictionMod",

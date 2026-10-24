@@ -62,6 +62,7 @@ namespace YxPrediction
         {
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
+            _theme.RefreshSource();
             if (Online != null) Online.Update();
             if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();

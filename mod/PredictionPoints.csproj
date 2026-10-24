@@ -12,7 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="src\**\*.cs" />
-    <Compile Include="../sdk-extensions/NativeControlStyle.cs" Condition="'$(YxHasGameRefs)' == 'true'" Link="Sdk/NativeControlStyle.cs" />
+    <Compile Include="../sdk-extensions/*.cs" Condition="'$(YxHasGameRefs)' == 'true'" LinkBase="Sdk" />
     <Reference Include="System" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)net40\Yx.ModSdk.Core.dll</HintPath><Private>false</Private></Reference>
