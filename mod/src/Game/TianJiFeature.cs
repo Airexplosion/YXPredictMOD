@@ -21,7 +21,7 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly GameBridge _bridge;
         readonly UiKit _ui;
-        readonly ConfigEntry<bool> _enabled, _icons, _alwaysCover;
+        readonly ConfigEntry<bool> _enabled, _icons, _iconsOnFocus;
         readonly HorseAssets _assets = new HorseAssets();
         readonly List<Plate> _plates = new List<Plate>();
         public readonly HorseRoster Roster = new HorseRoster();
@@ -56,19 +56,20 @@ namespace YxPrediction
             _mod = mod; _ctx = ctx; _bridge = bridge; _ui = new UiKit(ctx);
             _enabled = ctx.Config.Bind("tianji", "enabled", true, "显示田忌赛马称号；按公开Elo分档，仅作趣味参考");
             _icons = ctx.Config.Bind("tianji", "icons", true, "允许圆形马图覆盖原头像；关闭后仅显示称号");
-            _alwaysCover = ctx.Config.Bind("tianji", "alwaysCover", false, "始终用马图覆盖头像；关闭时仅查看该角色或悬停头像时覆盖，Ctrl+Shift+H切换");
-            ctx.Input.RegisterHotkey("horseAlwaysCover", "Ctrl+Shift+H", ToggleAlwaysCover);
+            // 使用新配置键，旧alwaysCover设置不再影响默认行为；保留热键ID以沿用用户改键。
+            _iconsOnFocus = ctx.Config.Bind("tianji", "iconsOnFocus", false, "关闭：默认显示马图，查看或悬停时显示角色；开启：默认显示角色，查看或悬停时显示马图。Ctrl+Shift+H切换");
+            ctx.Input.RegisterHotkey("horseAlwaysCover", "Ctrl+Shift+H", ToggleIconMode);
             ctx.Events.OnNetIn<Proto.MatchPlayerInfosResp>(OnScores);
         }
         public void Toggle() { _enabled.Value = !_enabled.Value; _nextUpdate = 0; Update(); }
-        void ToggleAlwaysCover()
+        void ToggleIconMode()
         {
             var events = EventSystem.current;
             var selected = events == null ? null : events.currentSelectedGameObject;
             if (selected != null && (selected.GetComponent(typeof(TMP_InputField)) != null
                 || selected.GetComponent(typeof(InputField)) != null)) return;
-            _alwaysCover.Value = !_alwaysCover.Value;
-            _ctx.Log.Info(_alwaysCover.Value ? "马图：始终覆盖头像" : "马图：仅查看或悬停时覆盖头像");
+            _iconsOnFocus.Value = !_iconsOnFocus.Value;
+            _ctx.Log.Info(_iconsOnFocus.Value ? "马图：默认显示角色，查看或悬停时显示马图" : "马图：默认显示马图，查看或悬停时显示角色");
             _nextUpdate = 0;
         }
         void OnScores(Proto.MatchPlayerInfosResp message)
@@ -181,7 +182,7 @@ namespace YxPrediction
                         && HorsePlateLayout.ContainsPoint(avatar, local);
                 }
                 plate.IconFrame.SetActive(HorsePlateLayout.ShouldShow(_icons.Value && plate.Icon.sprite != null && plate.Clip != null,
-                    visible, _alwaysCover.Value, valid ? plate.Uid : null, snapshot.FocusedUid, hovered));
+                    visible, _iconsOnFocus.Value, valid ? plate.Uid : null, snapshot.FocusedUid, hovered));
             }
         }
         void RefreshPlates()

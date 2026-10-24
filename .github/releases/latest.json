@@ -1,8 +1,8 @@
 {
-  "version": "0.3.11",
-  "tag": "v0.3.11",
-  "title": "v0.3.11 - AI称号更名电子马",
-  "artifact": "dist/local.yxp.predictionpoints-0.3.11.zip",
-  "sha256": "8cecfd151af8ff7dda95cf3db66c5644df4df05b9848c71a290a992920d9df37",
-  "notes": ".github/releases/v0.3.11.md"
+  "version": "0.3.12",
+  "tag": "v0.3.12",
+  "title": "v0.3.12 - 默认马图，查看与悬停显示角色",
+  "artifact": "dist/local.yxp.predictionpoints-0.3.12.zip",
+  "sha256": "684ece431439e569ee9e81554b44868b09c4bce3171d682bdff31b02141fcda7",
+  "notes": ".github/releases/v0.3.12.md"
 }

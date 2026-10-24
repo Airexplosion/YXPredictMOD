@@ -29,10 +29,11 @@ namespace YxPrediction
             return x * x + y * y <= 1;
         }
 
-        public static bool ShouldShow(bool hasImage, bool avatarVisible, bool alwaysCover, string uid, string focusedUid, bool hovered)
+        public static bool ShouldShow(bool hasImage, bool avatarVisible, bool iconsOnFocus, string uid, string focusedUid, bool hovered)
         {
-            return hasImage && avatarVisible && !string.IsNullOrEmpty(uid)
-                && (alwaysCover || hovered || (!string.IsNullOrEmpty(focusedUid) && uid == focusedUid));
+            if (!hasImage || !avatarVisible || string.IsNullOrEmpty(uid)) return false;
+            bool viewing = hovered || (!string.IsNullOrEmpty(focusedUid) && uid == focusedUid);
+            return iconsOnFocus ? viewing : !viewing;
         }
     }
 }

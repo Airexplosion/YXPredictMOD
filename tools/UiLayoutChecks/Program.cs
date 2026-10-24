@@ -177,18 +177,25 @@ internal static class Program
         {
             foreach (string uid in players)
             {
-                True(HorsePlateLayout.ShouldShow(true, true, false, uid, focus, false) == (uid == focus), "Auto mode did not follow actual focused UID");
-                True(HorsePlateLayout.ShouldShow(true, true, false, uid, focus, true), "Hover did not reveal another avatar");
-                True(HorsePlateLayout.ShouldShow(true, true, true, uid, focus, false), "Always-cover did not reveal all avatars");
+                True(HorsePlateLayout.ShouldShow(true, true, false, uid, focus, false) == (uid != focus), "Default mode did not reveal focused role or cover other avatars");
+                True(!HorsePlateLayout.ShouldShow(true, true, false, uid, focus, true), "Default hover did not reveal the role");
+                True(HorsePlateLayout.ShouldShow(true, true, true, uid, focus, false) == (uid == focus), "Alternate mode did not reveal icon only for focused UID");
+                True(HorsePlateLayout.ShouldShow(true, true, true, uid, focus, true), "Alternate hover did not reveal the icon");
                 for (int flags = 0; flags < 4; flags++)
                 {
-                    bool always = (flags & 1) != 0, hover = (flags & 2) != 0;
-                    True(!HorsePlateLayout.ShouldShow(false, true, always, uid, focus, hover), "Missing sprite or disabled image setting exposed overlay");
-                    True(!HorsePlateLayout.ShouldShow(true, false, always, uid, focus, hover), "Hidden or reused native avatar exposed overlay");
-                    True(!HorsePlateLayout.ShouldShow(true, true, always, null, focus, hover), "Unbound player exposed overlay");
+                    bool iconsOnFocus = (flags & 1) != 0, hover = (flags & 2) != 0;
+                    True(!HorsePlateLayout.ShouldShow(false, true, iconsOnFocus, uid, focus, hover), "Missing sprite or disabled image setting exposed overlay");
+                    True(!HorsePlateLayout.ShouldShow(true, false, iconsOnFocus, uid, focus, hover), "Hidden or reused native avatar exposed overlay");
+                    True(!HorsePlateLayout.ShouldShow(true, true, iconsOnFocus, null, focus, hover), "Unbound player exposed overlay");
                 }
             }
         }
+        // 同时查看A、悬停B时两者都露出角色；移开鼠标、改看B后A恢复马图。
+        True(!HorsePlateLayout.ShouldShow(true, true, false, "player1", "player1", false), "Viewing A did not reveal A");
+        True(!HorsePlateLayout.ShouldShow(true, true, false, "player2", "player1", true), "Hover B did not reveal B while viewing A");
+        True(HorsePlateLayout.ShouldShow(true, true, false, "player2", "player1", false), "Leaving B did not restore its icon");
+        True(HorsePlateLayout.ShouldShow(true, true, false, "player1", "player2", false), "Switching to B did not restore A's icon");
+        True(!HorsePlateLayout.ShouldShow(true, true, false, "player2", "player2", false), "Switching to B did not reveal B");
         var avatar = Box(null, 0, 0, 100, 120); avatar.pivot = new Vector2(0.3f, 0.7f);
         Vector2 center = avatar.rect.center;
         True(HorsePlateLayout.ContainsPoint(avatar, center), "Avatar center missed");
@@ -197,7 +204,7 @@ internal static class Program
         True(!HorsePlateLayout.ContainsPoint(avatar, new Vector2(center.x, center.y + 51)), "Outside circle triggered hover");
         avatar.sizeDelta = new Vector2(0, 0);
         True(!HorsePlateLayout.ContainsPoint(avatar, center), "Unlaid-out avatar triggered hover");
-        Console.WriteLine("PASS automatic focus/hover, always-cover and disabled modes; round hit area rejects corners and empty bounds");
+        Console.WriteLine("PASS default icons/role-on-focus and alternate roles/icon-on-focus, pointer leave/focus switch, disabled guards and circular hover bounds");
     }
     static void HorseBindings(string path)
     {
@@ -207,8 +214,23 @@ internal static class Program
             foreach (var method in type.Methods)
             {
                 if (method.Name == "Update") True(Calls(method, "UpdateIcons"), "Icon hover/focus not refreshed every frame");
-                if (method.Name == ".ctor") True(Calls(method, "RegisterHotkey"), "Configurable hotkey is missing");
-                if (method.Name == "ToggleAlwaysCover") True(Calls(method, "set_Value") && Calls(method, "GetComponent"), "Hotkey must persist mode and avoid typing in input fields");
+                if (method.Name == ".ctor")
+                {
+                    True(Calls(method, "RegisterHotkey"), "Configurable hotkey is missing");
+                    bool newMode = false;
+                    foreach (Instruction instruction in method.Body.Instructions)
+                    {
+                        string value = instruction.Operand as string;
+                        True(value != "alwaysCover", "Removed always-cover setting was rebound");
+                        if (value == "iconsOnFocus")
+                        {
+                            newMode = true;
+                            True(instruction.Next.OpCode == OpCodes.Ldc_I4_0, "Upgraded users must start with icons visible by default");
+                        }
+                    }
+                    True(newMode, "New independent mode setting is missing");
+                }
+                if (method.Name == "ToggleIconMode") True(Calls(method, "set_Value") && Calls(method, "GetComponent"), "Hotkey must persist mode and avoid typing in input fields");
                 if (method.Name == "UpdateIcons")
                     True(Calls(method, "PlaceIcon") && Calls(method, "ShouldShow") && Calls(method, "ContainsPoint") && Calls(method, "get_isActiveAndEnabled"), "Avatar placement, visibility or round hover guard not bound");
                 if (method.Name == "ClearPlates") True(Calls(method, "DestroyPlate"), "Clearing a match leaked independent icons");
