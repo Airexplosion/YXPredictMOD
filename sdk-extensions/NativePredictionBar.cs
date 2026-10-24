@@ -17,7 +17,7 @@ namespace Yx.ModSdk.Unity
         public NativePredictionBar(ModContext ctx, NativePanelTheme theme, Action minus, Action plus, Action buy, Action half, Action sell, Action overview, Action collapse)
         {
             _ui=new UiKit(ctx);
-            Root=_ui.Panel("PredictionCharacterBetBar",new Vector2(0.5f,0f),new Vector2(0.5f,0f),new Vector2(0f,76f),new Vector2(940f,66f),NativePanelTheme.LacquerBlack);
+            Root=_ui.Panel("PredictionCharacterBetBar",new Vector2(0.5f,0f),new Vector2(0.5f,0f),new Vector2(0f,76f),new Vector2(990f,66f),NativePanelTheme.LacquerBlack);
             if(Root==null)return;
             theme.ApplyWindowFrame(Root.GetComponent<Image>());
             Root.GetComponent<Image>().color=new Color(0.22f,0.25f,0.29f,1f);
@@ -125,7 +125,7 @@ namespace Yx.ModSdk.Unity
 
                 // 6. 快捷按钮
                 Overview = theme.CreateButtonTopLeft(bar, "BtnOverview", "总览", 816f, -14f, 72f, 38f, NativePanelButtonStyle.Secondary, overview, 18);
-                Collapse = theme.CreateButtonTopLeft(bar, "BtnCollapse", "▾", 900f, -16f, 36f, 34f, NativePanelButtonStyle.Pill, collapse, 16);
+                Collapse = theme.CreateButtonTopLeft(bar, "BtnCollapse", "收起", 900f, -16f, 76f, 34f, NativePanelButtonStyle.Pill, collapse, 16);
             Stake.SetText("10");
         }
         /// <summary>Hide content without allowing invisible children to receive clicks. Existing field values remain intact.</summary>
@@ -139,9 +139,9 @@ namespace Yx.ModSdk.Unity
                 if(collapsed)child.gameObject.SetActive(false);
                 else if(child.name!="HorseIcon"&&child.name!="BtnSellHalf"&&child.name!="BtnSellAll")child.gameObject.SetActive(true);
             }
-            Root.GetComponent<RectTransform>().sizeDelta=new Vector2(collapsed?120f:940f,collapsed?42f:66f);
-            NativePanelTheme.SetTopLeft(Collapse.GameObject.GetComponent<RectTransform>(),collapsed?8f:900f,collapsed?-4f:-16f,collapsed?104f:36f,34f);
-            Collapse.SetText(collapsed?"展开预测":"▾");
+            Root.GetComponent<RectTransform>().sizeDelta=new Vector2(collapsed?120f:990f,collapsed?42f:66f);
+            NativePanelTheme.SetTopLeft(Collapse.GameObject.GetComponent<RectTransform>(),collapsed?8f:900f,collapsed?-4f:-16f,collapsed?104f:76f,34f);
+            Collapse.SetText(collapsed?"展开":"收起");
         }
         public void Destroy(){_ui.DestroyAll();}
     }

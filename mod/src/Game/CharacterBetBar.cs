@@ -58,7 +58,7 @@ namespace YxPrediction
             _half.SetActive(!_collapsed&&r.Stakes[index]>0);_sell.SetActive(!_collapsed&&r.Stakes[index]>0);
             _bar.SetCollapsed(_collapsed);
             var rt=_root.transform as RectTransform;var parent=rt.parent as RectTransform;
-            float scale=Mathf.Min(1.15f,(parent.rect.width-32f)/940f);rt.localScale=new Vector3(scale,scale,1);
+            float scale=Mathf.Min(1.15f,(parent.rect.width-32f)/990f);rt.localScale=new Vector3(scale,scale,1);
             bool hand,talent;GameBridge.InspectBottomHandZone(out hand,out talent);
             rt.anchoredPosition=new Vector2(0f,hand?Mathf.Max(326f,GameBridge.BottomHandTop(parent)+14f):76f);
             _mod.OnlinePanel.KeepBarAbove(_root.transform);

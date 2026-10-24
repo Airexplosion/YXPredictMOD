@@ -30,7 +30,8 @@ namespace YxPrediction
         bool _minimized, _detailed;
         NativePanelButton _minimizeButton;
         bool _showTrend; int _trendPlayer;
-        GameObject _trendRoot;
+        GameObject _trendRoot, _loading;
+        TextMeshProUGUI _loadingLabel;
         LifeChart _lifeChart,_shareChart,_swapChart;
         TextMeshProUGUI _trendName;
         public RoomPanel(PredictionMod mod, ModContext ctx, NativeTheme theme)
@@ -113,6 +114,11 @@ namespace YxPrediction
             _shareChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.ShareMetric,375f,-50f,350f,440f,_theme);
             _swapChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.SwapsMetric,740f,-50f,350f,440f,_theme);
             _trendRoot.SetActive(false);
+            _loading=_ui.Row(_classic.Body.transform,"LoadingNotice",new Vector2(12f,-48f),new Vector2(1092f,420f),new Color(0.06f,0.08f,0.10f,0.99f));
+            _loading.GetComponent<Image>().raycastTarget=false;
+            _loadingLabel=_ui.Label(_loading.transform,"LoadingText","数据加载中…",new Vector2(40f,-110f),new Vector2(1012f,180f),24);
+            _theme.ApplyTextStyle(_loadingLabel,24,false,TextAlignmentOptions.Center);_loadingLabel.enableWordWrapping=true;
+            _loading.SetActive(false);
         }
         void ToggleTrend(){_showTrend=!_showTrend;_classic.Table.SetActive(!_showTrend);_trendRoot.SetActive(_showTrend);}
         void PrevTrend(){_trendPlayer=(_trendPlayer+7)%8;}
@@ -159,7 +165,9 @@ namespace YxPrediction
             }
             if (Time.unscaledTime < _next) return; _next = Time.unscaledTime + 0.2f;
             RoomState r = CurrentView();
-            _status.text = r == null ? "等待完整八人观战状态"
+            bool loading=r==null;
+            if(_loading!=null){_loading.SetActive(loading&&!_minimized);if(loading){_loading.transform.SetAsLastSibling();_loadingLabel.text="数据加载中…"+((char)10).ToString()+(_mod.PreparationError??_mod.QueryStatus??_mod.Message??"等待八人观战数据");}}
+            _status.text = r == null ? "Elo / 对局数据加载中…"
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
                 + (r.Settled ? "已结算" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 分" + (r.Host ? " · 你是房主" : "");
             if (HasCurrentRoom())
@@ -169,8 +177,9 @@ namespace YxPrediction
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
                 _message.text = _feedback ?? _mod.Online.JoinNotice ?? (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members);
             }
-            else _message.text = _feedback ?? _mod.PreparationError ?? "";
+            else _message.text = _feedback ?? _mod.PreparationError ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
+            if(_showTrend && _mod.Current==null){_trendName.text="数据加载中…";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");_swapChart.ShowWaiting("加载中…");}
             if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);_swapChart.Refresh(_mod.Current,_trendPlayer);}
         }
         public void SetFeedback(string message) { _feedback = message; }

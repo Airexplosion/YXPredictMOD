@@ -76,6 +76,13 @@ namespace YxPrediction
 
         string Axis(double value) { return _metric == TrendChartData.ShareMetric ? PredictionMod.Percent(value) : value.ToString("0.#", CultureInfo.InvariantCulture); }
 
+        public void ShowWaiting(string message)
+        {
+            _market=null;_player=-2;
+            _title.text=_metric==TrendChartData.LifeMetric?"命元走势":_metric==TrendChartData.ShareMetric?"命元占比走势":"剩余换牌次数走势";
+            _empty.text=message;_minimum.text="";_middle.text="";_maximum.text="";_first.text="";_last.text="";
+            for(int i=0;i<_marks.Count;i++)_marks[i].gameObject.SetActive(false);
+        }
         public void Refresh(Market market, int player)
         {
             if (market == null || player < 0 || player >= 8) { market = null; player = -1; }
