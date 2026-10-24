@@ -25,34 +25,31 @@ namespace YxPrediction
 
     public sealed class NativeButton
     {
+        public readonly UiButton UiBtn;
         public readonly GameObject GameObject;
         public readonly Button Button;
         public readonly TextMeshProUGUI Label;
         public readonly Image Background;
-        readonly UnityAction _action;
 
-        public NativeButton(GameObject root, Button btn, TextMeshProUGUI label, Image bg, Action onClick, ModContext ctx)
+        public NativeButton(UiButton uiBtn, Button btn, TextMeshProUGUI label, Image bg)
         {
-            GameObject = root;
+            UiBtn = uiBtn;
+            GameObject = uiBtn != null ? uiBtn.GameObject : (btn != null ? btn.gameObject : null);
             Button = btn;
             Label = label;
             Background = bg;
-            if (btn != null && onClick != null)
-            {
-                btn.onClick = new Button.ButtonClickedEvent();
-                _action = new UnityAction(ctx.Guarded("NativeButton.OnClick", onClick));
-                btn.onClick.AddListener(_action);
-            }
         }
 
         public void SetText(string text)
         {
+            if (UiBtn != null) UiBtn.SetText(text);
             if (Label != null) Label.text = text;
         }
 
         public void SetInteractable(bool interactable)
         {
-            if (Button != null) Button.interactable = interactable;
+            if (UiBtn != null) UiBtn.SetInteractable(interactable);
+            else if (Button != null) Button.interactable = interactable;
         }
 
         public void SetActive(bool active)
@@ -64,6 +61,7 @@ namespace YxPrediction
     public sealed class NativeTheme
     {
         readonly ModContext _ctx;
+        readonly UiKit _ui;
         bool _harvested;
 
         Sprite _windowSprite;
@@ -98,6 +96,7 @@ namespace YxPrediction
         public NativeTheme(ModContext ctx)
         {
             _ctx = ctx;
+            _ui = new UiKit(ctx);
         }
 
         public void Harvest()
@@ -195,6 +194,11 @@ namespace YxPrediction
                 label.font = _nativeFont;
                 if (_nativeFontMaterial != null) label.fontSharedMaterial = _nativeFontMaterial;
             }
+            else
+            {
+                TMP_FontAsset fallback = Ui.FindFont();
+                if (fallback != null) label.font = fallback;
+            }
             label.fontSize = fontSize;
             label.fontStyle = bold ? FontStyles.Bold : FontStyles.Normal;
             label.alignment = align;
@@ -291,42 +295,43 @@ namespace YxPrediction
             rect.sizeDelta = new Vector2(width, height);
         }
 
+        static void EmptyClick() { }
+
         public NativeButton CreateButtonTopLeft(Transform parent, string name, string text, float x, float y, float width, float height, NativeBtnStyle style, Action onClick, int fontSize = 15)
         {
             Harvest();
-            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-            go.transform.SetParent(parent, false);
+            Action safeClick = onClick != null ? onClick : EmptyClick;
+            UiButton uiBtn = _ui.TextButton(parent, name, text, new Vector2(x, y), new Vector2(width, height), safeClick);
+            if (uiBtn == null || uiBtn.GameObject == null) return null;
 
+            var go = uiBtn.GameObject;
             var rect = go.GetComponent<RectTransform>();
             SetTopLeft(rect, x, y, width, height);
 
             var img = go.GetComponent<Image>();
             var btn = go.GetComponent<Button>();
+            var label = go.GetComponentInChildren<TextMeshProUGUI>();
 
-            var labelGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-            labelGo.transform.SetParent(go.transform, false);
-            var labelRect = labelGo.GetComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.sizeDelta = Vector2.zero;
-            labelRect.anchoredPosition = Vector2.zero;
-
-            var label = labelGo.GetComponent<TextMeshProUGUI>();
-            ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
-            label.text = text;
-            label.raycastTarget = false;
+            if (label != null)
+            {
+                ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
+                label.text = text;
+                label.raycastTarget = false;
+            }
 
             ApplyBtnVisual(img, btn, label, style);
 
-            return new NativeButton(go, btn, label, img, onClick, _ctx);
+            return new NativeButton(uiBtn, btn, label, img);
         }
 
         public NativeButton CreateButton(Transform parent, string name, string text, Vector2 pos, Vector2 size, NativeBtnStyle style, Action onClick, int fontSize = 16)
         {
             Harvest();
-            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-            go.transform.SetParent(parent, false);
+            Action safeClick = onClick != null ? onClick : EmptyClick;
+            UiButton uiBtn = _ui.TextButton(parent, name, text, pos, size, safeClick);
+            if (uiBtn == null || uiBtn.GameObject == null) return null;
 
+            var go = uiBtn.GameObject;
             var rect = go.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
@@ -335,23 +340,18 @@ namespace YxPrediction
 
             var img = go.GetComponent<Image>();
             var btn = go.GetComponent<Button>();
+            var label = go.GetComponentInChildren<TextMeshProUGUI>();
 
-            var labelGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-            labelGo.transform.SetParent(go.transform, false);
-            var labelRect = labelGo.GetComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.sizeDelta = Vector2.zero;
-            labelRect.anchoredPosition = Vector2.zero;
-
-            var label = labelGo.GetComponent<TextMeshProUGUI>();
-            ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
-            label.text = text;
-            label.raycastTarget = false;
+            if (label != null)
+            {
+                ApplyTextStyle(label, fontSize, true, TextAlignmentOptions.Center);
+                label.text = text;
+                label.raycastTarget = false;
+            }
 
             ApplyBtnVisual(img, btn, label, style);
 
-            return new NativeButton(go, btn, label, img, onClick, _ctx);
+            return new NativeButton(uiBtn, btn, label, img);
         }
 
         void ApplyBtnVisual(Image img, Button btn, TextMeshProUGUI label, NativeBtnStyle style)

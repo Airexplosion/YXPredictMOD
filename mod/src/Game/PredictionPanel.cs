@@ -197,7 +197,7 @@ namespace YxPrediction
                 var titleGo = new GameObject("TitleLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 titleGo.transform.SetParent(banner, false);
                 var titleRect = titleGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(titleRect, 24f, -12f, 150f, 32f);
+                NativeTheme.SetTopLeft(titleRect, 20f, -12f, 180f, 32f);
                 _titleLabel = titleGo.GetComponent<TextMeshProUGUI>();
                 _theme.ApplyTextStyle(_titleLabel, 18, true, TextAlignmentOptions.Left);
                 _titleLabel.text = "弈仙预测总览";
@@ -208,7 +208,7 @@ namespace YxPrediction
                 var statusGo = new GameObject("StatusLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 statusGo.transform.SetParent(banner, false);
                 var statusRect = statusGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(statusRect, 180f, -15f, 370f, 26f);
+                NativeTheme.SetTopLeft(statusRect, 205f, -15f, 320f, 26f);
                 _statusLabel = statusGo.GetComponent<TextMeshProUGUI>();
                 _theme.ApplyTextStyle(_statusLabel, 13, false, TextAlignmentOptions.Left);
                 _statusLabel.color = NativeTheme.TextParchment;
@@ -292,7 +292,7 @@ namespace YxPrediction
             CreateColHeader(_detailedHeader.transform, "倍率", 466f, 74f);
             CreateColHeader(_detailedHeader.transform, "投入", 550f, 64f);
             CreateColHeader(_detailedHeader.transform, "调仓操作", 624f, 200f);
-            CreateColHeader(_detailedHeader.transform, "持仓与结算预估", 834f, 260f);
+            CreateColHeader(_detailedHeader.transform, "持仓与结算预估", 830f, 200f);
 
             _simpleHeader = new GameObject("SimpleHeader", typeof(RectTransform));
             _simpleHeader.transform.SetParent(parent, false);
@@ -305,7 +305,7 @@ namespace YxPrediction
             CreateColHeader(_simpleHeader.transform, "倍率", 466f, 74f);
             CreateColHeader(_simpleHeader.transform, "投入积分", 550f, 64f);
             CreateColHeader(_simpleHeader.transform, "操作", 624f, 200f);
-            CreateColHeader(_simpleHeader.transform, "我的预测与返还", 834f, 260f);
+            CreateColHeader(_simpleHeader.transform, "我的预测与返还", 830f, 200f);
 
             _detailedHeader.SetActive(false);
         }
@@ -807,7 +807,7 @@ namespace YxPrediction
                 var holdingGo = new GameObject("HoldingLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 holdingGo.transform.SetParent(row, false);
                 var hRect = holdingGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(hRect, 834f, -8f, 265f, 22f);
+                NativeTheme.SetTopLeft(hRect, 830f, -8f, 200f, 22f);
                 _holdingLabel = holdingGo.GetComponent<TextMeshProUGUI>();
                 panel._theme.ApplyTextStyle(_holdingLabel, 13, false, TextAlignmentOptions.Left);
                 _holdingLabel.color = NativeTheme.TextParchment;
@@ -816,7 +816,7 @@ namespace YxPrediction
                 var resultGo = new GameObject("ResultLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
                 resultGo.transform.SetParent(row, false);
                 var resRect = resultGo.GetComponent<RectTransform>();
-                NativeTheme.SetTopLeft(resRect, 834f, -30f, 265f, 20f);
+                NativeTheme.SetTopLeft(resRect, 830f, -30f, 200f, 20f);
                 _resultLabel = resultGo.GetComponent<TextMeshProUGUI>();
                 panel._theme.ApplyTextStyle(_resultLabel, 12, false, TextAlignmentOptions.Left);
                 _resultLabel.color = NativeTheme.AntiqueGold;
