@@ -29,7 +29,7 @@ namespace YxPrediction
         float _nextUpdate;
         string _lastError;
         readonly Dictionary<string, FieldInfo> _scoreFields = new Dictionary<string, FieldInfo>();
-        public bool Enabled { get { return _enabled.Value; } }
+        public bool Enabled { get { return _enabled.Value; } set { _enabled.Value = value; _nextUpdate = 0; } }
 
         sealed class Score
         {
@@ -47,6 +47,7 @@ namespace YxPrediction
             public TextMeshProUGUI Name, Label, Rating;
             public Image Avatar, Icon;
         }
+
         public TianJiFeature(PredictionMod mod, ModContext ctx, GameBridge bridge)
         {
             _mod = mod; _ctx = ctx; _bridge = bridge; _ui = new UiKit(ctx);
@@ -54,7 +55,11 @@ namespace YxPrediction
             _icons = ctx.Config.Bind("tianji", "icons", true, "在头像右侧显示马图图标，保留游戏原头像");
             ctx.Events.OnNetIn<Proto.MatchPlayerInfosResp>(OnScores);
         }
+
         public void Toggle() { _enabled.Value = !_enabled.Value; _nextUpdate = 0; Update(); }
+
+        public Sprite GetSprite(string title) { return _assets.Get(title, _ctx); }
+
         void OnScores(Proto.MatchPlayerInfosResp message)
         {
             try
@@ -75,6 +80,7 @@ namespace YxPrediction
             }
             catch (Exception ex) { _ctx.Log.Warn("田忌天梯分暂不可读：" + ex.Message); }
         }
+
         object ScoreField(object instance, string name)
         {
             if (instance == null) return null;
@@ -85,6 +91,7 @@ namespace YxPrediction
             { field = type.GetField(name, BindingFlags.Public | BindingFlags.Instance); _scoreFields[key] = field; }
             return field == null ? null : field.GetValue(instance);
         }
+
         static bool SamePlayers(MatchSnapshot snapshot, Score[] scores)
         {
             if (snapshot == null || scores == null || !snapshot.IsEightPlayerMatch()) return false;
@@ -96,21 +103,55 @@ namespace YxPrediction
             }
             return true;
         }
+
         public HorseMember Find(string uid)
-        { return Enabled && _mod.Snapshot != null && Roster.MatchId == _mod.Snapshot.Id ? Roster.Find(uid) : null; }
+        {
+            return Enabled && _mod.Snapshot != null && Roster.MatchId == _mod.Snapshot.Id ? Roster.Find(uid) : null;
+        }
+
+        public HorseMember FindMember(string uid)
+        {
+            return _mod.Snapshot != null && Roster.MatchId == _mod.Snapshot.Id ? Roster.Find(uid) : null;
+        }
+
+        public string RankScoreTag(string uid)
+        {
+            if (_scores != null && _scoreMatchId == Roster.MatchId)
+            {
+                for (int i = 0; i < _scores.Length; i++)
+                {
+                    if (_scores[i].Uid == uid && _scores[i].Value >= 0)
+                    {
+                        return (_scores[i].DaoXin ? "道心分 " : "天梯分 ") + PredictionMod.N(_scores[i].Value);
+                    }
+                }
+            }
+            return "";
+        }
+
         public string Describe(string uid)
         {
             HorseMember member = Find(uid);
+            return FormatMember(member, uid);
+        }
+
+        public string DescribeFull(string uid)
+        {
+            HorseMember member = FindMember(uid);
+            return FormatMember(member, uid);
+        }
+
+        string FormatMember(HorseMember member, string uid)
+        {
             if (member == null) return "";
             if (member.Profile == null || !member.Profile.Rating.Found) return "暂无公开Elo，不参与称号评定";
             string text = member.Caption + " · " + member.Explanation;
             if (member.Profile.DaoXinGames >= 0) text += " · 道心对局 " + PredictionMod.N(member.Profile.DaoXinGames) + "场";
-            if (_scores != null && _scoreMatchId == Roster.MatchId)
-                for (int i = 0; i < _scores.Length; i++)
-                    if (_scores[i].Uid == uid && _scores[i].Value >= 0)
-                        text += (_scores[i].DaoXin ? " · 道心分 " : " · 天梯分 ") + PredictionMod.N(_scores[i].Value);
+            string tag = RankScoreTag(uid);
+            if (!string.IsNullOrEmpty(tag)) text += " · " + tag;
             return text;
         }
+
         public void Update()
         {
             if (Time.unscaledTime < _nextUpdate) return;
@@ -118,14 +159,27 @@ namespace YxPrediction
             try
             {
                 MatchSnapshot snapshot = _mod.Snapshot;
-                if (!Enabled || snapshot == null || SceneLoader.currentSceneName != "Battle")
-                { ClearPlates(); if (snapshot == null || !Enabled) Roster.Clear(); return; }
+                if (snapshot == null || SceneLoader.currentSceneName != "Battle")
+                {
+                    ClearPlates();
+                    Roster.Clear();
+                    return;
+                }
+
                 if (Roster.MatchId != snapshot.Id)
                 {
                     ClearPlates(); _scores = null; _scoreMatchId = snapshot.Id;
                     if (Time.unscaledTime - _pendingAt <= 60 && SamePlayers(snapshot, _pendingScores)) _scores = _pendingScores;
                 }
+
                 Roster.Observe(snapshot, _bridge.HorseProfiles(snapshot.Players));
+
+                if (!Enabled)
+                {
+                    ClearPlates();
+                    return;
+                }
+
                 var battling = BattleApi.IsBattling();
                 if (!battling.Ok || battling.Value) { ClearPlates(); return; }
                 RefreshPlates();
@@ -138,6 +192,7 @@ namespace YxPrediction
                 if (_lastError != error) { _lastError = error; _ctx.Log.Warn("田忌称号暂不可用：" + error); }
             }
         }
+
         void RefreshPlates()
         {
             BattleManager manager = BattleManager.Instance;
@@ -208,6 +263,7 @@ namespace YxPrediction
                 PositionPlate(plate);
             }
         }
+
         static void PositionPlate(Plate plate)
         {
             // 昵称的Rect可能远大于实际文字；按文字网格的底部放置，避免与ID重叠。
@@ -224,7 +280,8 @@ namespace YxPrediction
             Vector3 local = root.InverseTransformPoint(point);
             plate.Icon.rectTransform.anchoredPosition = new Vector2(local.x, local.y);
         }
-        static Color ColorOf(string title)
+
+        public static Color ColorOf(string title)
         {
             switch (title)
             {
@@ -232,15 +289,17 @@ namespace YxPrediction
                 case "上等马": return new Color(0.87f, 0.9f, 1);
                 case "牛马": return new Color(0.88f, 0.66f, 0.43f);
                 case "海马": return new Color(0.4f, 0.85f, 1);
-                case "黑马": return new Color(0.87f, 0.65f, 1); // 深色背景仍然可读。
+                case "黑马": return new Color(0.87f, 0.65f, 1);
                 default: return new Color(0.95f, 0.9f, 0.78f);
             }
         }
+
         void ClearPlates()
         {
             for (int i = 0; i < _plates.Count; i++) if (_plates[i].Root != null) _ui.Destroy(_plates[i].Root);
             _plates.Clear();
         }
+
         public void Destroy() { ClearPlates(); _ui.DestroyAll(); _assets.Destroy(); Roster.Clear(); }
     }
 }

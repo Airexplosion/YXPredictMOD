@@ -85,5 +85,23 @@ internal static partial class Program
             Market m = b.Find(s.Id); choices.Observe(m); True(m.Settled);
             Equal(choices.Selected(5), 4); Equal(choices.Selected(0), 0); Equal(RankSelection.DisplayOrder(m)[0], 5);
         });
+        Check("stake drafts default to 10, accept per player edits, and reset only on new market", delegate
+        {
+            MatchSnapshot s = Snapshot(1); PredictionBook b = TradeBook(s); Market m = b.Find(s.Id);
+            var choices = new RankSelection(); choices.Observe(m);
+            for (int i = 0; i < 8; i++) Equal(choices.Stake(i), "10");
+            choices.SetStake(2, "50"); choices.SetStake(5, "100");
+            Equal(choices.Stake(2), "50"); Equal(choices.Stake(5), "100");
+            Equal(choices.Stake(0), "10");
+
+            // Refresh within same market preserves stakes
+            s.Round = 2; b.Observe(s, null); choices.Observe(m);
+            Equal(choices.Stake(2), "50"); Equal(choices.Stake(5), "100");
+
+            // New market resets stakes to 10
+            MatchSnapshot s2 = Snapshot(1); s2.Id = "fixture2"; PredictionBook b2 = TradeBook(s2);
+            choices.Observe(b2.Find(s2.Id));
+            Equal(choices.Stake(2), "10"); Equal(choices.Stake(5), "10");
+        });
     }
 }

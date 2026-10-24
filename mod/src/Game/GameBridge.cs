@@ -1,6 +1,7 @@
 #if YX_GAME
 using System;
 using System.Globalization;
+using System.Reflection;
 using UnityEngine;
 using Yx.ModSdk;
 using Yx.ModSdk.Game;
@@ -30,6 +31,14 @@ namespace YxPrediction
             _ctx.Log.Info("观战预测状态：" + message);
         }
 
+        public static BattlePanel GetBattlePanel()
+        {
+            BattleManager manager = BattleManager.Instance;
+            if (manager == null) return null;
+            FieldInfo fi = manager.GetType().GetField("m_BattlePanel", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            return fi == null ? null : fi.GetValue(manager) as BattlePanel;
+        }
+
         public void Update()
         {
             BattleManager manager = BattleManager.Instance;
@@ -40,14 +49,92 @@ namespace YxPrediction
             Poll();
         }
 
-        static string FocusUid(BattleManager manager, Proto.GameStatus status)
+        public static string FocusUid(BattleManager manager, Proto.GameStatus status)
         {
             if (manager == null || status == null || status.battlePlayerDatas == null) return null;
-            string uid = manager.focusBattlePlayerData == null ? manager.currentSpectateId : manager.focusBattlePlayerData.uid;
+            string uid = null;
+            try
+            {
+                BattlePanel bp = GetBattlePanel();
+                if (bp != null)
+                {
+                    OpponentInfoPanel opp = bp.FindILRSubPanel<OpponentInfoPanel>();
+                    if (opp != null && opp.panel != null && opp.panel.isShow && opp.panel.gameObject.activeInHierarchy
+                        && opp.bpInfoItem != null && opp.bpInfoItem.battlePlayerData != null)
+                    {
+                        uid = opp.bpInfoItem.battlePlayerData.uid;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (string.IsNullOrEmpty(uid))
+            {
+                uid = manager.focusBattlePlayerData == null ? manager.currentSpectateId : manager.focusBattlePlayerData.uid;
+            }
+
             if (string.IsNullOrEmpty(uid)) return null;
             for (int i = 0; i < status.battlePlayerDatas.Count; i++)
                 if (status.battlePlayerDatas[i] != null && status.battlePlayerDatas[i].uid == uid) return uid;
             return null;
+        }
+
+        public static void InspectBottomHandZone(out bool hasHandCards, out bool hasCenteredTalents)
+        {
+            hasHandCards = false;
+            hasCenteredTalents = false;
+            try
+            {
+                BattlePanel bp = GetBattlePanel();
+                if (bp != null)
+                {
+                    CardPanel cp = bp.FindILRSubPanel<CardPanel>();
+                    if (cp != null)
+                    {
+                        Transform handContainer = cp.GetHanCardContainer();
+                        if (handContainer != null && handContainer.gameObject.activeInHierarchy)
+                        {
+                            for (int i = 0; i < handContainer.childCount; i++)
+                            {
+                                Transform child = handContainer.GetChild(i);
+                                if (child != null && child.gameObject.activeInHierarchy)
+                                {
+                                    hasHandCards = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!hasHandCards)
+                    {
+                        var oppHand = GameObject.Find("YxOpponentLastHand");
+                        if (oppHand != null && oppHand.activeInHierarchy)
+                        {
+                            hasHandCards = true;
+                        }
+                    }
+
+                    TalentSelectionPanel tsp = bp.FindILRSubPanel<TalentSelectionPanel>();
+                    if (tsp != null && tsp.panel != null && tsp.panel.isShow && tsp.panel.gameObject.activeInHierarchy)
+                    {
+                        hasCenteredTalents = true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        public static bool IsPlayingBattle()
+        {
+            var result = BattleApi.IsBattling();
+            if (result.Ok) return result.Value;
+            BattleManager manager = BattleManager.Instance;
+            return manager != null && (int)manager.currentScene == 1;
         }
 
         static int RemainingSwaps(Proto.GameStatus status, Proto.BattlePlayerData player)

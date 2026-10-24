@@ -262,6 +262,7 @@ internal static partial class Program
         RankSelectionChecks();
         GameRankChecks();
         HorseChecks();
+        PanelLayoutChecks();
         Console.WriteLine("Passed: " + _passed + "; Failed: " + _failed);
         return _failed == 0 ? 0 : 1;
     }

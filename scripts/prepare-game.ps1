@@ -1,8 +1,9 @@
-param(
+﻿param(
     [string]$GamePath = 'C:\Program Files (x86)\Steam\steamapps\common\YiXianPai',
     [string]$DumperPath = ''
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $patcher = Join-Path $root 'vendor/yixianpai-mod-sdk/tools/yx-patch.dll'
 if (!(Test-Path -LiteralPath $patcher)) { throw '先运行 scripts/restore-sdk.ps1。' }

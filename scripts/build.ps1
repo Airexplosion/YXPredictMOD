@@ -1,4 +1,4 @@
-param([switch]$CoreOnly, [switch]$Demo)
+﻿param([switch]$CoreOnly, [switch]$Demo)
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $env:DOTNET_CLI_HOME = Join-Path $root '.cache/dotnet-home'
@@ -25,8 +25,9 @@ try {
     if (!$CoreOnly) {
         Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll pack mod --out dist
         # 上游pack只收manifest/plugins/assets/data；在同一包根补入使用说明。
+        Add-Type -AssemblyName System.IO.Compression
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $manifest = Get-Content -LiteralPath 'mod/manifest.json' -Raw | ConvertFrom-Json
+        $manifest = Get-Content -LiteralPath 'mod/manifest.json' -Encoding UTF8 -Raw | ConvertFrom-Json
         $package = Join-Path $root ('dist/' + $manifest.id + '-' + $manifest.version + '.zip')
         $zip = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Update)
         try {

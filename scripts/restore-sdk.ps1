@@ -1,5 +1,6 @@
-param([string]$Destination = (Join-Path $PSScriptRoot '..\vendor\yixianpai-mod-sdk'))
+﻿param([string]$Destination = (Join-Path $PSScriptRoot '..\vendor\yixianpai-mod-sdk'))
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $revision = '744137755d7daa60a8e9e4492bb7bcecad92fa76'
 $files = @(
     @{ Path = '.gitignore'; GitHash = '76cd8bc9948d7a3ff3ffaf53adc431570b12207e' }

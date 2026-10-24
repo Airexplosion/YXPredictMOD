@@ -1,5 +1,7 @@
 #if YX_GAME
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using Yx.ModSdk;
 using Yx.ModSdk.Game;
 using Yx.ModSdk.Unity;
@@ -9,12 +11,13 @@ namespace YxPrediction
     // SDK热更类不继承MonoBehaviour/IDragHandler；在主线程轮询指针来区分点击和拖动。
     public sealed class PredictionLauncher
     {
-        const float Width = 136f;
-        const float Height = 48f;
+        const float Width = 140f;
+        const float Height = 44f;
         const float DragThreshold = 6f;
         readonly UiKit _ui;
         readonly ModContext _ctx;
         readonly PredictionPanel _panel;
+        readonly NativeTheme _theme;
         readonly LauncherPosition _position;
         GameObject _root;
         RectTransform _rect;
@@ -30,9 +33,12 @@ namespace YxPrediction
         int _enableAfterFrame = -1;
         float _nextBuild;
 
-        public PredictionLauncher(ModContext ctx, PredictionPanel panel)
+        public PredictionLauncher(ModContext ctx, PredictionPanel panel, NativeTheme theme)
         {
-            _ctx = ctx; _panel = panel; _ui = new UiKit(ctx);
+            _ctx = ctx;
+            _panel = panel;
+            _theme = theme;
+            _ui = new UiKit(ctx);
             _position = new LauncherPosition(ctx.Data.Get<System.Collections.Generic.Dictionary<string, object>>(LauncherPosition.SaveKey, null));
         }
 
@@ -46,7 +52,7 @@ namespace YxPrediction
                 _panel.Hide();
                 return;
             }
-            if (IsPlayingBattle())
+            if (GameBridge.IsPlayingBattle())
             {
                 FinishGesture();
                 if (_root != null) _root.SetActive(false);
@@ -94,12 +100,32 @@ namespace YxPrediction
         {
             var anchor = new Vector2((float)_position.X, (float)_position.Y);
             var center = new Vector2(0.5f, 0.5f);
-            _root = _ui.Panel("PredictionLauncher", anchor, center, Vector2.zero, new Vector2(Width, Height), new Color(0.55f, 0.37f, 0.12f, 0.98f), true);
+            _root = _ui.Panel("PredictionLauncher", anchor, center, Vector2.zero, new Vector2(Width, Height), new Color(0.08f, 0.09f, 0.12f, 0.96f), true);
             if (_root == null) return;
             _rect = (RectTransform)_root.GetComponent(typeof(RectTransform));
             _parent = _root.transform.parent as RectTransform;
             _canvas = Ui.FindRootCanvas();
-            _button = _ui.TextButton(_root.transform, "openPrediction", "名次预测", new Vector2(2f, -2f), new Vector2(Width - 4f, Height - 4f), Click);
+
+            var bgImg = _root.GetComponent(typeof(Image)) as Image;
+            if (bgImg != null) _theme.ApplyWindowFrame(bgImg);
+
+            _button = _ui.TextButton(_root.transform, "openPrediction", "预测总览", new Vector2(2f, -2f), new Vector2(Width - 4f, Height - 4f), Click);
+            if (_button != null && _button.GameObject != null)
+            {
+                var btnImg = _button.GameObject.GetComponent<Image>();
+                if (btnImg != null && _theme.BannerSprite != null)
+                {
+                    btnImg.sprite = _theme.BannerSprite;
+                    btnImg.type = Image.Type.Sliced;
+                }
+                var label = _button.GameObject.GetComponentInChildren<TextMeshProUGUI>();
+                if (label != null)
+                {
+                    _theme.ApplyTextStyle(label, 16, true, TextAlignmentOptions.Center);
+                    label.color = NativeTheme.AntiqueGold;
+                }
+            }
+
             Place(_position.X, _position.Y);
         }
 
@@ -116,22 +142,13 @@ namespace YxPrediction
 
         void Click()
         {
-            if (IsPlayingBattle()) return;
+            if (GameBridge.IsPlayingBattle()) return;
             Vector3 mouse = Input.mousePosition;
             var screen = new Vector2(mouse.x, mouse.y);
             // 按钮的PointerUp可能早于本模组本帧Update，仍检查完整位移。
             if (_dragged || (_pressed && (screen - _downScreen).sqrMagnitude >= DragThreshold * DragThreshold) || _enableAfterFrame >= 0) return;
             _panel.Toggle();
             if (_root != null) _root.transform.SetAsLastSibling();
-        }
-
-        static bool IsPlayingBattle()
-        {
-            var result = BattleApi.IsBattling();
-            if (result.Ok) return result.Value;
-            // 查询暂不可用时按斗法阶段隐藏，避免动画切换间隙闪现入口。
-            BattleManager manager = BattleManager.Instance;
-            return manager != null && (int)manager.currentScene == 1;
         }
 
         void FinishGesture()

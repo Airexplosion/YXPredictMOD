@@ -3,529 +3,995 @@ using System;
 using System.Globalization;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using Yx.ModSdk;
+using Yx.ModSdk.Game;
 using Yx.ModSdk.Unity;
 
 namespace YxPrediction
 {
+    // 独立原生总览面板：墨玉鎏金仙侠画风，八人总览与局势走势，零全屏遮挡，支持拖动、透视与折起。
     public sealed class PredictionPanel
     {
+        enum Tab { Overview, Trend }
+
         readonly PredictionMod _mod;
+        readonly ModContext _ctx;
         readonly UiKit _ui;
-        GameObject _root, _singleRoot, _simpleColumns, _detailedColumns;
-        TextMeshProUGUI _header, _message, _footer;
-        TextMeshProUGUI _singleHeader, _singleMessage, _singleHorse;
-        UiButton _previousHistory, _nextHistory, _detailToggle, _horseToggle, _singleHorseToggle;
-        TextMeshProUGUI _simpleStakeHeading, _simpleActionsHeading, _simpleResultHeading;
-        BetRow _singleRow;
-        LifeChart _lifeChart, _lifeShareChart;
+        readonly NativeTheme _theme;
+        readonly PanelLayout _layout;
+
+        GameObject _root;
+        RectTransform _rect;
+        RectTransform _parent;
+        CanvasGroup _canvasGroup;
+
+        // 窗口部件
+        GameObject _bannerGo;
+        RectTransform _bannerRect;
+        GameObject _bodyContainer;
+        CanvasGroup _bodyCanvasGroup;
+        GameObject _overviewTabContainer;
+        GameObject _trendTabContainer;
+
+        // 顶栏控件
+        TextMeshProUGUI _titleLabel;
+        TextMeshProUGUI _statusLabel;
+        NativeButton _btnTab;
+        NativeButton _btnDetail;
+        NativeButton _btnHistory;
+        NativeButton _btnHorses;
+        NativeButton _btnPeek;
+        NativeButton _btnMinimize;
+        NativeButton _btnClose;
+
+        // 历史切换
+        NativeButton _btnPrevHistory;
+        NativeButton _btnNextHistory;
+
+        // 八人总览行
         readonly BetRow[] _rows = new BetRow[8];
-        readonly RankSelection _rankSelection = new RankSelection();
-        string _marketId;
-        float _nextRefresh;
+        GameObject _simpleHeader, _detailedHeader;
+
+        // 局势走势控件
+        readonly NativeButton[] _trendPlayerBtns = new NativeButton[8];
+        NativeButton _btnFollowFocus;
+        Image _trendHorseIcon;
+        TextMeshProUGUI _trendHorseTitle;
+        TextMeshProUGUI _trendHorseDetail;
+        TextMeshProUGUI _trendPlayerName;
+        LifeChart _lifeChart;
+        LifeChart _lifeShareChart;
+        int _trendPlayer = 0;
+        bool _followFocusInTrend = true;
+
+        // 底栏状态
+        TextMeshProUGUI _footerLabel;
+
+        // 状态变量
+        Tab _currentTab = Tab.Overview;
+        bool _visible;
+        bool _detailed;
         bool _history;
         int _historyIndex;
-        bool _visible, _expanded, _detailed;
-        bool _waitForFocusRelease;
-        int _singleEnableAfterFrame = -1;
-        string _focusUid, _focusMatchId, _singleMarketId, _singleUid;
-        const float Width = 1120f, Height = 730f;
-        const float SingleWidth = 740f, SingleHeight = 544f;
-        bool SingleReady { get { return !_waitForFocusRelease && Time.frameCount > _singleEnableAfterFrame; } }
+        float _nextRefresh;
+        string _lastFocusUid;
+        string _lastMarketId;
 
-        public PredictionPanel(PredictionMod mod, ModContext ctx) { _mod = mod; _ui = new UiKit(ctx); }
+        // 拖动状态
+        bool _pressed;
+        bool _dragged;
+        Vector2 _downScreen;
+        Vector2 _downLocal;
+        double _startX;
+        double _startY;
+        int _enableAfterFrame = -1;
+        const float DragThreshold = 6f;
+
+        public PredictionPanel(PredictionMod mod, ModContext ctx, NativeTheme theme, PanelLayout layout)
+        {
+            _mod = mod;
+            _ctx = ctx;
+            _theme = theme;
+            _layout = layout;
+            _ui = new UiKit(ctx);
+        }
+
         public void Toggle()
         {
             if (_visible) { Close(); return; }
             if (_root == null) Build();
-            if (_root != null && _singleRoot != null) { _visible = true; _expanded = false; _history = false; _detailed = false; Refresh(); }
+            if (_root != null)
+            {
+                _visible = true;
+                _history = false;
+                _currentTab = Tab.Overview;
+                Refresh();
+            }
         }
+
+        public void ShowTrend(int playerIndex)
+        {
+            if (!_visible) Toggle();
+            _currentTab = Tab.Trend;
+            _followFocusInTrend = false;
+            _trendPlayer = playerIndex >= 0 && playerIndex < 8 ? playerIndex : 0;
+            Refresh();
+        }
+
+        public void Close()
+        {
+            _visible = false;
+            FinishGesture();
+            if (_root != null) _root.SetActive(false);
+        }
+
+        public void Hide()
+        {
+            Close();
+        }
+
         public void Update()
         {
             if (!_visible || _root == null) return;
-            if (_waitForFocusRelease && !Input.GetMouseButton(0))
-            { _waitForFocusRelease = false; _singleEnableAfterFrame = Time.frameCount; _nextRefresh = 0; }
-            if (!_waitForFocusRelease && _singleEnableAfterFrame >= 0 && Time.frameCount > _singleEnableAfterFrame)
-            { _singleEnableAfterFrame = -1; _nextRefresh = 0; }
-            string uid = FocusSelection.Uid(_mod.Snapshot);
-            string matchId = _mod.Snapshot == null ? null : _mod.Snapshot.Id;
-            if (uid == _focusUid && matchId == _focusMatchId && Time.unscaledTime < _nextRefresh) return;
-            _nextRefresh = Time.unscaledTime + 0.25f; Refresh();
+
+            string focusUid = FocusSelection.Uid(_mod.Snapshot);
+            string marketId = _mod.Snapshot == null ? null : _mod.Snapshot.Id;
+
+            HandleBannerDrag();
+
+            if (Time.unscaledTime >= _nextRefresh || focusUid != _lastFocusUid || marketId != _lastMarketId)
+            {
+                _nextRefresh = Time.unscaledTime + 0.35f;
+                Refresh();
+            }
         }
+
         void Build()
         {
-            var center = new Vector2(0.5f, 0.5f);
-            _root = _ui.Panel("PredictionPoints", center, center, Vector2.zero, new Vector2(Width, Height), new Color(0.04f, 0.06f, 0.1f, 0.97f), true);
-            if (_root == null) return;
-            _header = Label("header", "", 18, -14, 750, 38, 23);
-            Button("collapse", "收起", 792, -15, 68, Collapse);
-            _detailToggle = Button("detailToggle", "详细数据", 868, -15, 92, ToggleDetails);
-            Button("history", "历史", 968, -15, 65, ToggleHistory);
-            Button("close", "关闭", 1041, -15, 61, Close);
-            _message = Label("message", "", 18, -55, 1080, 45, 18);
-            _detailedColumns = _ui.Row(_root.transform, "detailedColumns", new Vector2(0, -104), new Vector2(Width, 28), Color.clear);
-            Transform columns = _detailedColumns.transform;
-            Label("playerColumn", "玩家 / 命元", 18, 0, 174, 28, 17, columns);
-            Label("eloColumn", "Elo", 198, 0, 66, 28, 17, columns);
-            Label("rankColumn", "目标名次", 270, 0, 110, 28, 17, columns);
-            Label("oddsColumn", "买入倍率", 390, 0, 86, 28, 17, columns);
-            Label("stakeColumn", "买入积分", 482, 0, 74, 28, 17, columns);
-            Label("actionsColumn", "调仓操作", 562, 0, 264, 28, 17, columns);
-            Label("resultColumn", "持仓 / 参考报价 / 结算", 840, 0, 265, 28, 17, columns);
-            _simpleColumns = _ui.Row(_root.transform, "simpleColumns", new Vector2(0, -104), new Vector2(Width, 28), Color.clear);
-            columns = _simpleColumns.transform;
-            Label("simplePlayerColumn", "玩家", 18, 0, 174, 28, 17, columns);
-            Label("simpleRankColumn", "猜第几名", 212, 0, 110, 28, 17, columns);
-            _simpleStakeHeading = Label("simpleStakeColumn", "这次投入", 336, 0, 80, 28, 17, columns);
-            _simpleActionsHeading = Label("simpleActionsColumn", "操作", 428, 0, 268, 28, 17, columns);
-            _simpleResultHeading = Label("simpleResultColumn", "我的预测与返还", 716, 0, 386, 28, 17, columns);
-            for (int i = 0; i < 8; i++) _rows[i] = new BetRow(this, i, -138 - i * 63);
-            _footer = Label("footer", "", 18, -650, 1080, 70, 16);
-            _horseToggle = Button("horseToggle", "称号：开", 18, -687, 108, ToggleHorses);
-            _previousHistory = Button("previousHistory", "上一局", 948, -687, 72, PreviousHistory);
-            _nextHistory = Button("nextHistory", "下一局", 1030, -687, 72, NextHistory);
-            _previousHistory.GameObject.SetActive(false); _nextHistory.GameObject.SetActive(false);
-            _singleRoot = _ui.Panel("PredictionSinglePlayer", center, center, Vector2.zero, new Vector2(SingleWidth, SingleHeight), new Color(0.04f, 0.06f, 0.1f, 0.97f), true);
-            if (_singleRoot == null) return;
-            Transform single = _singleRoot.transform;
-            _singleHeader = Label("singleHeader", "", 18, -14, 380, 32, 21, single);
-            _singleHorseToggle = Button("singleHorseToggle", "称号：开", 410, -14, 108, ToggleHorses, single);
-            Button("expandAll", "展开全部", 528, -14, 108, Expand, single);
-            Button("closeSingle", "关闭", 644, -14, 78, Close, single);
-            _singleHorse = Label("singleHorse", "", 18, -99, 704, 20, 14, single);
-            _singleHorse.enableWordWrapping = false; _singleHorse.overflowMode = TextOverflowModes.Ellipsis;
-            _singleMessage = Label("singleMessage", "", 18, -121, 704, 34, 16, single);
-            Label("singleRankColumn", "目标名次", 18, -157, 110, 22, 15, single);
-            Label("singleOddsColumn", "买入倍率", 140, -157, 92, 22, 15, single);
-            Label("singleStakeColumn", "买入积分", 238, -157, 80, 22, 15, single);
-            Label("singleActionsColumn", "调仓操作", 330, -157, 310, 22, 15, single);
-            _singleRow = new BetRow(this, -1, -183, true);
-            _lifeChart = new LifeChart(_ui, single, TrendChartData.LifeMetric, 18, -332, 346);
-            _lifeShareChart = new LifeChart(_ui, single, TrendChartData.ShareMetric, 376, -332, 346);
-            _root.SetActive(false); _singleRoot.SetActive(false);
-        }
-        UiButton Button(string name, string text, float x, float y, float width, Action click, Transform parent = null)
-        {
-            UiButton button = _ui.TextButton(parent == null ? _root.transform : parent, name, text, new Vector2(x, y), new Vector2(width, 34), click);
-            var label = button.GameObject.GetComponentInChildren(typeof(TextMeshProUGUI)) as TextMeshProUGUI;
-            if (label != null) label.fontSize = 18;
-            return button;
-        }
-        TextMeshProUGUI Label(string name, string text, float x, float y, float w, float h, float size, Transform parent = null)
-        {
-            var label = _ui.Label(parent == null ? _root.transform : parent, name, text, new Vector2(x, y), new Vector2(w, h), size);
-            label.richText = false; return label;
-        }
-        Market Shown()
-        {
-            if (!_history) return _mod.Current;
-            int count = _mod.Book.Markets.Count;
-            if (count == 0) return null;
-            _historyIndex = Math.Max(0, Math.Min(count - 1, _historyIndex));
-            return _mod.Book.Markets[_historyIndex];
-        }
-        void Refresh()
-        {
-            if (!_visible) return;
-            string horseToggle = _mod.Horses != null && _mod.Horses.Enabled ? "称号：开" : "称号：关";
-            _horseToggle.SetText(horseToggle); _singleHorseToggle.SetText(horseToggle);
-            string uid = FocusSelection.Uid(_mod.Snapshot);
-            string matchId = _mod.Snapshot == null ? null : _mod.Snapshot.Id;
-            if (uid != _focusUid || matchId != _focusMatchId)
-            {
-                _focusUid = uid; _focusMatchId = matchId; _expanded = false; _history = false;
-                // 切换时若鼠标仍按住，先等释放，防止旧玩家的按下事件在新玩家面板上成交。
-                _waitForFocusRelease = Input.GetMouseButton(0); _singleEnableAfterFrame = Time.frameCount;
-            }
-            _root.SetActive(_expanded); _singleRoot.SetActive(!_expanded);
-            _previousHistory.GameObject.SetActive(_expanded && _history);
-            _nextHistory.GameObject.SetActive(_expanded && _history);
-            Fit(_expanded ? _root : _singleRoot, _expanded ? Width : SingleWidth, _expanded ? Height : SingleHeight);
-            if (!_expanded) { RefreshSingle(); return; }
-            Market market = Shown();
-            _rankSelection.Observe(market);
-            _simpleColumns.SetActive(!_detailed); _detailedColumns.SetActive(_detailed);
-            _detailToggle.SetText(_detailed ? "简洁模式" : "详细数据");
-            _simpleStakeHeading.gameObject.SetActive(!_history); _simpleActionsHeading.gameObject.SetActive(!_history);
-            _simpleResultHeading.rectTransform.anchoredPosition = new Vector2(_history ? 428 : 716, 0);
-            string title = _history ? "预测历史" : (_detailed ? "观战预测 · 本地积分" : "全部玩家");
-            long value = 0;
-            if (_detailed && market != null && market.IsTrading)
-                for (int i = 0; i < 8; i++) value += TradingOdds.Sale(market, i, false);
-            _header.text = title + "    余额 " + PredictionMod.N(_mod.Book.Balance)
-                + (_detailed && market != null && market.IsTrading ? "    本局参考清仓值 " + PredictionMod.N(value) : "");
-            _message.text = _history ? (_detailed ? "历史只读；再次点击「历史」返回当前观战。报价为保存时的参考值。" : "历史记录，仅供查看。") : _mod.Message;
-            if (!_detailed && !_history && _mod.Message != null)
-            {
-                if (_mod.Message.StartsWith("交易开放：", StringComparison.Ordinal)) _message.text = "现在可以下注，也可以调整已参与的预测。";
-                else if (_mod.Message == "本轮交易暂停，等待下一轮修炼阶段") _message.text = "本轮已暂停，下一轮可以继续。";
-            }
-            bool changed = _marketId != (market == null ? null : market.Id);
-            _marketId = market == null ? null : market.Id;
-            for (int i = 0; i < 8; i++) _rows[i].Refresh(market, changed);
-            int[] order = RankSelection.DisplayOrder(market);
-            for (int slot = 0; slot < 8; slot++) _rows[order[slot]].SetDisplaySlot(slot);
-            if (market == null) _footer.text = (_mod.QueryStatus ?? "查分使用UID，不依赖昵称。") + "\n本地积分模式。认证时长未接入。";
-            else if (market.IsTrading)
-            {
-                _footer.text = _detailed ? "差1名返25% | 出售折价3% | 前5轮利润加成8/6/4/2/0%" : "返还包含本金 · 差1名返25% · 退出金额已扣3%";
-            }
-            else if (!_detailed) _footer.text = "返还包含本金 · " + (market.HasAdjacentReward ? "差1名返25%" : "仅猜中名次返还") + " · 旧版预测不能调整";
-            else _footer.text = "旧盘口：每人固定一票，第5轮结束封盘，保留原赔率及结算规则。\n"
-                + (market.HasAdjacentReward ? "差1名返正中总额25%。" : "仅正中返还。") + " 认证时长未接入。";
-        }
-        static void Fit(GameObject root, float width, float height)
-        {
-            var parent = root.transform.parent as RectTransform;
-            if (parent == null) return;
-            float scale = Math.Min(1f, Math.Min(parent.rect.width / (width + 24), parent.rect.height / (height + 24)));
-            if (scale > 0) root.transform.localScale = new Vector3(scale, scale, 1);
-        }
-        void RefreshSingle()
-        {
-            Market market = _mod.Current;
-            _rankSelection.Observe(market);
-            int index = FocusSelection.Index(market, _mod.Snapshot);
-            if (market == null && _focusUid != null && _mod.Snapshot != null)
-                for (int i = 0; i < _mod.Snapshot.Players.Length; i++) if (_mod.Snapshot.Players[i].Uid == _focusUid) index = i;
-            bool changed = _singleMarketId != (market == null ? null : market.Id) || _singleUid != _focusUid || _singleRow.PlayerIndex != index;
-            _singleMarketId = market == null ? null : market.Id; _singleUid = _focusUid;
-            _singleRow.PlayerIndex = index;
-            _singleRow.Refresh(index < 0 ? null : market, changed);
-            _singleHorse.text = _mod.Horses == null ? "" : _mod.Horses.Describe(_focusUid);
-            _singleHeader.text = "观战预测    余额 " + PredictionMod.N(_mod.Book.Balance);
-            _singleMessage.text = _focusUid == null ? "等待当前观战对象，点击游戏中的玩家头像进行切换。" : _mod.Message;
-            if (market != null && index >= 0 && (market.Settled || (market.IsTrading && market.Positions[index].Resolved)))
-                _singleMessage.text = "当前玩家名次已确定，结算结果见下方。";
-            _lifeChart.Refresh(market, index);
-            _lifeShareChart.Refresh(market, index);
-        }
-        void Expand() { _expanded = true; _history = false; _detailed = false; Refresh(); }
-        void ToggleDetails() { _detailed = !_detailed; Refresh(); }
-        void ToggleHorses() { if (_mod.Horses != null) _mod.Horses.Toggle(); Refresh(); }
-        void Collapse() { _expanded = false; _history = false; Refresh(); }
-        void Close() { _visible = false; if (_root != null) _root.SetActive(false); if (_singleRoot != null) _singleRoot.SetActive(false); }
-        public void Hide() { Close(); }
-        void ToggleHistory() { _history = !_history; _historyIndex = _mod.Book.Markets.Count - 1; Refresh(); }
-        void PreviousHistory() { if (_history) { _historyIndex--; Refresh(); } }
-        void NextHistory() { if (_history) { _historyIndex++; Refresh(); } }
-        public void Destroy() { _visible = false; _ui.DestroyAll(); _root = null; _singleRoot = null; }
+            Transform parentTransform = Ui.FindRootCanvas() != null ? Ui.FindRootCanvas().transform : null;
+            if (parentTransform == null) return;
+            _parent = parentTransform as RectTransform;
 
+            // 根窗口：无全屏遮罩，仅窗口自身接收点击
+            _root = new GameObject("PredictionOverviewWindow", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
+            _root.transform.SetParent(_parent, false);
+
+            _rect = _root.GetComponent<RectTransform>();
+            var anchor = new Vector2((float)_layout.WindowX, (float)_layout.WindowY);
+            _rect.anchorMin = _rect.anchorMax = anchor;
+            _rect.pivot = new Vector2(0.5f, 0.5f);
+            _rect.anchoredPosition = Vector2.zero;
+            _rect.sizeDelta = new Vector2(PanelLayout.WindowWidth, PanelLayout.WindowHeight);
+
+            _canvasGroup = _root.GetComponent<CanvasGroup>();
+            var winBg = _root.GetComponent<Image>();
+            _theme.ApplyWindowFrame(winBg);
+            winBg.raycastTarget = true; // 仅拦截窗口内部的鼠标点击
+
+            Transform win = _root.transform;
+
+            // 1. 顶栏卷轴横幅（作为拖动手柄）
+            _bannerGo = new GameObject("TitleBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            _bannerGo.transform.SetParent(win, false);
+            _bannerRect = _bannerGo.GetComponent<RectTransform>();
+            _bannerRect.anchorMin = new Vector2(0f, 1f);
+            _bannerRect.anchorMax = new Vector2(1f, 1f);
+            _bannerRect.pivot = new Vector2(0.5f, 1f);
+            _bannerRect.anchoredPosition = Vector2.zero;
+            _bannerRect.sizeDelta = new Vector2(0f, 54f);
+
+            var bannerImg = _bannerGo.GetComponent<Image>();
+            _theme.ApplyBanner(bannerImg);
+            bannerImg.raycastTarget = true;
+
+            Transform banner = _bannerGo.transform;
+
+            // 标题与状态
+            var titleGo = new GameObject("TitleLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            titleGo.transform.SetParent(banner, false);
+            var titleRect = titleGo.GetComponent<RectTransform>();
+            titleRect.anchoredPosition = new Vector2(24f, -27f);
+            titleRect.sizeDelta = new Vector2(160f, 32f);
+            _titleLabel = titleGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_titleLabel, 20, true, TextAlignmentOptions.Left);
+            _titleLabel.text = "弈仙预测总览";
+            _titleLabel.color = NativeTheme.AntiqueGold;
+            _titleLabel.raycastTarget = false;
+
+            var statusGo = new GameObject("StatusLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            statusGo.transform.SetParent(banner, false);
+            var statusRect = statusGo.GetComponent<RectTransform>();
+            statusRect.anchoredPosition = new Vector2(200f, -27f);
+            statusRect.sizeDelta = new Vector2(400f, 28f);
+            _statusLabel = statusGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_statusLabel, 14, false, TextAlignmentOptions.Left);
+            _statusLabel.color = NativeTheme.TextParchment;
+            _statusLabel.raycastTarget = false;
+
+            // 顶栏功能按钮
+            _btnTab = _theme.CreateButton(banner, "BtnTab", "局势走势", new Vector2(620f - 570f, 0f), new Vector2(74f, 32f), NativeBtnStyle.Secondary, OnTabClicked, 13);
+            _btnDetail = _theme.CreateButton(banner, "BtnDetail", "详细", new Vector2(700f - 570f, 0f), new Vector2(52f, 32f), NativeBtnStyle.Secondary, OnDetailClicked, 13);
+            _btnHistory = _theme.CreateButton(banner, "BtnHistory", "历史", new Vector2(760f - 570f, 0f), new Vector2(52f, 32f), NativeBtnStyle.Secondary, OnHistoryClicked, 13);
+            _btnHorses = _theme.CreateButton(banner, "BtnHorses", "顶栏马牌:开", new Vector2(850f - 570f, 0f), new Vector2(92f, 32f), NativeBtnStyle.Secondary, OnHorsesClicked, 13);
+            _btnPeek = _theme.CreateButton(banner, "BtnPeek", "透视", new Vector2(935f - 570f, 0f), new Vector2(52f, 32f), NativeBtnStyle.Secondary, OnPeekClicked, 13);
+            _btnMinimize = _theme.CreateButton(banner, "BtnMinimize", "折起", new Vector2(995f - 570f, 0f), new Vector2(52f, 32f), NativeBtnStyle.Secondary, OnMinimizeClicked, 13);
+            _btnClose = _theme.CreateButton(banner, "BtnClose", "×", new Vector2(1060f - 570f, 0f), new Vector2(34f, 32f), NativeBtnStyle.Close, Close, 20);
+
+            // 历史前后翻页
+            _btnPrevHistory = _theme.CreateButton(banner, "BtnPrevHist", "◀ 上局", new Vector2(440f - 570f, 0f), new Vector2(60f, 28f), NativeBtnStyle.Pill, OnPrevHistory, 12);
+            _btnNextHistory = _theme.CreateButton(banner, "BtnNextHist", "下局 ▶", new Vector2(505f - 570f, 0f), new Vector2(60f, 28f), NativeBtnStyle.Pill, OnNextHistory, 12);
+            _btnPrevHistory.SetActive(false);
+            _btnNextHistory.SetActive(false);
+
+            // 2. 窗口主体内容容器
+            _bodyContainer = new GameObject("BodyContainer", typeof(RectTransform), typeof(CanvasGroup));
+            _bodyContainer.transform.SetParent(win, false);
+            var bodyRect = _bodyContainer.GetComponent<RectTransform>();
+            bodyRect.anchorMin = Vector2.zero;
+            bodyRect.anchorMax = Vector2.one;
+            bodyRect.sizeDelta = new Vector2(0f, -54f);
+            bodyRect.anchoredPosition = new Vector2(0f, -27f);
+            _bodyCanvasGroup = _bodyContainer.GetComponent<CanvasGroup>();
+
+            // 3. Tab 1: 八人总览容器
+            _overviewTabContainer = new GameObject("OverviewTab", typeof(RectTransform));
+            _overviewTabContainer.transform.SetParent(_bodyContainer.transform, false);
+            var overviewRect = _overviewTabContainer.GetComponent<RectTransform>();
+            overviewRect.anchorMin = Vector2.zero;
+            overviewRect.anchorMax = Vector2.one;
+            overviewRect.sizeDelta = Vector2.zero;
+            overviewRect.anchoredPosition = Vector2.zero;
+
+            BuildOverviewColumns(_overviewTabContainer.transform);
+            for (int i = 0; i < 8; i++)
+            {
+                _rows[i] = new BetRow(this, _overviewTabContainer.transform, i);
+            }
+
+            // 4. Tab 2: 局势走势容器
+            _trendTabContainer = new GameObject("TrendTab", typeof(RectTransform));
+            _trendTabContainer.transform.SetParent(_bodyContainer.transform, false);
+            var trendRect = _trendTabContainer.GetComponent<RectTransform>();
+            trendRect.anchorMin = Vector2.zero;
+            trendRect.anchorMax = Vector2.one;
+            trendRect.sizeDelta = Vector2.zero;
+            trendRect.anchoredPosition = Vector2.zero;
+
+            BuildTrendTab(_trendTabContainer.transform);
+
+            // 5. 底栏消息
+            var footerGo = new GameObject("FooterLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            footerGo.transform.SetParent(_bodyContainer.transform, false);
+            var footerRect = footerGo.GetComponent<RectTransform>();
+            footerRect.anchorMin = new Vector2(0f, 0f);
+            footerRect.anchorMax = new Vector2(1f, 0f);
+            footerRect.anchoredPosition = new Vector2(0f, 20f);
+            footerRect.sizeDelta = new Vector2(-40f, 32f);
+            _footerLabel = footerGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_footerLabel, 14, false, TextAlignmentOptions.Center);
+            _footerLabel.color = NativeTheme.TextMuted;
+            _footerLabel.raycastTarget = false;
+
+            _trendTabContainer.SetActive(false);
+        }
+
+        void BuildOverviewColumns(Transform parent)
+        {
+            _detailedHeader = new GameObject("DetailedHeader", typeof(RectTransform));
+            _detailedHeader.transform.SetParent(parent, false);
+            var dRect = _detailedHeader.GetComponent<RectTransform>();
+            dRect.anchorMin = new Vector2(0f, 1f);
+            dRect.anchorMax = new Vector2(1f, 1f);
+            dRect.anchoredPosition = new Vector2(0f, -22f);
+            dRect.sizeDelta = new Vector2(0f, 26f);
+
+            CreateColHeader(_detailedHeader.transform, "玩家 / 命元", 20f, 170f);
+            CreateColHeader(_detailedHeader.transform, "田忌称号 / Elo", 200f, 150f);
+            CreateColHeader(_detailedHeader.transform, "目标名次", 360f, 110f);
+            CreateColHeader(_detailedHeader.transform, "买入倍率", 475f, 75f);
+            CreateColHeader(_detailedHeader.transform, "投入", 555f, 65f);
+            CreateColHeader(_detailedHeader.transform, "调仓操作", 630f, 210f);
+            CreateColHeader(_detailedHeader.transform, "权益 / 参考报价 / 结果", 850f, 270f);
+
+            _simpleHeader = new GameObject("SimpleHeader", typeof(RectTransform));
+            _simpleHeader.transform.SetParent(parent, false);
+            var sRect = _simpleHeader.GetComponent<RectTransform>();
+            sRect.anchorMin = new Vector2(0f, 1f);
+            sRect.anchorMax = new Vector2(1f, 1f);
+            sRect.anchoredPosition = new Vector2(0f, -22f);
+            sRect.sizeDelta = new Vector2(0f, 26f);
+
+            CreateColHeader(_simpleHeader.transform, "玩家", 20f, 180f);
+            CreateColHeader(_simpleHeader.transform, "田忌马牌", 210f, 140f);
+            CreateColHeader(_simpleHeader.transform, "猜第几名", 360f, 120f);
+            CreateColHeader(_simpleHeader.transform, "投入积分", 490f, 80f);
+            CreateColHeader(_simpleHeader.transform, "操作", 580f, 200f);
+            CreateColHeader(_simpleHeader.transform, "我的预测与返还", 790f, 330f);
+
+            _detailedHeader.SetActive(false);
+        }
+
+        void CreateColHeader(Transform parent, string text, float x, float width)
+        {
+            var go = new GameObject("Col_" + text, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = new Vector2(x, 0f);
+            rect.sizeDelta = new Vector2(width, 24f);
+
+            var label = go.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(label, 14, true, TextAlignmentOptions.Left);
+            label.text = text;
+            label.color = NativeTheme.AntiqueGold;
+            label.raycastTarget = false;
+        }
+
+        void BuildTrendTab(Transform parent)
+        {
+            // 顶部 8 玩家选择卡片 + 跟随当前
+            float btnW = 90f;
+            float startX = 25f;
+            for (int i = 0; i < 8; i++)
+            {
+                int pIndex = i;
+                _trendPlayerBtns[i] = _theme.CreateButton(parent, "TrendP_" + PredictionMod.N(i), "玩家" + PredictionMod.N(i + 1),
+                    new Vector2(startX + i * (btnW + 6f) + btnW / 2f - 570f, 230f), new Vector2(btnW, 30f), NativeBtnStyle.Secondary,
+                    delegate { _followFocusInTrend = false; _trendPlayer = pIndex; Refresh(); }, 13);
+            }
+
+            _btnFollowFocus = _theme.CreateButton(parent, "BtnFollowFocus", "跟随观战:开",
+                new Vector2(startX + 8 * (btnW + 6f) + 60f - 570f, 230f), new Vector2(110f, 30f), NativeBtnStyle.Primary,
+                delegate { _followFocusInTrend = !_followFocusInTrend; Refresh(); }, 13);
+
+            // 田忌个人档案信息条
+            var cardGo = new GameObject("TrendProfileCard", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            cardGo.transform.SetParent(parent, false);
+            var cardRect = cardGo.GetComponent<RectTransform>();
+            cardRect.anchoredPosition = new Vector2(0f, 178f);
+            cardRect.sizeDelta = new Vector2(1100f, 54f);
+            var cardImg = cardGo.GetComponent<Image>();
+            _theme.ApplyInset(cardImg);
+
+            Transform card = cardGo.transform;
+
+            var iconGo = new GameObject("CardHorseIcon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconGo.transform.SetParent(card, false);
+            var iconRect = iconGo.GetComponent<RectTransform>();
+            iconRect.anchoredPosition = new Vector2(-510f, 0f);
+            iconRect.sizeDelta = new Vector2(40f, 40f);
+            _trendHorseIcon = iconGo.GetComponent<Image>();
+            _trendHorseIcon.preserveAspect = true;
+            _trendHorseIcon.raycastTarget = false;
+
+            var titleGo = new GameObject("CardHorseTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            titleGo.transform.SetParent(card, false);
+            var titleRect = titleGo.GetComponent<RectTransform>();
+            titleRect.anchoredPosition = new Vector2(-360f, 10f);
+            titleRect.sizeDelta = new Vector2(240f, 24f);
+            _trendHorseTitle = titleGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_trendHorseTitle, 16, true, TextAlignmentOptions.Left);
+            _trendHorseTitle.raycastTarget = false;
+
+            var detailGo = new GameObject("CardHorseDetail", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            detailGo.transform.SetParent(card, false);
+            var detailRect = detailGo.GetComponent<RectTransform>();
+            detailRect.anchoredPosition = new Vector2(40f, 0f);
+            detailRect.sizeDelta = new Vector2(560f, 42f);
+            _trendHorseDetail = detailGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_trendHorseDetail, 13, false, TextAlignmentOptions.Left);
+            _trendHorseDetail.color = NativeTheme.TextParchment;
+            _trendHorseDetail.raycastTarget = false;
+
+            var pNameGo = new GameObject("CardPlayerName", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            pNameGo.transform.SetParent(card, false);
+            var pNameRect = pNameGo.GetComponent<RectTransform>();
+            pNameRect.anchoredPosition = new Vector2(-360f, -12f);
+            pNameRect.sizeDelta = new Vector2(240f, 20f);
+            _trendPlayerName = pNameGo.GetComponent<TextMeshProUGUI>();
+            _theme.ApplyTextStyle(_trendPlayerName, 13, false, TextAlignmentOptions.Left);
+            _trendPlayerName.color = NativeTheme.TextMuted;
+            _trendPlayerName.raycastTarget = false;
+
+            // 双图表并排展示（左：命元走势，右：命元占比走势）
+            _lifeChart = new LifeChart(_ui, parent, TrendChartData.LifeMetric, -280f, -60f, 540f, 290f, _theme);
+            _lifeShareChart = new LifeChart(_ui, parent, TrendChartData.ShareMetric, 280f, -60f, 540f, 290f, _theme);
+        }
+
+        void HandleBannerDrag()
+        {
+            if (_enableAfterFrame >= 0 && Time.frameCount > _enableAfterFrame)
+            {
+                _enableAfterFrame = -1;
+            }
+
+            Vector3 mouse = Input.mousePosition;
+            var screen = new Vector2(mouse.x, mouse.y);
+            Camera camera = null;
+            Canvas rootCanvas = Ui.FindRootCanvas();
+            if (rootCanvas != null && rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay) camera = rootCanvas.worldCamera;
+
+            Vector2 local;
+            if (_parent == null || !RectTransformUtility.ScreenPointToLocalPointInRectangle(_parent, screen, camera, out local)) return;
+
+            if (Input.GetMouseButtonDown(0) && RectTransformUtility.RectangleContainsScreenPoint(_bannerRect, screen, camera))
+            {
+                _pressed = true;
+                _dragged = false;
+                _downScreen = screen;
+                _downLocal = local;
+                _startX = _layout.WindowX;
+                _startY = _layout.WindowY;
+            }
+
+            if (!_pressed) return;
+
+            if ((screen - _downScreen).sqrMagnitude >= DragThreshold * DragThreshold)
+            {
+                _dragged = true;
+            }
+
+            if (_dragged && _parent != null)
+            {
+                Rect bounds = _parent.rect;
+                if (bounds.width > 0 && bounds.height > 0)
+                {
+                    double nx = _startX + (local.x - _downLocal.x) / bounds.width;
+                    double ny = _startY + (local.y - _downLocal.y) / bounds.height;
+                    _layout.MoveWindow(nx, ny, PanelLayout.WindowWidth / bounds.width, PanelLayout.WindowHeight / bounds.height);
+                    var anchor = new Vector2((float)_layout.WindowX, (float)_layout.WindowY);
+                    _rect.anchorMin = _rect.anchorMax = anchor;
+                    _rect.anchoredPosition = Vector2.zero;
+                }
+            }
+
+            if (!Input.GetMouseButton(0))
+            {
+                FinishGesture();
+            }
+        }
+
+        void FinishGesture()
+        {
+            if (!_pressed) return;
+            bool wasDragged = _dragged;
+            _pressed = false;
+            _dragged = false;
+            if (wasDragged)
+            {
+                _enableAfterFrame = Time.frameCount;
+                _ctx.Data.Set(PanelLayout.WindowSaveKey, _layout.WriteWindow());
+            }
+        }
+
+        public Market Shown()
+        {
+            if (_history && _mod.Book != null)
+            {
+                var list = _mod.Book.Markets;
+                if (list != null && _historyIndex >= 0 && _historyIndex < list.Count)
+                {
+                    return list[_historyIndex];
+                }
+            }
+            return _mod.Current;
+        }
+
+        public void Refresh()
+        {
+            if (_root == null) return;
+            _root.SetActive(_visible);
+            if (!_visible) return;
+
+            MatchSnapshot snapshot = _mod.Snapshot;
+            _lastFocusUid = FocusSelection.Uid(snapshot);
+            _lastMarketId = snapshot == null ? null : snapshot.Id;
+
+            Market market = Shown();
+            _mod.Drafts.Observe(market);
+
+            // 1. 刷新顶栏标题与状态
+            int curRound = snapshot != null ? snapshot.Round : (market != null ? market.QuoteRound : 1);
+            string roundText = "第 " + PredictionMod.N(curRound) + " 轮";
+            string statusDesc = market != null && market.Settled ? "已结算" : (market != null && market.TradingWindowOpen ? "交易开放" : "交易暂停");
+            _statusLabel.text = roundText + " · " + statusDesc + " · 余额: " + PredictionMod.N(_mod.Book != null ? _mod.Book.Balance : 1000) + " 分";
+
+            _btnTab.SetText(_currentTab == Tab.Overview ? "局势走势" : "八人总览");
+            _btnDetail.SetText(_detailed ? "简洁模式" : "详细数据");
+            _btnHistory.SetText(_history ? "当前局" : "历史对局");
+            _btnHorses.SetText(_mod.Horses != null && _mod.Horses.Enabled ? "顶栏马牌:开" : "顶栏马牌:关");
+
+            // 历史翻页
+            _btnPrevHistory.SetActive(_history);
+            _btnNextHistory.SetActive(_history);
+            if (_history && _mod.Book != null)
+            {
+                int count = _mod.Book.Markets != null ? _mod.Book.Markets.Count : 0;
+                _btnPrevHistory.SetInteractable(_historyIndex > 0);
+                _btnNextHistory.SetInteractable(_historyIndex < count - 1);
+            }
+
+            // 2. 切换 Tab 容器
+            _overviewTabContainer.SetActive(_currentTab == Tab.Overview);
+            _trendTabContainer.SetActive(_currentTab == Tab.Trend);
+
+            if (_currentTab == Tab.Overview)
+            {
+                RefreshOverview(market);
+            }
+            else
+            {
+                RefreshTrend(market);
+            }
+
+            // 3. 底栏信息
+            _footerLabel.text = _mod.Message ?? (_mod.QueryStatus ?? "每人独立预测，可在右侧随时加注、换预测或退出。");
+        }
+
+        void RefreshOverview(Market market)
+        {
+            _detailedHeader.SetActive(_detailed);
+            _simpleHeader.SetActive(!_detailed);
+
+            int[] order = RankSelection.DisplayOrder(market);
+            for (int slot = 0; slot < 8; slot++)
+            {
+                int playerIndex = order[slot];
+                _rows[playerIndex].SetSlot(slot);
+                _rows[playerIndex].Refresh(market, _detailed, _history);
+            }
+        }
+
+        void RefreshTrend(Market market)
+        {
+            MatchSnapshot snapshot = _mod.Snapshot;
+            if (snapshot == null || !snapshot.IsEightPlayerMatch()) return;
+
+            if (_followFocusInTrend)
+            {
+                int fIndex = FocusSelection.Index(market, snapshot);
+                if (fIndex >= 0) _trendPlayer = fIndex;
+            }
+
+            _btnFollowFocus.SetText(_followFocusInTrend ? "跟随观战:开" : "跟随观战:关");
+
+            for (int i = 0; i < 8; i++)
+            {
+                _trendPlayerBtns[i].SetText(snapshot.Players[i].Name);
+                _trendPlayerBtns[i].Button.image.color = i == _trendPlayer ? NativeTheme.AntiqueGold : new Color(0.2f, 0.26f, 0.28f, 0.95f);
+            }
+
+            Player p = snapshot.Players[_trendPlayer];
+            _trendPlayerName.text = p.Name;
+
+            HorseMember member = _mod.Horses != null ? _mod.Horses.FindMember(p.Uid) : null;
+            if (member != null && !string.IsNullOrEmpty(member.Title))
+            {
+                Sprite sp = _mod.Horses.GetSprite(member.Title);
+                _trendHorseIcon.sprite = sp;
+                _trendHorseIcon.gameObject.SetActive(sp != null);
+                _trendHorseTitle.text = member.Caption;
+                _trendHorseTitle.color = TianJiFeature.ColorOf(member.Title);
+                _trendHorseDetail.text = _mod.Horses.DescribeFull(p.Uid);
+            }
+            else
+            {
+                _trendHorseIcon.gameObject.SetActive(false);
+                _trendHorseTitle.text = "暂无称号";
+                _trendHorseTitle.color = NativeTheme.TextMuted;
+                _trendHorseDetail.text = "暂无公开数据";
+            }
+
+            _lifeChart.Refresh(market, _trendPlayer);
+            _lifeShareChart.Refresh(market, _trendPlayer);
+        }
+
+        void OnTabClicked()
+        {
+            _currentTab = _currentTab == Tab.Overview ? Tab.Trend : Tab.Overview;
+            Refresh();
+        }
+
+        void OnDetailClicked()
+        {
+            _detailed = !_detailed;
+            Refresh();
+        }
+
+        void OnHistoryClicked()
+        {
+            _history = !_history;
+            if (_history && _mod.Book != null && _mod.Book.Markets != null && _mod.Book.Markets.Count > 0)
+            {
+                _historyIndex = _mod.Book.Markets.Count - 1;
+            }
+            Refresh();
+        }
+
+        void OnPrevHistory()
+        {
+            if (_historyIndex > 0)
+            {
+                _historyIndex--;
+                Refresh();
+            }
+        }
+
+        void OnNextHistory()
+        {
+            if (_mod.Book != null && _mod.Book.Markets != null && _historyIndex < _mod.Book.Markets.Count - 1)
+            {
+                _historyIndex++;
+                Refresh();
+            }
+        }
+
+        void OnHorsesClicked()
+        {
+            if (_mod.Horses != null)
+            {
+                _mod.Horses.Toggle();
+                Refresh();
+            }
+        }
+
+        void OnPeekClicked()
+        {
+            _layout.IsPeek = !_layout.IsPeek;
+            if (_bodyCanvasGroup != null)
+            {
+                _bodyCanvasGroup.alpha = _layout.IsPeek ? PanelLayout.PeekAlpha : 1f;
+                _bodyCanvasGroup.blocksRaycasts = !_layout.IsPeek;
+            }
+            _btnPeek.SetText(_layout.IsPeek ? "退出透视" : "透视");
+        }
+
+        void OnMinimizeClicked()
+        {
+            _layout.IsMinimized = !_layout.IsMinimized;
+            if (_rect != null)
+            {
+                _rect.sizeDelta = new Vector2(PanelLayout.WindowWidth, _layout.IsMinimized ? PanelLayout.MinimizedHeight : PanelLayout.WindowHeight);
+            }
+            if (_bodyContainer != null)
+            {
+                _bodyContainer.SetActive(!_layout.IsMinimized);
+            }
+            _btnMinimize.SetText(_layout.IsMinimized ? "展开" : "折起");
+        }
+
+        public void Destroy()
+        {
+            FinishGesture();
+            _ui.DestroyAll();
+            if (_root != null)
+            {
+                UnityEngine.Object.Destroy(_root);
+                _root = null;
+            }
+        }
+
+        // 八人总览行
         sealed class BetRow
         {
             readonly PredictionPanel _panel;
-            int _index;
-            readonly bool _single;
-            public int PlayerIndex { get { return _index; } set { _index = value; } }
-            readonly TextMeshProUGUI _name, _elo, _odds, _result, _preview, _playerState;
-            readonly UiButton _prev, _next, _buy, _half, _sell, _switch;
-            readonly UiInput _stake, _rankInput;
-            readonly RectTransform _row, _stakeRect;
-            bool _layoutReady, _layoutDetailed, _layoutHistory;
-            bool Simple { get { return !_single && !_panel._detailed; } }
-            TMP_InputField _rankField;
-            int _rank, _version;
-            string _shownId, _shownUid;
-            public BetRow(PredictionPanel panel, int index, float y, bool single = false)
+            readonly int _playerIndex;
+            readonly GameObject _rowGo;
+            readonly RectTransform _rowRect;
+
+            readonly Image _selfFlag;
+            readonly Image _horseIcon;
+            readonly TextMeshProUGUI _horseTitle;
+            readonly TextMeshProUGUI _playerName;
+            readonly TextMeshProUGUI _playerLife;
+
+            readonly NativeButton _btnMinus;
+            readonly NativeButton _btnPlus;
+            readonly TextMeshProUGUI _rankLabel;
+            readonly TextMeshProUGUI _oddsLabel;
+
+            readonly UiInput _stakeInput;
+            readonly NativeButton _btnBuy;
+            readonly NativeButton _btnSellHalf;
+            readonly NativeButton _btnSellAll;
+
+            readonly TextMeshProUGUI _holdingLabel;
+            readonly TextMeshProUGUI _resultLabel;
+            readonly Image _dividerLine;
+
+            public BetRow(PredictionPanel panel, Transform parent, int index)
             {
-                _panel = panel; _index = index; _single = single;
-                string id = PredictionMod.N(index);
-                if (single)
+                _panel = panel;
+                _playerIndex = index;
+
+                _rowGo = new GameObject("Row_" + PredictionMod.N(index), typeof(RectTransform));
+                _rowGo.transform.SetParent(parent, false);
+
+                _rowRect = _rowGo.GetComponent<RectTransform>();
+                _rowRect.anchorMin = new Vector2(0f, 1f);
+                _rowRect.anchorMax = new Vector2(1f, 1f);
+                _rowRect.pivot = new Vector2(0.5f, 1f);
+                _rowRect.sizeDelta = new Vector2(0f, 54f);
+
+                Transform row = _rowGo.transform;
+
+                // 关注高亮光晕
+                var flagGo = new GameObject("SelfFlag", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                flagGo.transform.SetParent(row, false);
+                var flagRect = flagGo.GetComponent<RectTransform>();
+                flagRect.anchorMin = Vector2.zero;
+                flagRect.anchorMax = Vector2.one;
+                flagRect.sizeDelta = Vector2.zero;
+                _selfFlag = flagGo.GetComponent<Image>();
+                panel._theme.ApplySelfFlag(_selfFlag);
+                _selfFlag.raycastTarget = false;
+                _selfFlag.gameObject.SetActive(false);
+
+                // 1. 玩家信息
+                var nameGo = new GameObject("PlayerName", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                nameGo.transform.SetParent(row, false);
+                var nameRect = nameGo.GetComponent<RectTransform>();
+                nameRect.anchoredPosition = new Vector2(20f, -15f);
+                nameRect.sizeDelta = new Vector2(160f, 24f);
+                _playerName = nameGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_playerName, 15, true, TextAlignmentOptions.Left);
+                _playerName.raycastTarget = false;
+
+                var lifeGo = new GameObject("PlayerLife", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                lifeGo.transform.SetParent(row, false);
+                var lifeRect = lifeGo.GetComponent<RectTransform>();
+                lifeRect.anchoredPosition = new Vector2(20f, -36f);
+                lifeRect.sizeDelta = new Vector2(160f, 20f);
+                _playerLife = lifeGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_playerLife, 13, false, TextAlignmentOptions.Left);
+                _playerLife.color = NativeTheme.TextMuted;
+                _playerLife.raycastTarget = false;
+
+                // 2. 田忌称号
+                var iconGo = new GameObject("HorseIcon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                iconGo.transform.SetParent(row, false);
+                var iconRect = iconGo.GetComponent<RectTransform>();
+                iconRect.anchoredPosition = new Vector2(215f, -27f);
+                iconRect.sizeDelta = new Vector2(34f, 34f);
+                _horseIcon = iconGo.GetComponent<Image>();
+                _horseIcon.preserveAspect = true;
+                _horseIcon.raycastTarget = false;
+
+                var titleGo = new GameObject("HorseTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                titleGo.transform.SetParent(row, false);
+                var titleRect = titleGo.GetComponent<RectTransform>();
+                titleRect.anchoredPosition = new Vector2(295f, -27f);
+                titleRect.sizeDelta = new Vector2(120f, 30f);
+                _horseTitle = titleGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_horseTitle, 14, true, TextAlignmentOptions.Left);
+                _horseTitle.raycastTarget = false;
+
+                // 3. 目标名次与倍率
+                _btnMinus = panel._theme.CreateButton(row, "Minus", "−", new Vector2(370f, -27f), new Vector2(26f, 32f), NativeBtnStyle.Pill, OnMinus, 16);
+
+                var rankGo = new GameObject("RankLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                rankGo.transform.SetParent(row, false);
+                var rRect = rankGo.GetComponent<RectTransform>();
+                rRect.anchoredPosition = new Vector2(410f, -27f);
+                rRect.sizeDelta = new Vector2(50f, 30f);
+                _rankLabel = rankGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_rankLabel, 15, true, TextAlignmentOptions.Center);
+                _rankLabel.color = NativeTheme.AntiqueGold;
+
+                _btnPlus = panel._theme.CreateButton(row, "Plus", "+", new Vector2(450f, -27f), new Vector2(26f, 32f), NativeBtnStyle.Pill, OnPlus, 16);
+
+                var oddsGo = new GameObject("OddsLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                oddsGo.transform.SetParent(row, false);
+                var oRect = oddsGo.GetComponent<RectTransform>();
+                oRect.anchoredPosition = new Vector2(505f, -27f);
+                oRect.sizeDelta = new Vector2(65f, 30f);
+                _oddsLabel = oddsGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_oddsLabel, 15, true, TextAlignmentOptions.Center);
+                _oddsLabel.color = new Color(0.4f, 0.95f, 0.85f, 1f);
+
+                // 4. 积分输入
+                _stakeInput = panel._ui.NumberInput(row, "Stake", new Vector2(585f, -27f), new Vector2(56f, 32f), 14, OnStake);
+                Transform stakeT = row.Find("Stake");
+                if (stakeT != null)
                 {
-                    Transform parent = panel._singleRoot.transform;
-                    _name = panel.Label("focusedName", "", 18, -56, 440, 42, 28, parent);
-                    _elo = panel.Label("focusedElo", "", 478, -56, 244, 42, 28, parent);
-                    _name.fontStyle = FontStyles.Bold; _elo.fontStyle = FontStyles.Bold;
-                    _name.enableWordWrapping = false; _elo.enableWordWrapping = false;
-                    _name.overflowMode = TextOverflowModes.Ellipsis; _elo.overflowMode = TextOverflowModes.Ellipsis;
-                    _prev = panel.Button("focusedPrev", "−", 18, y, 32, Previous, parent);
-                    _rankInput = RankInput(parent, "focusedRank", 54, y);
-                    _next = panel.Button("focusedNext", "+", 94, y, 32, Next, parent);
-                    _odds = panel.Label("focusedOdds", "", 140, y, 92, 34, 18, parent);
-                    _stake = panel._ui.NumberInput(parent, "focusedStake", new Vector2(238, y), new Vector2(80, 34), 5, OnStake);
-                    _stake.SetText("10");
-                    _buy = panel.Button("focusedBuy", "买入", 330, y, 64, Buy, parent);
-                    _half = panel.Button("focusedHalf", "减半", 402, y, 64, Half, parent);
-                    _sell = panel.Button("focusedSell", "清仓", 474, y, 64, Sell, parent);
-                    _switch = panel.Button("focusedSwitch", "换预测", 546, y, 84, Switch, parent);
-                    _preview = panel.Label("focusedPreview", "", 18, -221, 704, 28, 15, parent);
-                    _result = panel.Label("focusedResult", "", 18, -252, 704, 68, 16, parent);
-                    return;
+                    var bg = stakeT.GetComponent<Image>();
+                    if (bg != null) panel._theme.ApplyInset(bg);
                 }
-                GameObject row = panel._ui.Row(panel._root.transform, "playerRow" + id, new Vector2(0, y), new Vector2(Width, 63), Color.clear);
-                _row = row.transform as RectTransform;
-                Transform rowParent = row.transform;
-                _name = panel.Label("name" + id, "", 18, 0, 174, 60, 16, rowParent);
-                _playerState = panel.Label("playerState" + id, "", 18, -32, 174, 24, 15, rowParent);
-                _elo = panel.Label("elo" + id, "", 198, 0, 66, 34, 16, rowParent);
-                _prev = panel.Button("prev" + id, "−", 270, 0, 32, Previous, rowParent);
-                _rankInput = RankInput(rowParent, "rank" + id, 306, 0);
-                _next = panel.Button("next" + id, "+", 346, 0, 32, Next, rowParent);
-                _odds = panel.Label("odds" + id, "", 390, 0, 86, 34, 16, rowParent);
-                _stake = panel._ui.NumberInput(rowParent, "stake" + id, new Vector2(482, 0), new Vector2(74, 34), 5, OnStake);
-                _stakeRect = rowParent.Find("stake" + id) as RectTransform;
-                _stake.SetText("10");
-                _buy = panel.Button("buy" + id, "买入", 562, 0, 58, Buy, rowParent);
-                _half = panel.Button("half" + id, "减半", 626, 0, 58, Half, rowParent);
-                _sell = panel.Button("sell" + id, "清仓", 690, 0, 58, Sell, rowParent);
-                _switch = panel.Button("switch" + id, "换预测", 754, 0, 72, Switch, rowParent);
-                _preview = panel.Label("preview" + id, "", 270, -36, 558, 24, 14, rowParent);
-                _result = panel.Label("result" + id, "", 840, 0, 265, 60, 14, rowParent);
+
+                // 5. 调仓操作按钮
+                _btnBuy = panel._theme.CreateButton(row, "BtnBuy", "下注", new Vector2(675f, -27f), new Vector2(68f, 34f), NativeBtnStyle.Primary, OnBuy, 14);
+                _btnSellHalf = panel._theme.CreateButton(row, "BtnHalf", "退半", new Vector2(745f, -27f), new Vector2(52f, 34f), NativeBtnStyle.Caution, OnHalf, 13);
+                _btnSellAll = panel._theme.CreateButton(row, "BtnSell", "清仓", new Vector2(802f, -27f), new Vector2(52f, 34f), NativeBtnStyle.Danger, OnSell, 13);
+
+                // 6. 权益与结果
+                var holdingGo = new GameObject("HoldingLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                holdingGo.transform.SetParent(row, false);
+                var hRect = holdingGo.GetComponent<RectTransform>();
+                hRect.anchoredPosition = new Vector2(980f, -16f);
+                hRect.sizeDelta = new Vector2(240f, 22f);
+                _holdingLabel = holdingGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_holdingLabel, 13, false, TextAlignmentOptions.Left);
+                _holdingLabel.color = NativeTheme.TextParchment;
+                _holdingLabel.raycastTarget = false;
+
+                var resultGo = new GameObject("ResultLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+                resultGo.transform.SetParent(row, false);
+                var resRect = resultGo.GetComponent<RectTransform>();
+                resRect.anchoredPosition = new Vector2(980f, -36f);
+                resRect.sizeDelta = new Vector2(240f, 20f);
+                _resultLabel = resultGo.GetComponent<TextMeshProUGUI>();
+                panel._theme.ApplyTextStyle(_resultLabel, 13, false, TextAlignmentOptions.Left);
+                _resultLabel.color = NativeTheme.AntiqueGold;
+                _resultLabel.raycastTarget = false;
+
+                // 7. 分隔线
+                var lineGo = new GameObject("Line", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                lineGo.transform.SetParent(row, false);
+                var lineRect = lineGo.GetComponent<RectTransform>();
+                lineRect.anchorMin = new Vector2(0f, 0f);
+                lineRect.anchorMax = new Vector2(1f, 0f);
+                lineRect.anchoredPosition = new Vector2(0f, 1f);
+                lineRect.sizeDelta = new Vector2(-20f, 2f);
+                _dividerLine = lineGo.GetComponent<Image>();
+                panel._theme.ApplyLine(_dividerLine);
+                _dividerLine.raycastTarget = false;
             }
-            static void Place(Transform target, float x, float y, float width, float height)
+
+            public void SetSlot(int slot)
             {
-                var rect = target as RectTransform;
-                if (rect == null) return;
-                rect.anchoredPosition = new Vector2(x, y); rect.sizeDelta = new Vector2(width, height);
-            }
-            void ApplyLayout()
-            {
-                if (_single) return;
-                bool detailed = _panel._detailed, history = _panel._history;
-                if (_layoutReady && _layoutDetailed == detailed && _layoutHistory == history) return;
-                _layoutReady = true; _layoutDetailed = detailed; _layoutHistory = history;
-                _elo.gameObject.SetActive(detailed); _odds.gameObject.SetActive(detailed);
-                _playerState.gameObject.SetActive(!detailed);
-                _stakeRect.gameObject.SetActive(detailed || !history);
-                _preview.gameObject.SetActive(detailed || !history);
-                Place(_name.transform, 18, 0, 174, detailed ? 60 : 30);
-                _name.fontSize = detailed ? 16 : 18; _name.fontStyle = detailed ? FontStyles.Normal : FontStyles.Bold;
-                _name.enableWordWrapping = detailed; _name.overflowMode = TextOverflowModes.Ellipsis;
-                Place(_prev.GameObject.transform, detailed ? 270 : 212, 0, 32, 34);
-                Place(_rankField.transform, detailed ? 306 : 248, 0, 36, 34);
-                Place(_next.GameObject.transform, detailed ? 346 : 288, 0, 32, 34);
-                Place(_stakeRect, detailed ? 482 : 336, 0, 74, 34);
-                Place(_buy.GameObject.transform, detailed ? 562 : 428, 0, detailed ? 58 : 64, 34);
-                Place(_half.GameObject.transform, detailed ? 626 : 500, 0, detailed ? 58 : 78, 34);
-                Place(_sell.GameObject.transform, detailed ? 690 : 586, 0, detailed ? 58 : 100, 34);
-                Place(_switch.GameObject.transform, detailed ? 754 : 428, 0, detailed ? 72 : 64, 34);
-                Place(_preview.transform, detailed ? 270 : 212, -36, detailed ? 558 : 484, 24);
-                Place(_result.transform, detailed ? 840 : (history ? 428 : 716), 0, detailed ? 265 : (history ? 674 : 386), 60);
-                _preview.fontSize = detailed ? 14 : 15; _result.fontSize = detailed ? 14 : 17;
-                _half.SetText(detailed ? "减半" : "退一半"); _sell.SetText(detailed ? "清仓" : "全部退出");
-                _switch.SetText(detailed ? "换预测" : "改猜");
-            }
-            void ActionVisibility(Market market)
-            {
-                if (_single) return;
-                bool ready = market != null && _index >= 0 && _index < 8;
-                Position p = ready && market.IsTrading ? market.Positions[_index] : null;
-                bool owned = p != null && p.Claim > 0 && !p.Resolved;
-                bool editable = ready && !_panel._history && !market.Settled
-                    && (p != null ? !p.Resolved : market.Tickets[_index] == null);
-                bool changing = owned && _rank > 0 && p.Rank != _rank;
-                _buy.GameObject.SetActive(!Simple || (editable && !changing));
-                _switch.GameObject.SetActive(!Simple || (editable && changing));
-                _half.GameObject.SetActive(!Simple || (editable && owned));
-                _sell.GameObject.SetActive(!Simple || (editable && owned));
-            }
-            UiInput RankInput(Transform parent, string name, float x, float y)
-            {
-                UiInput input = _panel._ui.NumberInput(parent, name, new Vector2(x, y), new Vector2(36, 34), 2, OnRank);
-                _rankField = parent.Find(name).GetComponent(typeof(TMP_InputField)) as TMP_InputField;
-                if (_rankField != null)
+                if (_rowRect != null)
                 {
-                    _rankField.textComponent.alignment = TextAlignmentOptions.Center;
-                    var placeholder = _panel.Label(name + "Placeholder", "？", 0, 0, 24, 30, 20, _rankField.textViewport);
-                    placeholder.alignment = TextAlignmentOptions.Center; placeholder.raycastTarget = false;
-                    _rankField.placeholder = placeholder;
+                    _rowRect.anchoredPosition = new Vector2(0f, -50f - slot * 56f);
                 }
-                return input;
             }
-            public void SetDisplaySlot(int slot) { if (_row != null) _row.anchoredPosition = new Vector2(0, -138 - slot * 63); }
-            bool CanEditRank()
+
+            public void Refresh(Market market, bool detailed, bool history)
             {
-                if (!_panel._visible || _panel._history || _single == _panel._expanded || (_single && !_panel.SingleReady)) return false;
-                Market market = _panel.Shown(); MatchSnapshot snapshot = _panel._mod.Snapshot;
-                if (market == null || market.Id != _shownId || _index < 0 || _index >= 8 || market.Players[_index].Uid != _shownUid
-                    || snapshot == null || snapshot.Id != market.Id || !snapshot.LiveObserver || _panel._mod.PreparationError != null || market.Settled) return false;
-                if (_single && FocusSelection.Uid(snapshot) != _shownUid) return false;
-                return market.IsTrading ? !market.Positions[_index].Resolved : _panel._mod.Enabled && !market.Locked && market.Tickets[_index] == null;
-            }
-            void Previous() { if (CanEditRank()) { _panel._rankSelection.Step(_index, false); _panel.Refresh(); } }
-            void Next() { if (CanEditRank()) { _panel._rankSelection.Step(_index, true); _panel.Refresh(); } }
-            void OnRank(string value)
-            {
-                if (!CanEditRank()) return;
-                if (!_panel._rankSelection.SelectText(_index, value))
+                MatchSnapshot snapshot = _panel._mod.Snapshot;
+                if (snapshot == null || _playerIndex >= snapshot.Players.Length) return;
+
+                Player player = snapshot.Players[_playerIndex];
+                _playerName.text = player.Name;
+
+                PlayerState state = snapshot.States != null && _playerIndex < snapshot.States.Length ? snapshot.States[_playerIndex] : default(PlayerState);
+                _playerLife.text = "命元 " + PredictionMod.N(state.Life) + " · " + PredictionMod.N(state.Wins) + "胜" + PredictionMod.N(state.Losses) + "负";
+
+                // 高亮关注中
+                bool isFocus = FocusSelection.Uid(snapshot) == player.Uid;
+                _selfFlag.gameObject.SetActive(isFocus);
+
+                // 田忌称号
+                HorseMember member = _panel._mod.Horses != null ? _panel._mod.Horses.FindMember(player.Uid) : null;
+                if (member != null && !string.IsNullOrEmpty(member.Title))
                 {
-                    _panel._mod.SetStatus("名次请输入1～8，留空可取消选择");
-                    _panel._rankSelection.SelectText(_index, "");
-                    _rankInput.SetText("");
+                    Sprite sp = _panel._mod.Horses.GetSprite(member.Title);
+                    _horseIcon.sprite = sp;
+                    _horseIcon.gameObject.SetActive(sp != null);
+                    _horseTitle.text = member.Caption + (detailed ? "\nElo " + PredictionMod.N((long)member.Profile.Rating.Score) : "");
+                    _horseTitle.color = TianJiFeature.ColorOf(member.Title);
                 }
+                else
+                {
+                    _horseIcon.gameObject.SetActive(false);
+                    _horseTitle.text = "";
+                }
+
+                // 目标名次与倍率
+                int chosenRank = _panel._mod.Drafts.Selected(_playerIndex);
+                _rankLabel.text = chosenRank > 0 ? "第" + chosenRank.ToString(CultureInfo.InvariantCulture) + "名" : "—";
+
+                bool open = market != null && market.TradingWindowOpen && !history;
+                if (market != null && chosenRank >= 1 && chosenRank <= 8)
+                {
+                    int bps = market.IsTrading ? market.QuoteRates[_playerIndex * 8 + chosenRank - 1] : Odds.EffectiveRate(market.BaseRates[_playerIndex * 8 + chosenRank - 1], Math.Max(1, Math.Min(5, market.HighestRound)));
+                    _oddsLabel.text = PredictionMod.Rate(bps);
+                }
+                else
+                {
+                    _oddsLabel.text = "—";
+                }
+
+                // 积分输入
+                string draftStake = _panel._mod.Drafts.Stake(_playerIndex);
+                if (_stakeInput != null && _stakeInput.Text != draftStake)
+                {
+                    _stakeInput.SetText(draftStake);
+                }
+
+                // 持仓与调仓
+                Position pos = market != null && market.IsTrading ? market.Positions[_playerIndex] : default(Position);
+                bool hasPosition = pos.Claim > 0;
+
+                if (!hasPosition)
+                {
+                    _btnBuy.SetText("下注");
+                    _btnSellHalf.SetActive(false);
+                    _btnSellAll.SetActive(false);
+                    _holdingLabel.text = "未持仓";
+                    _resultLabel.text = "";
+                }
+                else
+                {
+                    bool same = chosenRank == pos.Rank;
+                    _btnBuy.SetText(same ? "加注" : "改猜");
+                    _btnSellHalf.SetActive(true);
+                    _btnSellAll.SetActive(true);
+
+                    long sale = TradingOdds.Sale(market, _playerIndex, false);
+                    _holdingLabel.text = "猜" + PredictionMod.N(pos.Rank) + "名 · 权益: " + PredictionMod.N(pos.Claim) + "分";
+                    _resultLabel.text = "参考清仓: " + PredictionMod.N(sale) + "分 (差1名返" + PredictionMod.N(pos.Claim / 4) + "分)";
+                }
+
+                if (market != null && market.Settled)
+                {
+                    int finalR = market.FinalRanks != null && _playerIndex < market.FinalRanks.Length ? market.FinalRanks[_playerIndex] : 0;
+                    _resultLabel.text = "最终第" + PredictionMod.N(finalR) + "名 · 返还 " + PredictionMod.N(pos.FinalPayout) + "分";
+                }
+
+                _btnBuy.SetInteractable(open && chosenRank >= 1 && chosenRank <= 8);
+                _btnSellHalf.SetInteractable(open && hasPosition);
+                _btnSellAll.SetInteractable(open && hasPosition);
+            }
+
+            void OnMinus()
+            {
+                _panel._mod.Drafts.Step(_playerIndex, false);
                 _panel.Refresh();
             }
-            void OnStake(string value) { }
-            void Buy() { Execute(0); }
-            void Half() { Execute(1); }
-            void Sell() { Execute(2); }
-            void Switch() { Execute(3); }
-            void Execute(int action)
+
+            void OnPlus()
             {
-                if (_single && !_panel.SingleReady) return;
+                _panel._mod.Drafts.Step(_playerIndex, true);
+                _panel.Refresh();
+            }
+
+            void OnStake(string val)
+            {
+                _panel._mod.Drafts.SetStake(_playerIndex, val);
+            }
+
+            void OnBuy()
+            {
+                MatchSnapshot snapshot = _panel._mod.Snapshot;
                 Market market = _panel.Shown();
-                if (market == null || market.Id != _shownId || _panel._history || _index < 0 || _index >= 8 || market.Players[_index].Uid != _shownUid) return;
-                if ((action == 0 || action == 3) && (_rank < 1 || _rank > 8))
-                { _panel._mod.SetStatus("请先选择目标名次（1～8）"); _panel.Refresh(); return; }
-                long stake = 0;
-                if ((action == 0 || action == 3) && !long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out stake))
-                { _panel._mod.SetStatus("请输入整数积分"); _panel.Refresh(); return; }
-                string uid = market.Players[_index].Uid;
-                if (market.IsTrading) _panel._mod.Trade(action, uid, _rank, stake, _version, _single ? uid : null, _shownId);
-                else if (action == 0) _panel._mod.PlaceBet(uid, _rank, stake, _single ? uid : null, _shownId);
-                _panel.Refresh();
-            }
-            public void Refresh(Market market, bool changed)
-            {
-                ApplyLayout();
-                if (changed)
+                if (snapshot == null || market == null) return;
+
+                string uid = snapshot.Players[_playerIndex].Uid;
+                int rank = _panel._mod.Drafts.Selected(_playerIndex);
+                long stake;
+                if (!long.TryParse(_panel._mod.Drafts.Stake(_playerIndex), NumberStyles.None, CultureInfo.InvariantCulture, out stake) || stake <= 0)
                 {
-                    if (_rankField != null) _rankField.DeactivateInputField();
-                    _stake.SetText("10");
-                }
-                _rank = _panel._rankSelection.Selected(_index);
-                _shownId = market == null ? null : market.Id;
-                _shownUid = market == null || _index < 0 || _index >= 8 ? null : market.Players[_index].Uid;
-                string rankText = _rank == 0 ? "" : PredictionMod.N(_rank);
-                if (changed) _rankInput.SetText(rankText); else _rankInput.Show(rankText);
-                _version = market == null ? 0 : market.TradeVersion;
-                ActionVisibility(market);
-                _half.SetInteractable(false); _sell.SetInteractable(false); _switch.SetInteractable(false);
-                if (market == null || _index < 0 || _index >= 8)
-                {
-                    MatchSnapshot snapshot = _panel._mod.Snapshot;
-                    bool known = _index >= 0 && _index < 8 && !_panel._history && snapshot != null && snapshot.Players != null && snapshot.Players.Length == 8;
-                    _name.text = known ? snapshot.Players[_index].Name : (_single ? "等待观战对象" : "等待玩家");
-                    _elo.text = known ? "待开盘" : "—"; _odds.text = "—";
-                    if (_playerState != null) _playerState.text = "";
-                    _result.text = _panel._mod.PreparationError == null ? "等待开盘" : "开盘失败，见上方提示"; _preview.text = "";
-                    _prev.SetInteractable(false); _next.SetInteractable(false); _buy.SetInteractable(false);
-                    if (_rankField != null) _rankField.interactable = false;
+                    _panel._mod.SetStatus("请输入有效投注积分");
                     return;
                 }
-                _name.text = market.Players[_index].Name;
-                Rating rating = market.Ratings[_index];
-                _elo.text = rating.Found ? rating.Score.ToString("0", CultureInfo.InvariantCulture) : "3000*";
-                if (_single) _elo.text = "Elo " + _elo.text;
-                else if (Simple)
-                {
-                    if (market.KnownRanks[_index] > 0) _playerState.text = "最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名";
-                    else if (market.Life[_index].Points.Count > 0) _playerState.text = "命元 " + PredictionMod.N(market.Life[_index].Points[market.Life[_index].Points.Count - 1].Life);
-                    else if (market.QuoteStates != null) _playerState.text = "命元 " + PredictionMod.N(market.QuoteStates[_index].Life);
-                    else _playerState.text = "";
-                    HorseMember horse = _panel._mod.Horses == null || _panel._history ? null : _panel._mod.Horses.Find(market.Players[_index].Uid);
-                    if (horse != null && horse.Title.Length > 0) _playerState.text += " · " + horse.Title;
-                    _playerState.enableWordWrapping = false; _playerState.overflowMode = TextOverflowModes.Ellipsis;
-                }
-                if (market.IsTrading) RefreshTrading(market); else RefreshLegacy(market);
-                if (_rankField != null) _rankField.interactable = CanEditRank();
+
+                Position pos = market.Positions[_playerIndex];
+                int action = pos.Claim > 0 ? (pos.Rank == rank ? 0 : 3) : 0;
+                _panel._mod.Trade(action, uid, rank, stake, market.TradeVersion, null, snapshot.Id);
+                _panel.Refresh();
             }
-            void RefreshTrading(Market market)
+
+            void OnHalf()
             {
-                Position p = market.Positions[_index];
-                if (!_single && !Simple)
-                {
-                    if (market.KnownRanks[_index] > 0) _name.text += "\n已确定第" + PredictionMod.N(market.KnownRanks[_index]) + "名";
-                    else if (market.Life[_index].Points.Count > 0) _name.text += "\n命元 " + PredictionMod.N(market.Life[_index].Points[market.Life[_index].Points.Count - 1].Life);
-                    else if (market.QuoteStates != null) _name.text += "\n命元 " + PredictionMod.N(market.QuoteStates[_index].Life);
-                    HorseMember horse = _panel._mod.Horses == null || _panel._history ? null : _panel._mod.Horses.Find(market.Players[_index].Uid);
-                    if (horse != null && horse.Title.Length > 0) _name.text += "\n" + horse.Caption;
-                }
-                bool current = !_panel._history && _panel._mod.Snapshot != null && _panel._mod.Snapshot.Id == market.Id
-                    && _panel._mod.Snapshot.LiveObserver && _panel._mod.PreparationError == null;
-                if (_single && !_panel.SingleReady) current = false;
-                bool active = current && market.TradingWindowOpen && !market.Locked && !p.Resolved;
-                _prev.SetInteractable(current && !market.Settled && !p.Resolved);
-                _next.SetInteractable(current && !market.Settled && !p.Resolved);
-                bool canBuy = TradingOdds.CanBuy(market, _index, _rank);
-                _buy.SetText(p.Claim > 0 ? (Simple ? "加注" : "增持") : (Simple ? "下注" : "买入"));
-                _buy.SetInteractable(active && _panel._mod.Enabled && canBuy && (p.Claim == 0 || p.Rank == _rank));
-                _half.SetInteractable(active && p.Claim >= 2); _sell.SetInteractable(active && p.Claim > 0);
-                _switch.SetInteractable(active && _panel._mod.Enabled && canBuy && p.Claim > 0 && p.Rank != _rank);
-                int rate = _rank > 0 ? market.QuoteRates[_index * 8 + _rank - 1] : 0;
-                _odds.text = _rank == 0 ? "—" : (canBuy ? PredictionMod.Rate(rate) : "不可买入");
-                long stake;
-                if (canBuy && long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out stake) && stake >= 1 && stake <= Odds.MaximumStake)
-                {
-                    long claim = stake * rate / 10000;
-                    if (Simple) _preview.text = (p.Claim > 0 && p.Rank != _rank ? "先退出旧注，再投" : "这次投") + PredictionMod.N(stake) + "分，猜中返" + PredictionMod.N(claim) + "分";
-                    else _preview.text = "本次买入" + PredictionMod.N(stake) + " → 正中返" + PredictionMod.N(claim) + " / 差1返" + PredictionMod.N(claim / 4)
-                        + (p.Claim > 0 && p.Rank != _rank ? "（换预测按新名次买入）" : "");
-                }
-                else _preview.text = Simple ? (_rank == 0 ? "" : (canBuy ? "输入1～10000积分" : "这个名次已不可下注")) : (_rank == 0 ? "请选择目标名次（1～8）" : "选择仍可能达到的名次，输入1～10000整数积分");
-                if (Simple) { RefreshSimpleResult(market, active); return; }
-                if (p.Resolved)
-                {
-                    _result.text = "最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名 · 结算返" + PredictionMod.N(p.FinalPayout)
-                        + "\n累计投" + PredictionMod.N(p.Invested) + " 出售收回" + PredictionMod.N(p.CashReturned)
-                        + "\n本玩家净收益 " + PredictionMod.N(p.NetResult);
-                    _preview.text = "名次已确定，停止交易；结算已入余额";
-                }
-                else if (p.Claim > 0)
-                {
-                    long sale = TradingOdds.Sale(market, _index, false);
-                    _result.text = "持第" + PredictionMod.N(p.Rank) + "名 成本" + PredictionMod.N(p.Cost) + " 正中返" + PredictionMod.N(p.Claim)
-                        + "\n差1返" + PredictionMod.N(p.Claim / 4) + " 清仓值" + PredictionMod.N(sale)
-                        + "\n减半值" + PredictionMod.N(TradingOdds.Sale(market, _index, true)) + " 浮盈亏" + PredictionMod.N(sale - p.Cost) + (active ? "" : "（参考）");
-                }
-                else _result.text = "未持仓 / 已清仓\n累计投" + PredictionMod.N(p.Invested) + " 收回" + PredictionMod.N(p.CashReturned)
-                    + "\n已实现收益 " + PredictionMod.N(p.NetResult);
+                MatchSnapshot snapshot = _panel._mod.Snapshot;
+                Market market = _panel.Shown();
+                if (snapshot == null || market == null) return;
+                string uid = snapshot.Players[_playerIndex].Uid;
+                _panel._mod.Trade(1, uid, 0, 0, market.TradeVersion, null, snapshot.Id);
+                _panel.Refresh();
             }
-            static string Earned(long value)
+
+            void OnSell()
             {
-                return value > 0 ? "合计赚" + PredictionMod.N(value) + "分" : (value < 0 ? "合计亏" + PredictionMod.N(-value) + "分" : "收支持平");
-            }
-            void RefreshSimpleResult(Market market, bool active)
-            {
-                Position p = market.Positions[_index];
-                if (p.Resolved)
-                {
-                    _preview.text = "";
-                    if (p.Invested == 0) _result.text = "未参与";
-                    else _result.text = (p.Rank > 0 ? "猜第" + PredictionMod.N(p.Rank) + "名" : "已退出")
-                        + " · 最终第" + PredictionMod.N(market.KnownRanks[_index]) + "名\n"
-                        + (p.Rank > 0 ? "已到账" + PredictionMod.N(p.FinalPayout) + "分" : "退出收回" + PredictionMod.N(p.CashReturned) + "分")
-                        + " · " + Earned(p.NetResult);
-                }
-                else if (p.Claim > 0)
-                    _result.text = "已猜第" + PredictionMod.N(p.Rank) + "名 · 剩余投入" + PredictionMod.N(p.Cost) + "分\n"
-                        + "猜中返" + PredictionMod.N(p.Claim) + "分 · " + (active ? "全退返" : "参考退回")
-                        + PredictionMod.N(TradingOdds.Sale(market, _index, false)) + "分";
-                else _result.text = p.Invested == 0 ? "还没下注" : "已退出 · 收回" + PredictionMod.N(p.CashReturned) + "分\n" + Earned(p.NetResult);
-            }
-            void RefreshLegacy(Market market)
-            {
-                Ticket ticket = market.Tickets[_index];
-                bool active = !_panel._history && _panel._mod.Enabled && !market.Locked && !market.Settled
-                    && _panel._mod.PreparationError == null && _panel._mod.Snapshot != null && _panel._mod.Snapshot.LiveObserver;
-                if (_single && !_panel.SingleReady) active = false;
-                _prev.SetInteractable(active && ticket == null); _next.SetInteractable(active && ticket == null);
-                _buy.SetInteractable(active && ticket == null && _rank > 0); _buy.SetText(ticket == null ? "下注" : "已投");
-                int rank = ticket == null ? _rank : ticket.Rank;
-                int rate = ticket == null ? (rank == 0 ? 0 : Odds.EffectiveRate(market.BaseRates[_index * 8 + rank - 1], Math.Max(1, Math.Min(5, market.HighestRound)))) : ticket.RateBps;
-                _odds.text = rank == 0 ? "—" : PredictionMod.Rate(rate);
-                _preview.text = "旧盘口固定投注，不提供调仓";
-                if (ticket == null) _result.text = market.Settled ? "未投注 · 最终第" + PredictionMod.N(market.FinalRanks[_index]) + "名" : "未投注";
-                else if (market.Settled) _result.text = "本金" + PredictionMod.N(ticket.Stake) + " · 最终第" + PredictionMod.N(market.FinalRanks[_index]) + "名\n返还 " + PredictionMod.N(ticket.ReturnFor(market.FinalRanks[_index], market.RuleVersion));
-                else _result.text = "本金" + PredictionMod.N(ticket.Stake) + " 正中返" + PredictionMod.N(ticket.Payout) + "\n"
-                    + (market.HasAdjacentReward ? "差1返" + PredictionMod.N(ticket.AdjacentPayout) : "仅正中返还");
-                if (Simple)
-                {
-                    if (ticket == null)
-                    {
-                        _result.text = "还没下注";
-                        long stake;
-                        _preview.text = rank > 0 && long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out stake) && stake >= 1 && stake <= Odds.MaximumStake
-                            ? "这次投" + PredictionMod.N(stake) + "分，猜中返" + PredictionMod.N(stake * rate / 10000) + "分" : "";
-                    }
-                    else
-                    {
-                        _preview.text = "";
-                        _result.text = market.Settled ? "猜第" + PredictionMod.N(ticket.Rank) + "名 · 最终第" + PredictionMod.N(market.FinalRanks[_index])
-                            + "名\n已到账" + PredictionMod.N(ticket.ReturnFor(market.FinalRanks[_index], market.RuleVersion)) + "分"
-                            : "已猜第" + PredictionMod.N(ticket.Rank) + "名 · 已投" + PredictionMod.N(ticket.Stake) + "分\n猜中返" + PredictionMod.N(ticket.Payout) + "分";
-                    }
-                }
+                MatchSnapshot snapshot = _panel._mod.Snapshot;
+                Market market = _panel.Shown();
+                if (snapshot == null || market == null) return;
+                string uid = snapshot.Players[_playerIndex].Uid;
+                _panel._mod.Trade(2, uid, 0, 0, market.TradeVersion, null, snapshot.Id);
+                _panel.Refresh();
             }
         }
     }
