@@ -3,6 +3,7 @@ param(
     [string]$DumperPath = ''
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $patcher = Join-Path $root 'vendor/yixianpai-mod-sdk/tools/yx-patch.dll'
 if (!(Test-Path -LiteralPath $patcher)) { throw '先运行 scripts/restore-sdk.ps1。' }
@@ -40,4 +41,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Il2CppDumper失败。' }
 if ($LASTEXITCODE -ne 0) { throw 'SDK引用提取失败。' }
 Copy-Item -LiteralPath (Join-Path $dump 'DummyDll/UnityEngine.UnityWebRequestModule.dll') -Destination (Join-Path $root 'refs/UnityEngine.UnityWebRequestModule.dll') -Force
 Copy-Item -LiteralPath (Join-Path $dump 'DummyDll/UnityEngine.ImageConversionModule.dll') -Destination (Join-Path $root 'refs/UnityEngine.ImageConversionModule.dll') -Force
+Copy-Item -LiteralPath (Join-Path $dump 'DummyDll/LucidSight.Runtime.ColyseusSDK.dll') -Destination (Join-Path $root 'refs/LucidSight.Runtime.ColyseusSDK.dll') -Force
 Write-Output '游戏引用已更新；refs/ 属于本机游戏，不应分发或提交。'

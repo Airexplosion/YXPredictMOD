@@ -21,6 +21,29 @@ namespace YxPrediction
             return null;
         }
 
+        public static bool HasFinancialHistory(Market market)
+        {
+            if (market.TotalPayout != 0) return true;
+            for (int i = 0; i < 8; i++)
+            {
+                if (market.Tickets[i] != null) return true;
+                Position position = market.Positions[i];
+                if (position == null || position.Rank != 0 || position.Claim != 0 || position.Cost != 0
+                    || position.Invested != 0 || position.CashReturned != 0 || position.FinalPayout != 0 || position.Actions != 0) return true;
+            }
+            return false;
+        }
+
+        public bool HasNewMarketCapacity
+        {
+            get
+            {
+                if (Markets.Count < 12) return true;
+                for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled || !HasFinancialHistory(Markets[i])) return true;
+                return false;
+            }
+        }
+
         public Market Observe(MatchSnapshot snapshot, Rating[] ratings)
         {
             if (snapshot == null || !snapshot.IsEightPlayerMatch()) return null;
@@ -33,6 +56,10 @@ namespace YxPrediction
                 {
                     int removable = -1;
                     for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled) { removable = i; break; }
+                    // Never drop invested/previously sold/partially paid markets. Merely
+                    // observing another game must not exhaust the accounting capacity.
+                    if (removable < 0)
+                        for (int i = 0; i < Markets.Count; i++) if (!HasFinancialHistory(Markets[i])) { removable = i; break; }
                     if (removable < 0) return null;
                     Markets.RemoveAt(removable);
                 }

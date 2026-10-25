@@ -2,11 +2,12 @@ using System.Globalization;
 
 namespace YxPrediction
 {
-    // 单人面板与总表共用草稿；仅持仓名次变化时重新跟随持仓，报价刷新不覆盖手动选择。
+    // 单人投注条与总览面板共用草稿；仅持仓名次变化时重新跟随持仓，报价刷新不覆盖手动选择。
     public sealed class RankSelection
     {
         readonly int[] _selected = new int[8];
         readonly int[] _purchased = new int[8];
+        readonly string[] _stakes = new string[] { "10", "10", "10", "10", "10", "10", "10", "10" };
         string _marketId;
 
         public void Observe(Market market)
@@ -19,10 +20,22 @@ namespace YxPrediction
                 int rank = PurchasedRank(market, i);
                 if (changed || market == null || rank != _purchased[i]) _selected[i] = rank;
                 _purchased[i] = rank;
+                if (changed || market == null) _stakes[i] = "10";
             }
         }
 
         public int Selected(int player) { return player >= 0 && player < 8 ? _selected[player] : 0; }
+
+        public string Stake(int player)
+        {
+            if (player >= 0 && player < 8 && !string.IsNullOrEmpty(_stakes[player])) return _stakes[player];
+            return "10";
+        }
+
+        public void SetStake(int player, string text)
+        {
+            if (player >= 0 && player < 8) _stakes[player] = text ?? "10";
+        }
 
         public bool SelectText(int player, string text)
         {
