@@ -30,6 +30,7 @@ namespace YxPrediction
         float _noticeUntil;
         string _createNativeId, _lookupCode;
         float _createDeadline;
+        bool _allowMatch = true;
         string _discoverNative;
         public string DiscoveredNative { get; private set; }
         public string DiscoveredCode { get; private set; }
@@ -133,6 +134,21 @@ namespace YxPrediction
             d["players"] = players; d["ranks"] = ranks; return d;
         }
         Dictionary<string, object> Body(string action) { var d = new Dictionary<string, object>(); d["action"] = action; if (!string.IsNullOrEmpty(_code)) d["code"] = _code; return d; }
+        public bool Create(bool allowMatch, string expectedNative)
+        {
+            if (Busy) { Message = "等待上一操作确认"; return false; }
+            if (NativeRoomSpectate.IsLobby)
+            {
+                string current;
+                if (LobbyRoomEntry.SelectedButton(out current) == null || current != expectedNative)
+                { Message = "所选对局已变更，请返回后重新创建"; return false; }
+                if (current != DiscoveredNative || !DiscoveryReady || !string.IsNullOrEmpty(DiscoveredCode))
+                { Message = "请等待本局房间查询完成；已有房间请直接加入"; return false; }
+            }
+            _allowMatch = allowMatch;
+            Connect("", true);
+            return _createNativeId != null || _request != null;
+        }
         public void Connect(string code, bool create)
         {
             if (Busy) { Message = "等待上一操作确认"; return; }
@@ -145,9 +161,9 @@ namespace YxPrediction
                     if (native != DiscoveredNative || !DiscoveryReady) { Message="正在查询本局房间，请稍后点击"; DiscoverSelected(); return; }
                     if (!string.IsNullOrEmpty(DiscoveredCode)) { JoinSelected(); return; }
                     string target, error;
-                    if (!LobbyRoomEntry.SpectateSelected(out target, out error)) { Message = error; return; }
+                    if (!LobbyRoomEntry.SpectateSelected(out target, out error, true)) { Message = error; return; }
                     _createNativeId = target; _createDeadline = Time.unscaledTime + 90f;
-                    Message = "请确认原生观战提示；进入所选对局后创建房间，不会自动投入积分";
+                    Message = "正在进入所选观战；Elo就绪后自动创建房间";
                 }
                 else
                 {
@@ -178,7 +194,7 @@ namespace YxPrediction
             MatchSnapshot s = _mod.Snapshot;
             if (s == null || !s.LiveObserver) { Message = "观战已离开，请重新连接"; return; }
             var body = Body(_afterRegister); body["gameId"] = s.Id;
-            if (_afterRegister == "create") {if(_mod.Current==null){Message="Elo基础倍率仍在准备，请稍后创建";return;}body["snapshot"] = RatedSnapshot(s);}
+            if (_afterRegister == "create") {if(_mod.Current==null){Message="Elo基础倍率仍在准备，请稍后创建";return;}body["snapshot"] = RatedSnapshot(s);body["allowMatch"] = _allowMatch;}
             _afterRegister = null; Send(body);
         }
         public void RandomJoin()

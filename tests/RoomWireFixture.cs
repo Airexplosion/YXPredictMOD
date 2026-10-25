@@ -16,5 +16,6 @@ public static class RoomWireFixture
         if (r.MemberNames.Length != 2 || r.MemberNames[1] != "游戏乙" || r.MemberUids[0] != "12345") throw new Exception("Room member decoding failed");
         if (r.Code != "123456" || r.GameId != "fixture-game" || r.Members != 2 || r.Balance != 900 || r.Round != 2 || !r.Open || !r.Host) throw new Exception("Room header decoding failed");
         if (r.Uids[0] != "uid-0" || r.MyRanks[0] != 2 || r.Stakes[0] != 100 || r.Pools[0] != 200 || r.Pools[1] != 100) throw new Exception("Room pool/position decoding failed");
+        if (!r.AllowMatch) throw new Exception("Legacy room matching default changed");
     }
 }

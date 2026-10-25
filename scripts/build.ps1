@@ -24,6 +24,7 @@ try {
     Invoke-Dotnet run --project tests/HorseHoverChecks/HorseHoverChecks.csproj
     Invoke-Dotnet run --project tests/NativeTalentChecks/NativeTalentChecks.csproj
     Invoke-Dotnet run --project tests/RoomClientChecks/RoomClientChecks.csproj
+    Invoke-Dotnet run --project tests/EloClientChecks/EloClientChecks.csproj
     & (Join-Path $PSScriptRoot 'check-interpreter.ps1')
     if ($Demo) { Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --demo }
     if (!$CoreOnly -and !(Test-Path -LiteralPath 'refs/UnityEngine.UnityWebRequestModule.dll')) { throw '完整游戏版需要先运行 scripts/prepare-game.ps1。纯逻辑验证可用 -CoreOnly。' }

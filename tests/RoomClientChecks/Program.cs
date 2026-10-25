@@ -31,8 +31,13 @@ namespace YxPrediction
 {
     public sealed class RoomPanel { public void Open() { } }
     public static class PredictionVisibility { public static bool CanShow() { return true; } }
-    public static class NativeRoomSpectate { public static bool IsLobby { get { return false; } } public static string CurrentRoomId() { return "native"; } public static bool Request(string id,out string error) { error=null;return false; } }
-    public static class LobbyRoomEntry { public static object SelectedButton(out string native) { native=null;return null; } public static bool SpectateSelected(out string native,out string error) { native=null;error=null;return false; } }
+    public static class NativeRoomSpectate { public static bool IsLobby { get; set; } public static string CurrentRoomId() { return "native"; } public static bool Request(string id,out string error) { error=null;return false; } }
+    public static class LobbyRoomEntry
+    {
+        public static string Selected = "native"; public static bool Confirmed;
+        public static object SelectedButton(out string native) { native=Selected;return Selected; }
+        public static bool SpectateSelected(out string native,out string error,bool confirmed=false) { native=Selected;error=null;Confirmed=confirmed;return Selected!=null; }
+    }
     public sealed class PredictionMod : YxMod
     {
         public MatchSnapshot Snapshot; public Market Current; public RoomClient Client; public RoomPanel OnlinePanel=new RoomPanel();
@@ -163,5 +168,23 @@ internal static class Program
         PartialFinal();Console.WriteLine("PASS partial result remains queued until complete ranks are confirmed settled");
         RetryDoesNotBlockCurrentRoom();Console.WriteLine("PASS failed final retries leave time for ordinary room polling");
         RecoverSettledBook();Console.WriteLine("PASS settled local book recovers a final without the old game scene");
+        CreateSettings();Console.WriteLine("PASS create settings preserve matching preference, selected room and immediate native confirmation");
+    }
+    static void CreateSettings()
+    {
+        using (var host=TestHost.Start())
+        {
+            var mod=Setup(host);NativeRoomSpectate.IsLobby=true;LobbyRoomEntry.Selected="native";LobbyRoomEntry.Confirmed=false;
+            Set(mod.Client,"<DiscoveredNative>k__BackingField","native");Set(mod.Client,"<DiscoveryReady>k__BackingField",true);
+            Require(!mod.Client.Create(false,"stale")&&!LobbyRoomEntry.Confirmed,"Stale room settings entered another game");
+            Require(mod.Client.Create(false,"native")&&LobbyRoomEntry.Confirmed,"Create settings did not confirm native entry");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Server room created before observing target");
+            NativeRoomSpectate.IsLobby=false;
+            var ratings=new Rating[8];for(int i=0;i<8;i++)ratings[i]=Rating.Unknown();
+            mod.Current=mod.Book.Observe(mod.Snapshot,ratings);
+            mod.Client.Update();
+            Require((string)Last.Body["action"]=="create"&&!(bool)Last.Body["allowMatch"],"Matching preference lost during entry");
+        }
+        NativeRoomSpectate.IsLobby=false;
     }
 }

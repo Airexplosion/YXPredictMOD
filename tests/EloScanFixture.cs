@@ -23,5 +23,12 @@ public static class EloScanFixture
             try{var scan=new EloShardScan(broken,new string[]{uid});while(!scan.Done)scan.Step(2);}catch(FormatException){failed=true;}
             if(!failed)throw new Exception("Malformed shard accepted");
         }
+        // Exercise BCL skip paths at string/escape and bracket boundaries in the interpreter too.
+        string payload = "";
+        for (int i = 0; i < 128; i++) payload += "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        string longText = "{\"skip\":{\"text\":\"" + payload + "\"},\"" + uid + "\":{\"rating\":4200,\"sigma\":150}}";
+        var fast = new EloShardScan(longText, new string[] { uid });
+        while (!fast.Done) fast.Step(1024);
+        if (EloData.ReadPlayer(fast.Rows, uid).Score != 4200) throw new Exception("Long native skip lost target row");
     }
 }
