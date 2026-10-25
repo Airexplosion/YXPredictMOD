@@ -37,7 +37,7 @@ namespace YxPrediction
         bool _showTrend; int _trendPlayer;
         GameObject _trendRoot, _loading;
         TextMeshProUGUI _loadingLabel;
-        LifeChart _lifeChart,_shareChart,_swapChart;
+        LifeChart _lifeChart,_shareChart;
         TextMeshProUGUI _trendName;
         public RoomPanel(PredictionMod mod, ModContext ctx, NativeTheme theme)
         { _mod = mod; _ctx = ctx; _theme = theme; _ui = new UiKit(ctx); ctx.Input.RegisterHotkey("onlineRoom", "Ctrl+Shift+P", Toggle); _entry = new LobbyRoomEntry(ctx, theme, Toggle); }
@@ -123,9 +123,8 @@ namespace YxPrediction
             _theme.CreateButtonTopLeft(_trendRoot.transform,"prevPlayer","上一人",14f,-4f,110f,34f,NativePanelButtonStyle.Secondary,PrevTrend,18);
             _trendName=_ui.Label(_trendRoot.transform,"trendPlayer","",new Vector2(140f,-4f),new Vector2(300f,34f),20);
             _theme.CreateButtonTopLeft(_trendRoot.transform,"nextPlayer","下一人",450f,-4f,110f,34f,NativePanelButtonStyle.Secondary,NextTrend,18);
-            _lifeChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.LifeMetric,10f,-50f,350f,440f,_theme);
-            _shareChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.ShareMetric,375f,-50f,350f,440f,_theme);
-            _swapChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.SwapsMetric,740f,-50f,350f,440f,_theme);
+            _lifeChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.LifeMetric,10f,-50f,538f,440f,_theme);
+            _shareChart=new LifeChart(_ui,_trendRoot.transform,TrendChartData.ShareMetric,568f,-50f,538f,440f,_theme);
             _trendRoot.SetActive(false);
             _loading=_ui.Row(_classic.Body.transform,"LoadingNotice",new Vector2(12f,-48f),new Vector2(1092f,420f),new Color(0.06f,0.08f,0.10f,0.99f));
             _loading.GetComponent<Image>().raycastTarget=false;
@@ -213,8 +212,8 @@ namespace YxPrediction
                 int[] order = RoomSelections.DisplayOrder(r);
                 for (int i = 0; i < 8; i++) _rows[order[i]].SetSlot(i);
             }
-            if(_showTrend && _mod.Current==null){_trendName.text=blocked==null?"数据加载中…":"开盘受阻";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");_swapChart.ShowWaiting("加载中…");}
-            if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);_swapChart.Refresh(_mod.Current,_trendPlayer);}
+            if(_showTrend && _mod.Current==null){_trendName.text=blocked==null?"数据加载中…":"开盘受阻";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");}
+            if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);}
         }
         public void SetFeedback(string message) { _feedback = message; }
         public RoomState CurrentView()

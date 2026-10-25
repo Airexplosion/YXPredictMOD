@@ -1,7 +1,7 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "天机赌马",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "author": "@TeraE / @Airexplosion",
   "description": "天机赌马：单人/多人共用原生风格预测UI、联机基础倍率×下一轮投注系数、相邻名次25%返还；创建房间匹配设置、一键观战、Elo并发与扫描加速、走势图与原生仙命布局。",
   "sdkVersion": ">=1.0.0 <2.0.0",
