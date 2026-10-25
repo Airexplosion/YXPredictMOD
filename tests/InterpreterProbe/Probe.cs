@@ -43,6 +43,8 @@ namespace YxPrediction
             RoomWireFixture.Verify();
             EloScanFixture.Verify();
             RoomRateFixture.Verify();
+            RoomFixFixture.VerifyFinals();
+            RoomFixFixture.VerifySelections();
             return "INTERPRETER PASS";
         }
 

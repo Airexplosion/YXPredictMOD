@@ -19,7 +19,10 @@ namespace YxPrediction
         UnityWebRequest _request;
         Dictionary<string, object> _sent, _pending;
         string _endpoint, _token, _code, _afterRegister;
-        float _next;
+        readonly RoomFinalSync _finals;
+        RoomFinalSync.Entry _finalRequest;
+        int _finalCursor;
+        float _next, _finalNext;
         RoomMatch _match;
         string _membersRoom;
         readonly List<string> _seenMembers = new List<string>();
@@ -60,6 +63,7 @@ namespace YxPrediction
             _url = ctx.Config.Bind("online", "server", "https://auth.kaigua.vip/prediction", "独立娱乐积分房间服务地址；外网使用HTTPS");
             _name = ctx.Config.Bind("online", "name", "观众", "房间昵称（首次注册时使用，1至24字）");
             ReadIdentity();
+            _finals = RoomFinalSync.Read(ctx.Data.Get<Dictionary<string, object>>(RoomFinalSync.SaveKey, null));
             Message = "选择加入、创建或匹配房间";
         }
         public void SetMessage(string message) { Message = message; }
@@ -79,10 +83,45 @@ namespace YxPrediction
             if (_pending != null) saved["pending"] = _pending;
             _ctx.Data.Set("room.identity.v1", saved);
         }
+        void SaveFinals() { _ctx.Data.Set(RoomFinalSync.SaveKey, _finals.Write()); }
+        public void CaptureFinalSnapshot(MatchSnapshot snapshot)
+        {
+            if (State == null || !State.Host || State.Settled || snapshot == null || !snapshot.Ended
+                || snapshot.Id != State.GameId || !snapshot.IsEightPlayerMatch() || snapshot.Ranks == null || snapshot.Ranks.Length != 8) return;
+            if (_finals.Capture(_endpoint, _token, _code, Snapshot(snapshot))) SaveFinals();
+        }
+        void RecoverFinalSnapshot()
+        {
+            CaptureFinalSnapshot(_mod.Snapshot);
+            if (State == null || !State.Host || State.Settled || _mod.Book == null) return;
+            Market market = _mod.Book.Find(State.GameId);
+            if (market != null && market.Settled && market.FinalRanks != null)
+                CaptureFinalSnapshot(new MatchSnapshot { Id = market.Id, Round = market.HighestRound, Players = market.Players,
+                    Ranks = market.FinalRanks, Ended = true, ResultsThroughRound = market.ClosedThroughRound });
+        }
+        void CompleteFinalRequest()
+        {
+            try
+            {
+                if (_request.isNetworkError || _request.responseCode >= 400) throw new InvalidOperationException();
+                string text = _request.downloadHandler.text;
+                if (text == null || text.Length > 262144) throw new FormatException();
+                var root = Json.ParseObject(text);
+                if (!Json.GetBool(root, "ok", false)) throw new InvalidOperationException();
+                var state = RoomState.Read(root["data"] as Dictionary<string, object>);
+                if (state.Code != _finalRequest.Code || state.GameId != _finalRequest.GameId) throw new FormatException();
+                if (_finals.Confirm(_finalRequest, state.Code, state.GameId, state.Settled)) SaveFinals();
+                if (_endpoint == _finalRequest.Server && _token == _finalRequest.Token && _code == state.Code) State = state;
+                Message = state.Settled ? "最终结果已确认，房间 " + state.Code + " 已结算" : "房间已封盘，等待完整最终名次";
+            }
+            catch { Message = "最终结果尚未确认，已保存并将自动补发"; }
+            finally { DestroyRequest(); _finalRequest = null; _finalNext = Time.unscaledTime + 5f; }
+        }
         public static Dictionary<string, object> Snapshot(MatchSnapshot s)
         {
             var d = new Dictionary<string, object>(); d["id"] = s.Id; d["round"] = s.Round;
-            d["gameRoomId"] = NativeRoomSpectate.CurrentRoomId();
+            // 结束快照可从旧账本恢复；不能拿当前观战的原生房间ID标记旧对局。
+            d["gameRoomId"] = s.Ended ? "" : NativeRoomSpectate.CurrentRoomId();
             d["closedThrough"] = s.ResultsThroughRound; d["open"] = s.TradingOpen && s.LiveObserver; d["ended"] = s.Ended;
             var players = new List<object>(); var ranks = new List<object>();
             for (int i = 0; i < 8; i++)
@@ -170,9 +209,9 @@ namespace YxPrediction
             d["version"] = State.Version; d["operation"] = Guid.NewGuid().ToString("N");
             _pending = d; SaveIdentity(); Send(d);
         }
-        void Send(Dictionary<string, object> body)
+        void Send(Dictionary<string, object> body, string server = null, string credential = null)
         {
-            if (!string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(GameClientUtil.uid))
+            if (server == null && !string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(GameClientUtil.uid))
             {
                 var identity = new Dictionary<string, object>();
                 string name = GameDataManager.username.Value;
@@ -180,18 +219,19 @@ namespace YxPrediction
                 body["identity"] = identity;
             }
             Uri uri;
-            if (!Uri.TryCreate(_endpoint, UriKind.Absolute, out uri) || (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)))
+            string endpoint = server ?? _endpoint, token = credential ?? _token;
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out uri) || (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)))
             { Message = "服务器须使用HTTPS（本机测试允许HTTP）"; return; }
             try
             {
                 _sent = body;
                 _request = new UnityWebRequest();
-                _request.url = _endpoint + "/v1/room";
+                _request.url = endpoint + "/v1/room";
                 _request.method = "POST";
                 _request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(Json.Serialize(body)));
                 _request.downloadHandler = new DownloadHandlerBuffer(); _request.timeout = 8;
                 _request.SetRequestHeader("Content-Type", "application/json");
-                if (!string.IsNullOrEmpty(_token)) _request.SetRequestHeader("Authorization", "Bearer " + _token);
+                if (!string.IsNullOrEmpty(token)) _request.SetRequestHeader("Authorization", "Bearer " + token);
                 _request.SendWebRequest();
             }
             catch { DestroyRequest(); Message = "请求未完成，等待重连确认"; _next = Time.unscaledTime + 3f; }
@@ -217,6 +257,7 @@ namespace YxPrediction
         }
         public void Update()
         {
+            RecoverFinalSnapshot();
             if (JoinNotice != null && Time.unscaledTime > _noticeUntil) JoinNotice = null;
             if (_endpoint != _url.Value.Trim().TrimEnd('/'))
             {
@@ -224,7 +265,18 @@ namespace YxPrediction
                 if (Busy) { Message = "服务器地址已变更；先恢复旧地址完成在途操作"; return; }
                 DestroyRequest(); _token = null; _code = null; State = null; ReadIdentity();
             }
-            if (_createNativeId != null)
+            if (_request == null && _finals.Count > 0 && Time.unscaledTime >= _finalNext)
+            {
+                if (_finalCursor >= _finals.Count) _finalCursor = 0;
+                _finalRequest = _finals.At(_finalCursor++);
+                var body = new Dictionary<string, object> { { "action", "sync" }, { "code", _finalRequest.Code }, { "snapshot", _finalRequest.Snapshot } };
+                // 独立限速，旧房间暂不可达时仍允许当前房间轮询和交易。
+                _finalNext = Time.unscaledTime + 5f;
+                Send(body, _finalRequest.Server, _finalRequest.Token);
+                if (_request == null) _finalRequest = null;
+                return;
+            }
+            if (_createNativeId != null && _request == null)
             {
                 MatchSnapshot ready = _mod.Snapshot;
                 if (Time.unscaledTime >= _createDeadline) { _createNativeId = null; Message = "未进入所选观战，创建已取消"; }
@@ -232,7 +284,7 @@ namespace YxPrediction
                 { _createNativeId = null; Connect("", true); return; }
                 else return;
             }
-            if (_match != null)
+            if (_match != null && _request == null)
             {
                 if (_match.Expired(Time.unscaledTime)) { _match = null; Message = "未在90秒内进入目标实时观战，匹配已取消；没有扣除积分"; }
                 else if (_match.CanJoin(_mod.Snapshot, Time.unscaledTime))
@@ -245,6 +297,7 @@ namespace YxPrediction
             if (_request != null)
             {
                 if (!_request.isDone) return;
+                if (_finalRequest != null) { CompleteFinalRequest(); return; }
                 bool connect = false;
                 RoomMatch selected = null;
                 try

@@ -96,6 +96,9 @@ namespace YxPrediction
         {
             bool switched = Snapshot == null || snapshot == null || Snapshot.Id != snapshot.Id;
             Snapshot = snapshot;
+#if YX_GAME
+            if (Online != null) Online.CaptureFinalSnapshot(snapshot);
+#endif
             PreparationBlockedReason = null;
             if (switched) { PreparationError = null; _lastPreparationError = null; }
             if (snapshot == null) return;

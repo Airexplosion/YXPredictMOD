@@ -23,6 +23,7 @@ namespace YxPrediction
         UiInput _code;
         TextMeshProUGUI _status, _message;
         readonly Row[] _rows = new Row[8];
+        public readonly RoomSelections Selections = new RoomSelections();
         bool _visible, _connectionMenu;
         string _feedback;
         float _next;
@@ -180,19 +181,24 @@ namespace YxPrediction
             }
             else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
+            if (r != null)
+            {
+                int[] order = RoomSelections.DisplayOrder(r);
+                for (int i = 0; i < 8; i++) _rows[order[i]].SetSlot(i);
+            }
             if(_showTrend && _mod.Current==null){_trendName.text=blocked==null?"数据加载中…":"开盘受阻";_lifeChart.ShowWaiting("加载中…");_shareChart.ShowWaiting("加载中…");_swapChart.ShowWaiting("加载中…");}
             if(_showTrend && _mod.Current!=null){_trendName.text=_mod.Current.Players[_trendPlayer].Name;_lifeChart.Refresh(_mod.Current,_trendPlayer);_shareChart.Refresh(_mod.Current,_trendPlayer);_swapChart.Refresh(_mod.Current,_trendPlayer);}
         }
         public void SetFeedback(string message) { _feedback = message; }
         public RoomState CurrentView()
         {
-            if (HasCurrentRoom()) return _mod.Online.State;
-            Market m = _mod.Current; if (m == null) return null;
+            if (HasCurrentRoom()) { Selections.Observe(_mod.Online.State); return _mod.Online.State; }
+            Market m = _mod.Current; if (m == null) { Selections.Observe(null); return null; }
             var r = new RoomState(); r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
             r.BaseRates=m.BaseRates;r.QuoteRates=m.QuoteRates;for(int j=0;j<64;j++)r.Factors[j]=10000;
             r.Open = m.TradingWindowOpen; r.Settled = m.Settled; r.Balance = _mod.Book.Balance; r.Members = 1;
             for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
-            return r;
+            Selections.Observe(r); return r;
         }
         public void Submit(int player, int rank, long amount, int action)
         {
@@ -212,6 +218,7 @@ namespace YxPrediction
         sealed class Row
         {
             readonly RoomPanel _panel;
+            readonly NativePredictionRow _nativeRow;
             readonly int _index;
             readonly TextMeshProUGUI _rank, _playerName, _playerLife, _horseTitle, _oddsLabel, _holdingLabel, _resultLabel;
             readonly GameObject _rowGo;
@@ -226,27 +233,37 @@ namespace YxPrediction
             {
                 _panel=panel;_index=index;
                 var row=new NativePredictionRow(panel._ctx,panel._theme,panel._classic.Table.transform,index,Minus,Plus,Buy,Half,Sell);
+                _nativeRow = row;
                 _rowGo=row.Root;_rowRect=row.Rect;_selfFlag=row.Highlight;_horseIcon=row.Badge;_dividerLine=row.Divider;
                 _playerName=row.PlayerName;_playerLife=row.PlayerDetail;_horseTitle=row.BadgeText;_rank=row.Rank;_oddsLabel=row.Rate;_holdingLabel=row.Holding;_resultLabel=row.Result;
                 _btnMinus=row.Minus;_btnPlus=row.Plus;_stake=row.Stake;_buy=row.Buy;_half=row.Half;_sell=row.Sell;
             }
-            void Minus() { _chosen = _chosen <= 1 ? 8 : _chosen - 1; }
-            void Plus() { _chosen = _chosen == 8 ? 1 : _chosen + 1; }
+            public void SetSlot(int slot) { _nativeRow.SetSlot(slot); }
+            bool Valid(RoomState r) { return r != null && _identity == r.Code + ":" + r.GameId + ":" + r.Uids[_index]; }
+            void Step(bool forward)
+            {
+                RoomState r = _panel.CurrentView(); if (!Valid(r)) return;
+                _panel.Selections.Step(r.Uids[_index], forward); _chosen = _panel.Selections.Selected(r.Uids[_index]);
+            }
+            void Minus() { Step(false); }
+            void Plus() { Step(true); }
             void Buy()
             {
                 RoomState r = _panel.CurrentView(); if (r == null || _identity != r.Code + ":" + r.GameId + ":" + r.Uids[_index]) return;
+                _chosen = _panel.Selections.Selected(r.Uids[_index]);
                 if (_chosen < 1 || _chosen > 8) return;
                 long amount;
                 if (!long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out amount) || amount < 1 || amount > 10000) { _panel._feedback = "投入须为1至10000整数"; return; }
                 string kind = r.Stakes[_index] > 0 && r.MyRanks[_index] != _chosen ? "switch" : "buy";
                 _panel.Submit(_index,_chosen,amount,0);
             }
-            void Half() { _panel.Submit(_index,0,0,1); }
-            void Sell() { _panel.Submit(_index,0,0,2); }
+            void Half() { if (Valid(_panel.CurrentView())) _panel.Submit(_index,0,0,1); }
+            void Sell() { if (Valid(_panel.CurrentView())) _panel.Submit(_index,0,0,2); }
             public void Refresh(RoomState r)
             {
                 string identity = r == null ? null : r.Code + ":" + r.GameId + ":" + r.Uids[_index];
-                if (_identity != identity) { _identity = identity; _chosen = r != null && r.MyRanks[_index] > 0 ? r.MyRanks[_index] : 0; _stake.SetText("10"); }
+                if (_identity != identity) { _identity = identity; _stake.SetText("10"); }
+                _chosen = r == null ? 0 : _panel.Selections.Selected(r.Uids[_index]);
                 _rank.text = _chosen > 0 ? "第" + PredictionMod.N(_chosen) + "名" : "—";
                 bool valid = r != null && _panel._mod.Snapshot != null && r.GameId == _panel._mod.Snapshot.Id;
                 bool open = valid && r.Open && !r.Settled && (!_panel.HasCurrentRoom() || !_panel._mod.Online.Busy) && r.Ranks[_index] == 0;

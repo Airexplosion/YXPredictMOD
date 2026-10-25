@@ -23,6 +23,7 @@ try {
     Invoke-Dotnet run --project tests/GameEntryChecks/GameEntryChecks.csproj
     Invoke-Dotnet run --project tests/HorseHoverChecks/HorseHoverChecks.csproj
     Invoke-Dotnet run --project tests/NativeTalentChecks/NativeTalentChecks.csproj
+    Invoke-Dotnet run --project tests/RoomClientChecks/RoomClientChecks.csproj
     & (Join-Path $PSScriptRoot 'check-interpreter.ps1')
     if ($Demo) { Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --demo }
     if (!$CoreOnly -and !(Test-Path -LiteralPath 'refs/UnityEngine.UnityWebRequestModule.dll')) { throw '完整游戏版需要先运行 scripts/prepare-game.ps1。纯逻辑验证可用 -CoreOnly。' }
@@ -30,6 +31,7 @@ try {
     if ($CoreOnly) { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore -p:CoreOnly=true }
     else { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore }
     Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll check --warn-as-error --manifest mod/manifest.json mod/plugins/PredictionPoints.dll
+    if (!$CoreOnly) { Invoke-Dotnet run --project tests/RoomClientChecks/RoomClientChecks.csproj --no-build -- (Join-Path $root 'mod/plugins/PredictionPoints.dll') }
     if (!$CoreOnly) {
         Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll pack mod --out dist
         # 上游pack只收manifest/plugins/assets/data；在同一包根补入使用说明。

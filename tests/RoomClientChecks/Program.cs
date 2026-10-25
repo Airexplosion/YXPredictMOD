@@ -1,0 +1,167 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
+using Mono.Cecil;
+using Yx.Shared;
+using Yx.ModSdk;
+using Yx.ModSdk.Testing;
+using YxPrediction;
+namespace UnityEngine { public static class Time { public static float unscaledTime; } }
+namespace UnityEngine.Networking
+{
+    public sealed class UploadHandlerRaw { public byte[] Data; public UploadHandlerRaw(byte[] data) { Data=data; } }
+    public sealed class DownloadHandlerBuffer { public string text; }
+    public sealed class UnityWebRequest
+    {
+        public static readonly List<UnityWebRequest> Sent=new List<UnityWebRequest>();
+        public string url,method; public int timeout; public long responseCode=200; public bool isDone,isNetworkError;
+        public UploadHandlerRaw uploadHandler; public DownloadHandlerBuffer downloadHandler; public Dictionary<string,object> Body;
+        public readonly Dictionary<string,string> Headers=new Dictionary<string,string>();
+        public void SetRequestHeader(string name,string value) { Headers[name]=value; }
+        public void SendWebRequest() { Body=Json.ParseObject(Encoding.UTF8.GetString(uploadHandler.Data));Sent.Add(this); }
+        public void Abort() { } public void Dispose() { }
+    }
+}
+public static class GameClientUtil { public static string uid="game-uid"; }
+public sealed class NameValue { public string Value="review"; }
+public static class GameDataManager { public static NameValue username=new NameValue(); }
+public static class HintMessagePanel { public static void Show(string text) { } }
+namespace YxPrediction
+{
+    public sealed class RoomPanel { public void Open() { } }
+    public static class PredictionVisibility { public static bool CanShow() { return true; } }
+    public static class NativeRoomSpectate { public static bool IsLobby { get { return false; } } public static string CurrentRoomId() { return "native"; } public static bool Request(string id,out string error) { error=null;return false; } }
+    public static class LobbyRoomEntry { public static object SelectedButton(out string native) { native=null;return null; } public static bool SpectateSelected(out string native,out string error) { native=null;error=null;return false; } }
+    public sealed class PredictionMod : YxMod
+    {
+        public MatchSnapshot Snapshot; public Market Current; public RoomClient Client; public RoomPanel OnlinePanel=new RoomPanel();
+        public PredictionBook Book=new PredictionBook(1000); public ModContext Ctx;
+        public override void OnLoad(ModContext ctx) { Ctx=ctx;Client=new RoomClient(this,ctx); }
+        public override void OnDisable() { if(Client!=null)Client.Destroy(); }
+        public static string N(long n) { return n.ToString(); }
+    }
+}
+internal static class Program
+{
+    const string Id="review.client", Server="https://auth.kaigua.vip/prediction";
+    static void Require(bool ok,string error) { if(!ok)throw new Exception(error); }
+    static void Set(object target,string field,object value) { target.GetType().GetField(field,BindingFlags.NonPublic|BindingFlags.Instance).SetValue(target,value); }
+    static MatchSnapshot Snapshot(bool ended=false,int known=8)
+    {
+        var s=new MatchSnapshot {Id="game",Round=10,LiveObserver=true,TradingOpen=!ended,Ended=ended,Players=new Player[8],Ranks=new int[8]};
+        for(int i=0;i<8;i++){s.Players[i]=new Player("uid"+i,"player"+i,false);s.Ranks[i]=ended&&i<known?i+1:0;}return s;
+    }
+    static Dictionary<string,object> View(bool settled=false)
+    {
+        var d=new Dictionary<string,object> {{"code","123456"},{"gameId","game"},{"host",true},{"members",1},{"round",10},{"version",0},{"open",!settled},{"settled",settled},{"balance",1000},{"payout",0}};
+        var players=new List<object>();var ranks=new List<object>();var positions=new List<object>();var pools=new List<object>();
+        for(int i=0;i<8;i++){players.Add(new Dictionary<string,object>{{"uid","uid"+i},{"name","player"+i}});ranks.Add(settled?i+1:0);positions.Add(null);var pool=new List<object>();for(int j=0;j<8;j++)pool.Add(0);pools.Add(pool);}
+        d["players"]=players;d["ranks"]=ranks;d["positions"]=positions;d["totals"]=pools;return d;
+    }
+    static UnityEngine.Networking.UnityWebRequest Last { get { var all=UnityEngine.Networking.UnityWebRequest.Sent;return all[all.Count-1]; } }
+    static void Complete(bool failed=false,bool settled=false) { Last.isDone=true;Last.isNetworkError=failed;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",View(settled)}}); }
+    static PredictionMod Setup(TestHost host)
+    {
+        UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
+        var mod=host.Load<PredictionMod>(Id,"0.7.4");mod.Snapshot=Snapshot();
+        Set(mod.Client,"_token",new string('a',48));Set(mod.Client,"_code","123456");Set(mod.Client,"<State>k__BackingField",RoomState.Read(View()));
+        return mod;
+    }
+    static int Pending(PredictionMod mod) { return RoomFinalSync.Read(mod.Ctx.Data.Get<Dictionary<string,object>>(RoomFinalSync.SaveKey,null)).Count; }
+    static void SentFinal()
+    {
+        Require((string)Last.Body["action"]=="sync"&&(bool)((Dictionary<string,object>)Last.Body["snapshot"])["ended"],"Final snapshot was not sent");
+        Require((string)((Dictionary<string,object>)Last.Body["snapshot"])["gameRoomId"]=="","Old final inherited the current native room ID");
+    }
+    static void FinalDelivery(bool lose)
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);var client=mod.Client;
+            client.Update();Complete();UnityEngine.Time.unscaledTime=0.1f;client.Update();
+            mod.Snapshot=Snapshot(true);client.CaptureFinalSnapshot(mod.Snapshot);
+            Require(Pending(mod)==1,"Final was not saved immediately");
+            UnityEngine.Time.unscaledTime=lose?2f:0.2f;client.Update();
+            if(lose){SentFinal();Complete(true);UnityEngine.Time.unscaledTime=2.1f;client.Update();Require(Pending(mod)==1,"Failure discarded final");}
+            mod.Snapshot=null;UnityEngine.Time.unscaledTime=lose?8f:2f;client.Update();SentFinal();
+            Complete(settled:true);UnityEngine.Time.unscaledTime+=0.1f;client.Update();Require(Pending(mod)==0,"Confirmed result was not cleared");
+            mod.Snapshot=null;UnityEngine.Time.unscaledTime=16f;client.Update();Require((string)Last.Body["action"]=="view","Settled result kept resending");
+        }
+    }
+    static void ReloadAndEndpointIsolation()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.CaptureFinalSnapshot(Snapshot(true));
+            var data=new Dictionary<string,object> {{RoomFinalSync.SaveKey,mod.Ctx.Data.Get<Dictionary<string,object>>(RoomFinalSync.SaveKey,null)},
+                {"room.identity.v1",new Dictionary<string,object>{{"server",Server},{"token",new string('a',48)},{"code","123456"}}}};
+            mod=host.Reload<PredictionMod>(Id,"0.7.4",data:data);
+            host.SetConfig(Id,new Dictionary<string,object>{{"online",new Dictionary<string,object>{{"server","https://new.example"}}}});
+            UnityEngine.Time.unscaledTime=20;mod.Client.Update();SentFinal();
+            Require(Last.url==Server+"/v1/room"&&Last.Headers["Authorization"]=="Bearer "+new string('a',48),"Final used another server or credential");
+            Complete(settled:true);UnityEngine.Time.unscaledTime=20.1f;mod.Client.Update();
+            Require(Pending(mod)==0&&mod.Client.State==null,"Old-room acknowledgement changed the new connection");
+        }
+    }
+    static void PartialFinal()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.CaptureFinalSnapshot(Snapshot(true,3));mod.Snapshot=null;
+            mod.Client.Update();SentFinal();Complete();UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Pending(mod)==1,"Partial final removed without settlement");
+            mod.Client.CaptureFinalSnapshot(Snapshot(true));UnityEngine.Time.unscaledTime=6;mod.Client.Update();SentFinal();
+            var ranks=(List<object>)((Dictionary<string,object>)Last.Body["snapshot"])["ranks"];
+            Require(Convert.ToInt32(ranks[7])==8,"Complete final did not replace partial ranks");
+            Complete(settled:true);UnityEngine.Time.unscaledTime=6.1f;mod.Client.Update();Require(Pending(mod)==0,"Final not confirmed");
+        }
+    }
+    static void RetryDoesNotBlockCurrentRoom()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.CaptureFinalSnapshot(Snapshot(true));mod.Snapshot=null;
+            mod.Client.Update();SentFinal();Complete(true);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();
+            UnityEngine.Time.unscaledTime=0.2f;mod.Client.Update();
+            Require((string)Last.Body["action"]=="view","Old failed final blocked ordinary room polling");
+            Complete();UnityEngine.Time.unscaledTime=0.3f;mod.Client.Update();
+            UnityEngine.Time.unscaledTime=6f;mod.Client.Update();SentFinal();
+            Require(Pending(mod)==1,"Ordinary view cleared an unconfirmed final");
+        }
+    }
+    static void RecoverSettledBook()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);var ratings=new Rating[8];for(int i=0;i<8;i++)ratings[i]=Rating.Unknown();
+            mod.Book.Observe(Snapshot(),ratings);mod.Book.Observe(Snapshot(true),null);
+            Require(mod.Book.Find("game").Settled,"Local recovery fixture did not settle");
+            mod.Book=BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(mod.Book))));mod.Snapshot=null;
+            mod.Client.Update();SentFinal();Require(Pending(mod)==1,"Settled saved book was not recovered");
+            Complete(settled:true);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Pending(mod)==0,"Recovered book result was not confirmed");
+        }
+    }
+    static bool Calls(MethodDefinition method,string name)
+    { foreach(var i in method.Body.Instructions){var call=i.Operand as MethodReference;if(call!=null&&call.Name==name)return true;}return false; }
+    static void Bindings(string path)
+    {
+        using(var module=ModuleDefinition.ReadModule(path))
+        {
+            string[] types={"PredictionMod","CharacterBetBar","RoomPanel"};string[] methods={"AcceptSnapshot","Update","CurrentView"};string[] targets={"CaptureFinalSnapshot","Selected","Observe"};
+            for(int n=0;n<types.Length;n++){bool found=false;foreach(var method in module.GetType("YxPrediction."+types[n]).Methods)if(method.Name==methods[n])found=Calls(method,targets[n]);Require(found,"Missing production binding "+types[n]);}
+            var panel=module.GetType("YxPrediction.RoomPanel");foreach(var method in panel.Methods)if(method.Name=="Update")Require(Calls(method,"DisplayOrder")&&Calls(method,"SetSlot"),"Purchased-first order disconnected");
+            foreach(var nested in panel.NestedTypes)if(nested.Name=="Row")foreach(var method in nested.Methods)if(method.Name=="Refresh")Require(Calls(method,"Selected"),"Overview does not read shared selection");
+        }
+        Console.WriteLine("PASS production final-event capture, shared selection and purchased-first UI bindings");
+    }
+    static void Main(string[] args)
+    {
+        if(args.Length>0){Bindings(args[0]);return;}
+        FinalDelivery(false);Console.WriteLine("PASS final result persisted before leaving and delivered after scene is gone");
+        FinalDelivery(true);Console.WriteLine("PASS lost final request retries after leaving, acknowledgement stops retries");
+        ReloadAndEndpointIsolation();Console.WriteLine("PASS final queue survives reload and isolates server credentials/connections");
+        PartialFinal();Console.WriteLine("PASS partial result remains queued until complete ranks are confirmed settled");
+        RetryDoesNotBlockCurrentRoom();Console.WriteLine("PASS failed final retries leave time for ordinary room polling");
+        RecoverSettledBook();Console.WriteLine("PASS settled local book recovers a final without the old game scene");
+    }
+}

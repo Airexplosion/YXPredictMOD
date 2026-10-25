@@ -36,7 +36,8 @@ namespace YxPrediction
             RoomState r = _mod.OnlinePanel.CurrentView(); string focus = FocusSelection.Uid(_mod.Snapshot);
             int index = -1; if (r != null) for(int i=0;i<8;i++) if(r.Uids[i]==focus) index=i;
             if(index<0) { _root.SetActive(false); return; }
-            if (_uid != focus || _game != r.GameId || _room != r.Code) { _uid=focus;_game=r.GameId;_room=r.Code;_index=index;_selected=r.MyRanks[index]>0?r.MyRanks[index]:0;_stake.SetText("10"); }
+            if (_uid != focus || _game != r.GameId || _room != r.Code) { _uid=focus;_game=r.GameId;_room=r.Code;_index=index;_stake.SetText("10"); }
+            _selected = _mod.OnlinePanel.Selections.Selected(focus);
             _index=index;
             _name.text=r.Names[index];_rank.text=_selected>0?"第"+PredictionMod.N(_selected)+"名":"—";
             _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules==2?r.Claims[index]:r.Stakes[index])+"分":"未持仓";
@@ -63,10 +64,11 @@ namespace YxPrediction
             rt.anchoredPosition=new Vector2(0f,hand?Mathf.Max(326f,GameBridge.BottomHandTop(parent)+14f):76f);
             _mod.OnlinePanel.KeepBarAbove(_root.transform);
         }
-        void Minus(){_selected=_selected<=1?8:_selected-1;}
-        void Plus(){_selected=_selected==8?1:_selected+1;}
+        void Step(bool forward){if(!Valid())return;_mod.OnlinePanel.Selections.Step(_uid,forward);_selected=_mod.OnlinePanel.Selections.Selected(_uid);}
+        void Minus(){Step(false);}
+        void Plus(){Step(true);}
         bool Valid(){RoomState r=_mod.OnlinePanel.CurrentView();return r!=null&&r.GameId==_game&&r.Code==_room&&_index>=0&&r.Uids[_index]==_uid&&FocusSelection.Uid(_mod.Snapshot)==_uid;}
-        void Buy(){if(!Valid()||_selected<1||_selected>8)return;long amount;if(!long.TryParse(_stake.Text,NumberStyles.None,CultureInfo.InvariantCulture,out amount)||amount<1||amount>10000){_mod.OnlinePanel.SetFeedback("投入须为1至10000整数");return;}_mod.OnlinePanel.Submit(_index,_selected,amount,0);}
+        void Buy(){if(!Valid())return;_selected=_mod.OnlinePanel.Selections.Selected(_uid);if(_selected<1||_selected>8)return;long amount;if(!long.TryParse(_stake.Text,NumberStyles.None,CultureInfo.InvariantCulture,out amount)||amount<1||amount>10000){_mod.OnlinePanel.SetFeedback("投入须为1至10000整数");return;}_mod.OnlinePanel.Submit(_index,_selected,amount,0);}
         void Half(){if(Valid())_mod.OnlinePanel.Submit(_index,0,0,1);}
         void Sell(){if(Valid())_mod.OnlinePanel.Submit(_index,0,0,2);}
         void Overview(){_mod.OnlinePanel.Toggle();}
