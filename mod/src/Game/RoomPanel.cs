@@ -151,7 +151,7 @@ namespace YxPrediction
             var rect = shown.transform as RectTransform; var parent = rect.parent as RectTransform;
             float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / rect.rect.width, (parent.rect.height - 180f) / rect.rect.height)));
             rect.localScale = new Vector3(scale,scale,1);
-            if (connected && _classic != null) _classic.UpdateDrag();
+            rect.anchoredPosition = Vector2.zero;
             if (!connected)
             {
                 if (lobby && Time.unscaledTime >= _nextDiscovery && !_mod.Online.Busy) { _nextDiscovery=Time.unscaledTime+3f; _mod.Online.DiscoverSelected(); }

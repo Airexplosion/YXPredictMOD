@@ -8,8 +8,6 @@ namespace Yx.ModSdk.Unity
     public sealed class NativePredictionWindow
     {
         readonly UiKit _ui;
-        bool _pressed, _dragged;
-        Vector2 _down, _start;
         public readonly GameObject Root, Banner, Body, Table;
         public readonly RectTransform Rect;
         public readonly CanvasGroup BodyGroup;
@@ -37,33 +35,8 @@ namespace Yx.ModSdk.Unity
             var label=_ui.Label(Table.transform,"ColumnHeader",text,new Vector2(x,-4f),new Vector2(width,26f),17);
             theme.ApplyTextStyle(label,17,true,TextAlignmentOptions.Left);label.color=NativePanelTheme.AntiqueGold;
         }
-        /// <summary>Poll only on the Unity main thread. Header buttons never initiate a drag.</summary>
-        public void UpdateDrag()
-        {
-            if(Root==null||!Root.activeInHierarchy)return;
-            var parent=Rect.parent as RectTransform;if(parent==null)return;
-            Canvas canvas=Root.GetComponentInParent<Canvas>();
-            Camera camera=canvas!=null&&canvas.renderMode!=RenderMode.ScreenSpaceOverlay?canvas.worldCamera:null;
-            Vector3 mouse=Input.mousePosition;Vector2 local;
-            if(!RectTransformUtility.ScreenPointToLocalPointInRectangle(parent,new Vector2(mouse.x,mouse.y),camera,out local))return;
-            Vector2 inBanner;
-            if(Input.GetMouseButtonDown(0) && RectTransformUtility.ScreenPointToLocalPointInRectangle(Banner.transform as RectTransform,new Vector2(mouse.x,mouse.y),camera,out inBanner)
-                && inBanner.x>=0f && inBanner.x<230f && inBanner.y<=0f && inBanner.y>=-54f)
-            {_pressed=true;_dragged=false;_down=local;_start=Rect.anchoredPosition;}
-            if(!_pressed)return;
-            if((local-_down).sqrMagnitude>=36f)_dragged=true;
-            if(_dragged)
-            {
-                Vector2 position=_start+local-_down;
-                float halfW=Rect.rect.width*Rect.localScale.x/2f,halfH=Rect.rect.height*Rect.localScale.y/2f;
-                position.x=Mathf.Clamp(position.x,parent.rect.xMin+halfW,parent.rect.xMax-halfW);
-                position.y=Mathf.Clamp(position.y,parent.rect.yMin+halfH,parent.rect.yMax-halfH);
-                Rect.anchoredPosition=position;
-            }
-            if(!Input.GetMouseButton(0))_pressed=false;
-        }
         public void SetPeek(bool value) { if(Root==null)return;BodyGroup.alpha=value?0.18f:1f;BodyGroup.blocksRaycasts=!value;Root.GetComponent<Image>().raycastTarget=!value; }
-        public void SetMinimized(bool value) { if(Root==null)return;Body.SetActive(!value);Rect.sizeDelta=new Vector2(1140f,value?56f:624f); }
+        public void SetMinimized(bool value) { if(Root==null)return;Body.SetActive(!value);Rect.sizeDelta=new Vector2(1140f,value?56f:624f);Rect.anchoredPosition=Vector2.zero; }
         public void Destroy(){_ui.DestroyAll();}
     }
 }
