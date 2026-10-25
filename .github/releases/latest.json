@@ -1,8 +1,8 @@
 {
-  "version": "0.7.8",
-  "tag": "v0.7.8",
-  "title": "v0.7.8 - 破产救济与联机预测更新",
-  "artifact": "dist/local.yxp.predictionpoints-0.7.8.zip",
-  "sha256": "5308fd00880250296a30fe8001c16ea508b268ffc81fe667d93c7a93362211f9",
-  "notes": ".github/releases/v0.7.8.md"
+  "version": "0.7.9",
+  "tag": "v0.7.9",
+  "title": "v0.7.9 - 救济须无未结算投注",
+  "artifact": "dist/local.yxp.predictionpoints-0.7.9.zip",
+  "sha256": "8c0a6a6bbae0c73fbb2e3c6ea807c4f874f51be1357f7fa88d00eb5b7b46eda1",
+  "notes": ".github/releases/v0.7.9.md"
 }

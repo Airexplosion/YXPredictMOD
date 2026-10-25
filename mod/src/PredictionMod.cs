@@ -39,7 +39,7 @@ namespace YxPrediction
             else Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value)));
             bool relief = Save();
             Message = "进入八人观战后自动准备赔率；可在底部角色条下注或点击其中的「总览」";
-            if (relief) Message += "；余额低于10分，已发放50分救济金";
+            if (relief) Message += "；无未结算投注且余额低于10分，已发放50分救济金";
 #if YX_GAME
             _theme = new NativeTheme(ctx);
             Online = new RoomClient(this, ctx);
@@ -63,7 +63,7 @@ namespace YxPrediction
 
         public override void OnUpdate()
         {
-            if (Book != null && Book.Balance >= 0 && Book.Balance < PredictionBook.ReliefThreshold) Save();
+            if (Book != null && Book.CanGrantBankruptcyRelief) Save();
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
             _theme.RefreshSource();
@@ -157,7 +157,7 @@ namespace YxPrediction
             {
                 string error = Book.Bet(Snapshot, uid, rank, stake);
                 bool relief = revision != Book.Revision && Save();
-                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 积分" + (relief ? "；余额低于10分，已发放50分救济金" : ""));
+                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 积分" + (relief ? "；无未结算投注且余额低于10分，已发放50分救济金" : ""));
             }
             catch
             {
@@ -204,7 +204,7 @@ namespace YxPrediction
         {
             bool relief = Book.GrantBankruptcyRelief();
             Context.Data.Set(SaveKey, BookCodec.Write(Book));
-            if (relief) Context.Log.Info("余额低于10分，自动发放50分救济金；当前余额 " + N(Book.Balance));
+            if (relief) Context.Log.Info("无未结算投注且余额低于10分，自动发放50分救济金；当前余额 " + N(Book.Balance));
             return relief;
         }
         public static string N(long value) { return value.ToString(CultureInfo.InvariantCulture); }

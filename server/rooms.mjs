@@ -18,9 +18,14 @@ export class Rooms {
     catch (e) { this.state = before; throw e; }
     finally { this.committing = false; }
   }
+  hasPendingBets(key) {
+    // Include stale/ended rooms: only settlement or selling releases a wager.
+    return Object.values(this.state.rooms).some(room => !room.settled
+      && (room.positions[key] ?? []).some(p => p && !p.resolved && (p.stake > 0 || p.claim > 0)));
+  }
   account(key) {
     requireThat(typeof key === 'string' && /^[a-f0-9]{48}$/.test(key) && this.state.accounts[key], '身份无效，请重新连接', 401);
-    if (integer(this.state.accounts[key].balance, 0, 9)) {
+    if (integer(this.state.accounts[key].balance, 0, 9) && !this.hasPendingBets(key)) {
       return this.commit(() => {
         const account = this.state.accounts[key];
         account.balance += 50;
@@ -236,7 +241,7 @@ export class Rooms {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      reliefAmount: 50, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      reliefAmount: 50, reliefRequiresNoPendingBets: true, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

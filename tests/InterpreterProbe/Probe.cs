@@ -51,6 +51,20 @@ namespace YxPrediction
             if (relief.GrantBankruptcyRelief() || relief.Balance != 59) throw new Exception("Relief duplicated after reload");
             relief.Balance = 0;
             if (!relief.GrantBankruptcyRelief() || relief.Balance != 50) throw new Exception("Relief did not recur after bankruptcy");
+            var pending = new PredictionBook(0);
+            var pendingMarket = new Market("relief-pending", players, ratings, Odds.Rates(ratings, 2), 2);
+            pendingMarket.HighestRound = 1;
+            pendingMarket.Tickets[0] = new Ticket(0, 1, 1, 1, Odds.EffectiveRate(pendingMarket.BaseRates[0], 1));
+            pending.Markets.Add(pendingMarket);
+            pending = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(pending))));
+            if (pending.CanGrantBankruptcyRelief || pending.GrantBankruptcyRelief() || pending.Balance != 0) throw new Exception("Pending fixed bet received relief");
+            var tradingPending = new PredictionBook(0);
+            var tradingMarket = new Market("relief-trading", players, ratings, Odds.Rates(ratings));
+            tradingMarket.Positions[0].Claim = 1;
+            tradingPending.Markets.Add(tradingMarket);
+            if (tradingPending.GrantBankruptcyRelief()) throw new Exception("Pending trading bet received relief");
+            tradingMarket.Positions[0].Resolved = true;
+            if (!tradingPending.GrantBankruptcyRelief() || tradingPending.Balance != 50) throw new Exception("Resolved bet blocked relief");
             return "INTERPRETER PASS";
         }
 

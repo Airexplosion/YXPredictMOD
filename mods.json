@@ -4,13 +4,13 @@
     {
       "id": "local.yxp.predictionpoints",
       "name": "天机赌马",
-      "version": "0.7.8",
+      "version": "0.7.9",
       "author": "@TeraE / @Airexplosion",
-      "description": "天机赌马：观战积分预测、联机房间、动态调仓与称号马图；可用积分低于10时自动补发50分救济金（联机需新版服务端）。支持房间匹配设置、一键观战、Elo并发加载、命元及占比走势。",
+      "description": "天机赌马：观战积分预测、联机房间、动态调仓与称号马图；无未结算投注且可用积分低于10时自动补发50分救济金（联机需新版服务端）。支持房间匹配设置、一键观战、Elo并发加载、命元及占比走势。",
       "sdkVersion": ">=1.0.0 <2.0.0",
       "repo": "https://github.com/Teraen/YXPredictMOD",
-      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.7.8/local.yxp.predictionpoints-0.7.8.zip",
-      "sha256": "5308fd00880250296a30fe8001c16ea508b268ffc81fe667d93c7a93362211f9"
+      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.7.9/local.yxp.predictionpoints-0.7.9.zip",
+      "sha256": "8c0a6a6bbae0c73fbb2e3c6ea807c4f874f51be1357f7fa88d00eb5b7b46eda1"
     }
   ]
 }
