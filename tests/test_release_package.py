@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import warnings
 import zipfile
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,11 +23,26 @@ class ReleasePackageTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.meta = RELEASE.read_json(ROOT / ".github/releases/latest.json")
-        for relative in (".github/releases/latest.json", self.meta["artifact"], self.meta["notes"],
-                         "mods.json", "mod/manifest.json", "mod/README.md", "mod/assets/horse/NOTICE.md"):
+        for relative in (".github/releases/latest.json", self.meta["artifact"], self.meta["notes"]):
             self.copy(relative)
-        for icon in RELEASE.ASSETS:
-            self.copy("mod/assets/horse/" + icon + ".png")
+        # Main may contain an unreleased manifest/README. Build each isolated
+        # sample from the published package, then mutate one contract at a time.
+        files = ["manifest.json", "README.md", "assets/horse/NOTICE.md"]
+        files += ["assets/horse/" + icon + ".png" for icon in RELEASE.ASSETS]
+        with zipfile.ZipFile(self.root / self.meta["artifact"]) as archive:
+            for relative in files:
+                target = self.root / "mod" / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(RELEASE.MOD_ID + "/" + relative))
+        manifest = RELEASE.read_json(self.root / "mod/manifest.json")
+        catalog = RELEASE.read_json(ROOT / "mods.json")
+        entry = catalog["mods"][0]
+        for key in ("id", "name", "version", "author", "description", "sdkVersion"):
+            entry[key] = manifest[key]
+        entry["repo"] = manifest["updateUrl"]
+        entry["download"] = manifest["updateUrl"] + "/releases/download/" + self.meta["tag"] + "/" + quote(Path(self.meta["artifact"]).name)
+        entry["sha256"] = self.meta["sha256"]
+        self.write_json("mods.json", catalog)
 
     def copy(self, relative):
         target = self.root / relative
@@ -56,7 +72,54 @@ class ReleasePackageTests(unittest.TestCase):
         result = RELEASE.verify(self.root)
         self.assertEqual(result["tag"], self.meta["tag"])
         self.assertEqual(result["title"], self.meta["title"])
-        self.assertEqual(result["name"], "local.yxp.predictionpoints-" + self.meta["version"] + ".zip")
+        self.assertEqual(result["name"], Path(self.meta["artifact"]).name)
+
+    def rename_package(self, filename):
+        path = self.root / self.meta["artifact"]
+        target = self.root / "dist" / filename
+        path.rename(target)
+        self.meta["artifact"] = "dist/" + filename
+        self.write_json(".github/releases/latest.json", self.meta)
+        catalog = RELEASE.read_json(self.root / "mods.json")
+        catalog["mods"][0]["download"] = catalog["mods"][0]["repo"] + "/releases/download/" + self.meta["tag"] + "/" + quote(filename)
+        self.write_json("mods.json", catalog)
+
+    def promote_version(self, version):
+        manifest = RELEASE.read_json(self.root / "mod/manifest.json")
+        manifest["version"] = version
+        self.write_json("mod/manifest.json", manifest)
+        self.meta.update(version=version, tag="v" + version, title="v" + version + " naming check")
+        self.write_json(".github/releases/latest.json", self.meta)
+        catalog = RELEASE.read_json(self.root / "mods.json")
+        catalog["mods"][0]["version"] = version
+        self.write_json("mods.json", catalog)
+        manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+        self.rewrite_archive(lambda entries: [(name, manifest_bytes if name == RELEASE.MOD_ID + "/manifest.json" else data) for name, data in entries])
+        self.rename_package(RELEASE.PACKAGE_NAME + "-" + version + ".zip")
+
+    def test_friendly_package_name_preserves_the_internal_mod_id(self):
+        self.rename_package(RELEASE.PACKAGE_NAME + "-" + self.meta["version"] + ".zip")
+        result = RELEASE.verify(self.root)
+        self.assertEqual(result["name"], RELEASE.PACKAGE_NAME + "-" + self.meta["version"] + ".zip")
+        with zipfile.ZipFile(self.root / self.meta["artifact"]) as archive:
+            self.assertTrue(all(name.startswith(RELEASE.MOD_ID + "/") for name in archive.namelist()))
+
+    def test_new_versions_require_the_friendly_filename(self):
+        self.promote_version("0.7.10")
+        self.assertEqual(RELEASE.verify(self.root)["name"], RELEASE.PACKAGE_NAME + "-0.7.10.zip")
+        self.rename_package(RELEASE.MOD_ID + "-0.7.10.zip")
+        with self.assertRaisesRegex(ValueError, "Unexpected package path"):
+            RELEASE.verify(self.root)
+
+    def test_friendly_download_name_is_url_encoded_and_must_match_the_asset(self):
+        self.promote_version("0.7.10")
+        catalog = RELEASE.read_json(self.root / "mods.json")
+        self.assertIn(quote(RELEASE.PACKAGE_NAME), catalog["mods"][0]["download"])
+        RELEASE.verify(self.root)
+        catalog["mods"][0]["download"] = catalog["mods"][0]["download"].replace(quote(RELEASE.PACKAGE_NAME), RELEASE.PACKAGE_NAME)
+        self.write_json("mods.json", catalog)
+        with self.assertRaisesRegex(ValueError, "Wrong catalog download"):
+            RELEASE.verify(self.root)
 
     def test_missing_mechanical_icon_is_rejected_even_with_valid_checksum(self):
         self.rewrite_archive(lambda entries: [(name, data) for name, data in entries if not name.endswith("/机械马.png")])

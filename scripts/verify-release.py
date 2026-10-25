@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import re
 import zipfile
+from urllib.parse import quote
 
 
 MOD_ID = "local.yxp.predictionpoints"
+PACKAGE_NAME = "天机赌马"
 ICONS = ("特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马")
 ASSETS = ICONS + ("圆形遮罩",)
 
@@ -41,7 +43,10 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     require(isinstance(title, str) and 0 < len(title) <= 200 and not any(c in title for c in "\r\n"), "Invalid release title")
     artifact = checked_file(root, meta["artifact"])
     checked_file(root, meta["notes"])
-    require(meta["artifact"] == "dist/" + MOD_ID + "-" + version + ".zip", "Unexpected package path")
+    expected_artifact = "dist/" + PACKAGE_NAME + "-" + version + ".zip"
+    legacy_artifact = "dist/" + MOD_ID + "-" + version + ".zip"
+    legacy_version = tuple(map(int, version.split("."))) <= (0, 7, 9)
+    require(meta["artifact"] == expected_artifact or (legacy_version and meta["artifact"] == legacy_artifact), "Unexpected package path")
     require(hashlib.sha256(artifact.read_bytes()).hexdigest() == meta["sha256"], "Package checksum mismatch")
     manifest = read_json(root / "mod/manifest.json")
     require(manifest["id"] == MOD_ID and manifest["version"] == version, "Manifest/version mismatch")
@@ -70,7 +75,7 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     for key in ("id", "name", "version", "author", "description", "sdkVersion"):
         require(entry.get(key) == manifest.get(key), "Catalog/manifest mismatch: " + key)
     require(entry["repo"] == manifest["updateUrl"], "Wrong catalog repository")
-    expected_url = manifest["updateUrl"] + "/releases/download/" + meta["tag"] + "/" + artifact.name
+    expected_url = manifest["updateUrl"] + "/releases/download/" + meta["tag"] + "/" + quote(artifact.name)
     require(entry["download"] == expected_url, "Wrong catalog download")
     require(entry["sha256"] == meta["sha256"], "Catalog/package checksum mismatch")
     return dict(meta, name=artifact.name)

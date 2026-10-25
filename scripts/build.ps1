@@ -33,19 +33,5 @@ try {
     else { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore }
     Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll check --warn-as-error --manifest mod/manifest.json mod/plugins/PredictionPoints.dll
     if (!$CoreOnly) { Invoke-Dotnet run --project tests/RoomClientChecks/RoomClientChecks.csproj --no-build -- (Join-Path $root 'mod/plugins/PredictionPoints.dll') }
-    if (!$CoreOnly) {
-        Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll pack mod --out dist
-        # 上游pack只收manifest/plugins/assets/data；在同一包根补入使用说明。
-        Add-Type -AssemblyName System.IO.Compression
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $manifest = Get-Content -LiteralPath 'mod/manifest.json' -Encoding UTF8 -Raw | ConvertFrom-Json
-        $package = Join-Path $root ('dist/' + $manifest.id + '-' + $manifest.version + '.zip')
-        $zip = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Update)
-        try {
-            $entryPath = $manifest.id + '/README.md'
-            $previous = $zip.GetEntry($entryPath)
-            if ($null -ne $previous) { $previous.Delete() }
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $root 'mod/README.md'), $entryPath) | Out-Null
-        } finally { $zip.Dispose() }
-    }
+    if (!$CoreOnly) { & (Join-Path $PSScriptRoot 'package.ps1') }
 } finally { Pop-Location }
