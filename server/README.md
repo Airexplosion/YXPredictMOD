@@ -39,3 +39,9 @@ Build and test both `node --test server/rooms.test.mjs server/rules.test.mjs`. A
 ## 0.7.6 matching preference
 
 Create accepts optional boolean `allowMatch` (default true). False persists with the room, including restart, and excludes it from random selection. Existing records without the flag remain matchable. Discovery by native game and explicit code lookup/join remain available; this is a matching preference, not a password or access control. Duplicate create requests join the existing room and cannot overwrite its host preference. Member views include `allowMatch`. Upgrade both rooms.mjs and server.mjs together; old servers ignore the new request field.
+
+## 0.7.8 bankruptcy relief
+
+An account with available balance below 10 automatically receives 50 points: 0 becomes 50, 9 becomes 59, and 10 is unchanged. Existing positions do not prevent relief; it may recur whenever spending brings the balance below 10 again. Repeated account reads, polling, restart and duplicate operation IDs do not repeat the same grant. Relief does not change position stakes, rights or recorded payouts.
+
+Account access applies the policy, including legacy low-balance accounts. During a mutation, nested account access shares the outer transaction: relief, position changes and receipts persist once and roll back together on save failure. Views advertise `reliefAmount: 50`; old services omit the field and clients do not advertise relief for them. Deploy this version of rooms.mjs to activate online relief; publishing a client Release does not upgrade the contributor-operated public service. No public deployment was performed for this release.

@@ -36,8 +36,10 @@ namespace YxPrediction
             _enabled = ctx.Config.Bind("prediction", "enabled", true, "允许积分预测；关闭后仍会结算已有投注");
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
-            else { Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value))); Save(); }
+            else Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value)));
+            bool relief = Save();
             Message = "进入八人观战后自动准备赔率；可在底部角色条下注或点击其中的「总览」";
+            if (relief) Message += "；余额低于10分，已发放50分救济金";
 #if YX_GAME
             _theme = new NativeTheme(ctx);
             Online = new RoomClient(this, ctx);
@@ -61,6 +63,7 @@ namespace YxPrediction
 
         public override void OnUpdate()
         {
+            if (Book != null && Book.Balance >= 0 && Book.Balance < PredictionBook.ReliefThreshold) Save();
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
             _theme.RefreshSource();
@@ -153,8 +156,8 @@ namespace YxPrediction
             try
             {
                 string error = Book.Bet(Snapshot, uid, rank, stake);
-                if (revision != Book.Revision) Save();
-                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 积分");
+                bool relief = revision != Book.Revision && Save();
+                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 积分" + (relief ? "；余额低于10分，已发放50分救济金" : ""));
             }
             catch
             {
@@ -184,9 +187,9 @@ namespace YxPrediction
                 else if (action == 1 || action == 2) error = Book.Sell(Snapshot, uid, action == 1, version);
                 else if (action == 3) error = Book.Switch(Snapshot, uid, rank, stake, version);
                 else error = "未知交易操作";
-                if (revision != Book.Revision) Save();
+                bool relief = revision != Book.Revision && Save();
                 long delta = Book.Balance - before;
-                return Report(error ?? "操作成功，余额变动 " + (delta >= 0 ? "+" : "") + N(delta) + " 分");
+                return Report(error ?? "操作成功，余额变动 " + (delta >= 0 ? "+" : "") + N(delta) + " 分" + (relief ? "（含50分救济金）" : ""));
             }
             catch (Exception ex)
             {
@@ -197,7 +200,13 @@ namespace YxPrediction
         }
 
         string Report(string message) { Message = message; return message; }
-        void Save() { Context.Data.Set(SaveKey, BookCodec.Write(Book)); }
+        bool Save()
+        {
+            bool relief = Book.GrantBankruptcyRelief();
+            Context.Data.Set(SaveKey, BookCodec.Write(Book));
+            if (relief) Context.Log.Info("余额低于10分，自动发放50分救济金；当前余额 " + N(Book.Balance));
+            return relief;
+        }
         public static string N(long value) { return value.ToString(CultureInfo.InvariantCulture); }
         public static string Rate(int bps) { return (bps / 10000.0).ToString("0.00", CultureInfo.InvariantCulture) + "x"; }
         public static string Percent(double share) { return (share * 100).ToString("0.00", CultureInfo.InvariantCulture) + "%"; }

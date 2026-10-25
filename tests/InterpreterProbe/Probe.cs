@@ -45,6 +45,12 @@ namespace YxPrediction
             RoomRateFixture.Verify();
             RoomFixFixture.VerifyFinals();
             RoomFixFixture.VerifySelections();
+            var relief = new PredictionBook(9);
+            if (!relief.GrantBankruptcyRelief() || relief.Balance != 59 || relief.GrantBankruptcyRelief()) throw new Exception("Relief boundary failed");
+            relief = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(relief))));
+            if (relief.GrantBankruptcyRelief() || relief.Balance != 59) throw new Exception("Relief duplicated after reload");
+            relief.Balance = 0;
+            if (!relief.GrantBankruptcyRelief() || relief.Balance != 50) throw new Exception("Relief did not recur after bankruptcy");
             return "INTERPRETER PASS";
         }
 

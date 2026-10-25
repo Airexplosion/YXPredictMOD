@@ -203,9 +203,9 @@ namespace YxPrediction
                 string members = "成员：";
                 RoomState room = _mod.Online.State;
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
-                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members));
+                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.ReliefAmount == 50 ? "余额<10自动救济50 · " : "") + (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members));
             }
-            else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
+            else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "可用积分低于10，自动补发50分救济金");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
             if (r != null)
             {

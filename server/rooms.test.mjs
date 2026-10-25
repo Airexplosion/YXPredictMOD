@@ -12,6 +12,36 @@ function setup(save) {
   const trade = (key, player, rank, stake, kind='buy', operation='operation-'+String(Math.random()).slice(2)) => rooms.trade(code,key,{kind,player,rank,stake,operation,version:rooms.view(code,key).version});
   return {rooms,a,b,snapshot,code,trade,advance: ms => time += ms};
 }
+
+test('bankruptcy relief adds fifty below ten and is stable across views and restart',()=>{
+  for(const balance of [0,1,9,10,11,1000]){
+    const x=setup();x.rooms.state.accounts[x.a].balance=balance;
+    const expected=balance<10?balance+50:balance;
+    assert.equal(x.rooms.view(x.code,x.a).balance,expected);
+    for(let i=0;i<3;i++)assert.equal(x.rooms.view(x.code,x.a).balance,expected);
+    const reloaded=new Rooms(structuredClone(x.rooms.state));
+    assert.equal(reloaded.view(x.code,x.a).balance,expected);
+  }
+});
+test('bankrupt trade and relief commit together, duplicate operations do not reissue funds',()=>{
+  let saves=0;const x=setup(()=>saves++);saves=0;
+  const result=x.trade(x.a,0,1,1000,'buy','bankrupt-buy-001');
+  assert.equal(result.reliefAmount,50);
+  assert.equal(result.balance,50);assert.equal(result.positions[0].stake,1000);assert.equal(saves,1);
+  assert.equal(x.trade(x.a,0,1,1000,'buy','bankrupt-buy-001').balance,50);assert.equal(saves,1);
+  assert.equal(x.trade(x.a,0,1,50,'buy','bankrupt-buy-002').balance,50);assert.equal(saves,2);
+  assert.equal(x.rooms.view(x.code,x.a).positions[0].stake,1050);
+});
+test('failed writes roll back relief and the complete trade before retry',()=>{
+  let fail=false;const x=setup(()=>{if(fail)throw new Error('disk-full');});
+  const before=structuredClone(x.rooms.state);fail=true;
+  assert.throws(()=>x.trade(x.a,0,1,1000,'buy','relief-rollback'),/disk-full/);
+  assert.deepEqual(x.rooms.state,before);fail=false;
+  assert.equal(x.trade(x.a,0,1,1000,'buy','relief-rollback').balance,50);
+  x.rooms.state.accounts[x.b].balance=9;const low=structuredClone(x.rooms.state);fail=true;
+  assert.throws(()=>x.rooms.view(x.code,x.b),/disk-full/);assert.deepEqual(x.rooms.state,low);
+  fail=false;assert.equal(x.rooms.view(x.code,x.b).balance,59);
+});
 test('matching preference excludes private rooms but keeps direct discovery and invitation joining',()=>{
   const x=setup();const {rooms,a,b,snapshot}=x;
   const s={...snapshot,id:'private-game',gameRoomId:'private-native'};
