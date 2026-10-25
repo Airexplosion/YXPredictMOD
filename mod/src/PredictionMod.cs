@@ -24,7 +24,6 @@ namespace YxPrediction
         NativeTheme _theme;
         PanelLayout _layout;
         CharacterBetBar _betBar;
-        PredictionOverviewEntry _overviewEntry;
         TalentOrbit _talents;
         public TianJiFeature Horses { get; private set; }
 #endif
@@ -38,7 +37,7 @@ namespace YxPrediction
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
             else { Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value))); Save(); }
-            Message = "进入八人观战后自动准备赔率；可在角色下方手牌区或点击「预测总览」下注";
+            Message = "进入八人观战后自动准备赔率；可在底部角色条下注或点击其中的「总览」";
 #if YX_GAME
             _theme = new NativeTheme(ctx);
             Online = new RoomClient(this, ctx);
@@ -50,7 +49,6 @@ namespace YxPrediction
             _bridge = new GameBridge(this, ctx);
             Horses = new TianJiFeature(this, ctx, _bridge);
             _betBar = new CharacterBetBar(this, ctx, _theme);
-            _overviewEntry = new PredictionOverviewEntry(this, ctx, _theme);
             _talents = new TalentOrbit(ctx);
 
             ctx.Events.OnNetIn<Proto.GameStatus>(_bridge.OnStatus);
@@ -70,7 +68,6 @@ namespace YxPrediction
             if (OnlinePanel != null) OnlinePanel.Update();
             if (Horses != null) Horses.Update();
             if (_betBar != null) _betBar.Update();
-            if (_overviewEntry != null) _overviewEntry.Update();
             if (_talents != null) _talents.Update();
 #endif
         }
@@ -82,7 +79,6 @@ namespace YxPrediction
             if (Online != null) Online.Destroy();
             if (OnlinePanel != null) OnlinePanel.Destroy();
             if (_betBar != null) _betBar.Destroy();
-            if (_overviewEntry != null) _overviewEntry.Destroy();
             if (_talents != null) _talents.Destroy();
             if (Horses != null) Horses.Destroy();
 #endif
@@ -96,6 +92,9 @@ namespace YxPrediction
         {
             bool switched = Snapshot == null || snapshot == null || Snapshot.Id != snapshot.Id;
             Snapshot = snapshot;
+#if YX_GAME
+            if (Online != null) Online.CaptureFinalSnapshot(snapshot);
+#endif
             PreparationBlockedReason = null;
             if (switched) { PreparationError = null; _lastPreparationError = null; }
             if (snapshot == null) return;

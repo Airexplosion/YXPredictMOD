@@ -12,6 +12,27 @@ function setup(save) {
   const trade = (key, player, rank, stake, kind='buy', operation='operation-'+String(Math.random()).slice(2)) => rooms.trade(code,key,{kind,player,rank,stake,operation,version:rooms.view(code,key).version});
   return {rooms,a,b,snapshot,code,trade,advance: ms => time += ms};
 }
+test('matching preference excludes private rooms but keeps direct discovery and invitation joining',()=>{
+  const x=setup();const {rooms,a,b,snapshot}=x;
+  const s={...snapshot,id:'private-game',gameRoomId:'private-native'};
+  const code=rooms.create(a,s,false).code;
+  rooms.trade(code,a,{kind:'buy',player:0,rank:1,stake:10,operation:'private-wager',version:rooms.view(code,a).version});
+  assert.throws(()=>rooms.random(b),/暂无/);
+  assert.equal(rooms.findByGame(b,'private-native').code,code);
+  assert.equal(rooms.lookup(b,code).code,code);
+  assert.equal(rooms.join(code,b,s.id).code,code);
+  const saved=structuredClone(rooms.state);const reloaded=new Rooms(saved);
+  reloaded.sync(code,a,s);assert.throws(()=>reloaded.random(b),/暂无/);
+  rooms.create(b,s,true);assert.equal(rooms.state.rooms[code].allowMatch,false);
+});
+test('legacy/default rooms remain matchable and matching settings are boolean-only',()=>{
+  const x=setup();const {rooms,a,b,snapshot,code}=x;
+  snapshot.gameRoomId='public-native';rooms.sync(code,a,snapshot);x.trade(a,0,1,10);
+  assert.equal(rooms.random(b).code,code);
+  delete rooms.state.rooms[code].allowMatch;assert.equal(rooms.random(b).code,code);
+  assert.throws(()=>rooms.create(a,{...snapshot,id:'bad'},'false'),/匹配设置/);
+  assert.throws(()=>rooms.create(a,{...snapshot,id:'bad'},null),/匹配设置/);
+});
 test('shared pools fluctuate and final settlement conserves all points',()=>{
   const x=setup(); const {rooms,a,b,code,snapshot,trade}=x;
   trade(a,0,1,100); trade(b,0,2,300);

@@ -27,7 +27,7 @@ export function createHandler(rooms) {
       let result;
       switch (body.action) {
         case 'register': result = rooms.register(body.name); break;
-        case 'create': result = rooms.create(key, body.snapshot); break;
+        case 'create': result = rooms.create(key, body.snapshot, body.allowMatch); break;
         case 'join': result = rooms.join(body.code, key, body.gameId); break;
         case 'findGame': result = rooms.findByGame(key, body.nativeId); break;
         case 'lookup': result = rooms.lookup(key, body.code); break;

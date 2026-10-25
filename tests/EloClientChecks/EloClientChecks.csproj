@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><RollForward>Major</RollForward><DefineConstants>YX_GAME</DefineConstants><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs"/><Compile Include="../../mod/src/Game/EloClient.cs"/><Compile Include="../../mod/src/Core/*.cs"/>
+    <Reference Include="Yx.ModSdk.Core"><HintPath>$(YxSdkDir)netstandard2.0/Yx.ModSdk.Core.dll</HintPath></Reference>
+    <Reference Include="Yx.ModSdk.Testing"><HintPath>$(YxSdkDir)netstandard2.0/Yx.ModSdk.Testing.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

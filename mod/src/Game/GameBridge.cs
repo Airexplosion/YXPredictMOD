@@ -19,6 +19,7 @@ namespace YxPrediction
         string _resultMatchId;
         int _resultsThroughRound;
         float _nextPoll;
+        int _eloRevision;
         public GameBridge(PredictionMod mod, ModContext ctx) { _mod = mod; _ctx = ctx; _elo = new EloClient(ctx); }
         public HorseProfile[] HorseProfiles(Player[] players) { return _elo.GetHorseProfiles(players); }
 
@@ -44,7 +45,8 @@ namespace YxPrediction
             BattleManager manager = BattleManager.Instance;
             _mod.SetFocusedUid(manager != null && SceneLoader.currentSceneName == "Battle" ? FocusUid(manager, manager.currentGameStatus) : null);
             _elo.Update();
-            if (Time.unscaledTime < _nextPoll) return;
+            if (Time.unscaledTime < _nextPoll && _eloRevision == _elo.Revision) return;
+            _eloRevision = _elo.Revision;
             _nextPoll = Time.unscaledTime + 0.5f;
             Poll();
         }

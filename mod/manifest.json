@@ -1,11 +1,17 @@
 {
   "id": "local.yxp.predictionpoints",
-  "name": "观战名次预测（积分）",
-  "version": "0.7.3",
-  "author": "Local",
-  "description": "修复空观战记录占满12局后一直加载；保留投注账目并明确提示开盘受阻，保留旧预测UI与单人/联机统一权益规则。",
+  "name": "天机赌马",
+  "version": "0.7.6",
+  "author": "@TeraE / @Airexplosion",
+  "description": "天机赌马：单人/多人共用原生风格预测UI、联机基础倍率×下一轮投注系数、相邻名次25%返还；创建房间匹配设置、一键观战、Elo并发与扫描加速、走势图与原生仙命布局。",
   "sdkVersion": ">=1.0.0 <2.0.0",
   "entry": "plugins/PredictionPoints.dll",
   "entryType": "YxPrediction.PredictionMod",
-  "updateUrl": "https://github.com/Airexplosion/YXPredictMOD"
+  "updateUrl": "https://github.com/Teraen/YXPredictMOD",
+  "provides": {
+    "hotkeys": [
+      "Ctrl+Shift+H",
+      "Ctrl+Shift+P"
+    ]
+  }
 }
