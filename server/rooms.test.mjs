@@ -19,9 +19,11 @@ test('bankruptcy relief adds fifty below ten and is stable across views and rest
     const x=setup();x.rooms.state.accounts[x.a].balance=balance;
     const expected=balance<10?balance+50:balance;
     assert.equal(x.rooms.view(x.code,x.a).balance,expected);
+    assert.equal(x.rooms.view(x.code,x.a).reliefCount,balance<10?1:0);
     for(let i=0;i<3;i++)assert.equal(x.rooms.view(x.code,x.a).balance,expected);
     const reloaded=new Rooms(structuredClone(x.rooms.state));
     assert.equal(reloaded.view(x.code,x.a).balance,expected);
+    assert.equal(reloaded.view(x.code,x.a).reliefCount,balance<10?1:0);
   }
 });
 test('all-in wagers block relief and duplicate purchases cannot manufacture points',()=>{
@@ -57,7 +59,7 @@ test('partial settlement unlocks relief only after the last owned bet resolves',
   assert.equal(result.balance,0);assert.equal(result.positions[0].resolved,true);assert.equal(result.positions[1].resolved,undefined);
   assert.equal(new Rooms(structuredClone(x.rooms.state)).view(x.code,x.a).balance,0);
   x.snapshot.round=3;x.snapshot.ranks[1]=7;result=x.rooms.sync(x.code,x.a,x.snapshot);
-  assert.equal(result.balance,50);assert.equal(result.settled,false);assert.equal(result.payout,0);
+  assert.equal(result.balance,50);assert.equal(result.settled,false);assert.equal(result.payout,0);assert.equal(result.reliefCount,1);
   assert.equal(result.positions[0].payout,0);assert.equal(result.positions[1].payout,0);
   for(let i=0;i<3;i++)assert.equal(x.rooms.sync(x.code,x.a,x.snapshot).balance,50);
   assert.equal(new Rooms(structuredClone(x.rooms.state)).view(x.code,x.a).balance,50);
@@ -80,13 +82,19 @@ test('settlement and relief save atomically and a new all-in bet blocks another 
     x.trade(x.a,0,1,1000);x.trade(x.b,0,8,100);
     const before=structuredClone(x.rooms.state);x.snapshot.ended=true;x.snapshot.ranks=[8,2,3,4,5,6,7,1];fail=true;
     assert.throws(()=>x.rooms.sync(x.code,x.a,x.snapshot),/disk-full/);assert.deepEqual(x.rooms.state,before);
+    assert.equal(x.rooms.state.accounts[x.a].reliefCount,undefined);
     fail=false;saves=0;assert.equal(x.rooms.sync(x.code,x.a,x.snapshot).balance,50);assert.equal(saves,1);
+    assert.equal(x.rooms.view(x.code,x.a).reliefCount,1);
     assert.equal(x.rooms.view(x.code,x.a).payout,0);
     assert.equal(new Rooms(structuredClone(x.rooms.state)).view(x.code,x.a).balance,50);
     const next={...x.snapshot,id:'next-all-in',ended:false,round:1,ranks:Array(8).fill(0)};
     const second=x.rooms.create(x.a,next);
     const result=x.rooms.trade(second.code,x.a,{kind:'buy',player:0,rank:1,stake:50,operation:'next-all-in-buy',version:second.version});
-    assert.equal(result.balance,0);assert.equal(result.positions[0].stake,50);
+    assert.equal(result.balance,0);assert.equal(result.positions[0].stake,50);assert.equal(result.reliefCount,1);
+    const nextFinal={...next,ended:true,ranks:[8,2,3,4,5,6,7,1]};
+    if(rules===1){const joined=x.rooms.join(second.code,x.b,next.id);x.rooms.trade(second.code,x.b,{kind:'buy',player:0,rank:8,stake:1,operation:'second-pool-winner',version:joined.version});}
+    const settled=x.rooms.sync(second.code,x.a,nextFinal);
+    assert.equal(settled.balance,50);assert.equal(settled.reliefCount,2);
   }
 });
 

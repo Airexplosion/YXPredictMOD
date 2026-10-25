@@ -42,6 +42,8 @@ namespace YxPrediction
     {
         public MatchSnapshot Snapshot; public Market Current; public RoomClient Client; public RoomPanel OnlinePanel=new RoomPanel();
         public PredictionBook Book=new PredictionBook(1000); public ModContext Ctx;
+        public readonly ReliefNotice ReliefNotices=new ReliefNotice();
+        public void NotifyRelief(long amount) { ReliefNotices.Notify(amount); }
         public override void OnLoad(ModContext ctx) { Ctx=ctx;Client=new RoomClient(this,ctx); }
         public override void OnDisable() { if(Client!=null)Client.Destroy(); }
         public static string N(long n) { return n.ToString(); }
@@ -65,7 +67,11 @@ internal static class Program
         d["players"]=players;d["ranks"]=ranks;d["positions"]=positions;d["totals"]=pools;return d;
     }
     static UnityEngine.Networking.UnityWebRequest Last { get { var all=UnityEngine.Networking.UnityWebRequest.Sent;return all[all.Count-1]; } }
-    static void Complete(bool failed=false,bool settled=false) { Last.isDone=true;Last.isNetworkError=failed;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",View(settled)}}); }
+    static void Complete(bool failed=false,bool settled=false,long reliefCount=0)
+    {
+        var data=View(settled); if(reliefCount>0)data["reliefCount"]=reliefCount;
+        Last.isDone=true;Last.isNetworkError=failed;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",data}});
+    }
     static PredictionMod Setup(TestHost host)
     {
         UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
@@ -154,6 +160,19 @@ internal static class Program
         {
             string[] types={"PredictionMod","CharacterBetBar","RoomPanel"};string[] methods={"AcceptSnapshot","Update","CurrentView"};string[] targets={"CaptureFinalSnapshot","Selected","Observe"};
             for(int n=0;n<types.Length;n++){bool found=false;foreach(var method in module.GetType("YxPrediction."+types[n]).Methods)if(method.Name==methods[n])found=Calls(method,targets[n]);Require(found,"Missing production binding "+types[n]);}
+            var popup=module.GetType("YxPrediction.ReliefPopup");Require(popup!=null,"Relief popup missing from game DLL");
+            foreach(var method in module.GetType("YxPrediction.PredictionMod").Methods)
+            {
+                if(method.Name=="Save")Require(Calls(method,"NotifyRelief"),"Saved relief not wired to notice");
+                if(method.Name=="OnUpdate")Require(Calls(method,"Update"),"Popup update missing");
+            }
+            bool confirm=false, dismiss=false;
+            foreach(var method in popup.Methods)
+            {
+                if(method.Name=="Build")foreach(var instruction in method.Body.Instructions){var target=instruction.Operand as MethodReference;if(target!=null&&target.Name=="Dismiss")confirm=true;}
+                if(method.Name=="Dismiss")dismiss=Calls(method,"Dismiss");
+            }
+            Require(confirm&&dismiss,"Popup confirmation is not wired to dismissal");
             var panel=module.GetType("YxPrediction.RoomPanel");foreach(var method in panel.Methods)if(method.Name=="Update")Require(Calls(method,"DisplayOrder")&&Calls(method,"SetSlot"),"Purchased-first order disconnected");
             foreach(var nested in panel.NestedTypes)if(nested.Name=="Row")foreach(var method in nested.Methods)if(method.Name=="Refresh")Require(Calls(method,"Selected"),"Overview does not read shared selection");
         }
@@ -169,6 +188,42 @@ internal static class Program
         RetryDoesNotBlockCurrentRoom();Console.WriteLine("PASS failed final retries leave time for ordinary room polling");
         RecoverSettledBook();Console.WriteLine("PASS settled local book recovers a final without the old game scene");
         CreateSettings();Console.WriteLine("PASS create settings preserve matching preference, selected room and immediate native confirmation");
+        ReliefReceipts();Console.WriteLine("PASS actual relief receipts notify once across polling, reload and a later grant");
+        ReliefOnFinalRetry();Console.WriteLine("PASS final retries preserve relief notices and isolate another server's grants");
+    }
+    static void ReliefReceipts()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Snapshot=null;
+            mod.Client.Update();Complete();UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==0,"Legacy response invented a relief grant");
+            UnityEngine.Time.unscaledTime=2;mod.Client.Update();Complete(reliefCount:1);UnityEngine.Time.unscaledTime=2.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==50,"Actual grant did not notify");
+            mod.ReliefNotices.ShowPending(2.1);mod.ReliefNotices.Dismiss();
+            UnityEngine.Time.unscaledTime=4;mod.Client.Update();Complete(reliefCount:1);UnityEngine.Time.unscaledTime=4.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==0,"Polling repeated a dismissed grant");
+            var identity=mod.Ctx.Data.Get<Dictionary<string,object>>("room.identity.v1",null);
+            var data=new Dictionary<string,object>{{"room.identity.v1",identity}};
+            mod=host.Reload<PredictionMod>(Id,"0.7.10",data:data);mod.Snapshot=null;
+            UnityEngine.Time.unscaledTime=6;mod.Client.Update();Complete(reliefCount:1);UnityEngine.Time.unscaledTime=6.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==0,"Reload repeated an acknowledged grant");
+            UnityEngine.Time.unscaledTime=8;mod.Client.Update();Complete(true,reliefCount:2);UnityEngine.Time.unscaledTime=8.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==0,"Failed reply notified before confirmation");
+            UnityEngine.Time.unscaledTime=10;mod.Client.Update();Complete(reliefCount:2);UnityEngine.Time.unscaledTime=10.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==50,"Next real grant was lost after a failed response");
+        }
+    }
+    static void ReliefOnFinalRetry()
+    {
+        foreach(bool otherServer in new bool[]{false,true})
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.CaptureFinalSnapshot(Snapshot(true));mod.Snapshot=null;
+            if(otherServer)host.SetConfig(Id,new Dictionary<string,object>{{"online",new Dictionary<string,object>{{"server","https://other.example/prediction"}}}});
+            mod.Client.Update();SentFinal();Complete(settled:true,reliefCount:1);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();
+            Require(mod.ReliefNotices.PendingAmount==(otherServer?0:50),"Final receipt crossed identity boundary or lost its actual grant");
+        }
     }
     static void CreateSettings()
     {

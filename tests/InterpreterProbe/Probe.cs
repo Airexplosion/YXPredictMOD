@@ -65,6 +65,14 @@ namespace YxPrediction
             if (tradingPending.GrantBankruptcyRelief()) throw new Exception("Pending trading bet received relief");
             tradingMarket.Positions[0].Resolved = true;
             if (!tradingPending.GrantBankruptcyRelief() || tradingPending.Balance != 50) throw new Exception("Resolved bet blocked relief");
+            var notice = new ReliefNotice(); notice.Notify(50); notice.Update(100);
+            if (notice.Visible || notice.PendingAmount != 50) throw new Exception("Relief notice started before presentation");
+            notice.ShowPending(100); notice.Update(102.99);
+            if (!notice.Visible) throw new Exception("Relief notice closed too early");
+            notice.Update(103);
+            if (notice.Visible) throw new Exception("Relief notice did not auto-dismiss");
+            notice.Notify(50); notice.ShowPending(104); notice.Dismiss();
+            if (notice.Visible) throw new Exception("Relief notice confirmation failed");
             return "INTERPRETER PASS";
         }
 

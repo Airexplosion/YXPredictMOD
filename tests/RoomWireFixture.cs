@@ -23,7 +23,8 @@ public static class RoomWireFixture
         r = RoomState.Read(response);
         if (r.ReliefAmount != 50 || r.ReliefRequiresNoPendingBets) throw new Exception("Old unguarded relief capability failed");
         response["reliefRequiresNoPendingBets"] = true;
+        response["reliefCount"] = 2.0;
         r = RoomState.Read(response);
-        if (r.ReliefAmount != 50 || !r.ReliefRequiresNoPendingBets) throw new Exception("Guarded relief capability failed");
+        if (r.ReliefAmount != 50 || !r.ReliefRequiresNoPendingBets || r.ReliefCount != 2) throw new Exception("Guarded relief capability failed");
     }
 }

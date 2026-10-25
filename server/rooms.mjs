@@ -29,6 +29,7 @@ export class Rooms {
       return this.commit(() => {
         const account = this.state.accounts[key];
         account.balance += 50;
+        account.reliefCount = (account.reliefCount ?? 0) + 1;
         return account;
       });
     }
@@ -241,7 +242,7 @@ export class Rooms {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      reliefAmount: 50, reliefRequiresNoPendingBets: true, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

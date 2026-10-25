@@ -25,11 +25,12 @@ internal static partial class Program
             {
                 var data = new Dictionary<string, object> { { PredictionMod.SaveKey, BookCodec.Write(new PredictionBook(9)) } };
                 var mod = host.Load<PredictionMod>(Id, "0.7.8", data: data); Equal(mod.Book.Balance, 59L);
+                Equal(mod.ReliefNotices.PendingAmount, 50L); True(!mod.Message.Contains("救济"));
                 for (int i = 0; i < 3; i++)
                 {
                     data[PredictionMod.SaveKey] = Json.ParseObject(Json.Serialize(BookCodec.Write(mod.Book)));
                     mod = host.Reload<PredictionMod>(Id, "0.7.8", data: data); Equal(mod.Book.Balance, 59L);
-                    mod.OnUpdate(); Equal(mod.Book.Balance, 59L);
+                    mod.OnUpdate(); Equal(mod.Book.Balance, 59L); Equal(mod.ReliefNotices.PendingAmount, 0L);
                 }
             }
         });
@@ -39,7 +40,7 @@ internal static partial class Program
             {
                 var mod = host.Load<PredictionMod>(Id, "0.7.8"); var s = Snapshot(1); mod.AcceptSnapshot(s, Ratings(false));
                 string message = mod.Trade(0, "player0", 1, 1000, mod.Current.TradeVersion);
-                Equal(mod.Book.Balance, 0L); Equal(mod.Current.Positions[0].Invested, 1000L); True(!message.Contains("救济金"));
+                Equal(mod.Book.Balance, 0L); Equal(mod.Current.Positions[0].Invested, 1000L); True(!message.Contains("救济金")); Equal(mod.ReliefNotices.PendingAmount, 0L);
                 long oldClaim = mod.Current.Positions[0].Claim;
                 mod.Trade(0, "player0", 1, 50, mod.Current.TradeVersion);
                 Equal(mod.Book.Balance, 0L); Equal(mod.Current.Positions[0].Claim, oldClaim);

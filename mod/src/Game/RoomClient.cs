@@ -23,6 +23,7 @@ namespace YxPrediction
         RoomFinalSync.Entry _finalRequest;
         int _finalCursor;
         float _next, _finalNext;
+        long _reliefSeen;
         RoomMatch _match;
         string _membersRoom;
         readonly List<string> _seenMembers = new List<string>();
@@ -71,20 +72,32 @@ namespace YxPrediction
         void ReadIdentity()
         {
             _endpoint = _url.Value.Trim().TrimEnd('/');
+            _reliefSeen = 0;
             var saved = _ctx.Data.Get<Dictionary<string, object>>("room.identity.v1", null);
             if (saved != null && Json.GetString(saved, "server", "") == _endpoint)
             {
                 _token = Json.GetString(saved, "token", ""); _code = Json.GetString(saved, "code", "");
+                _reliefSeen = (long)Json.GetNumber(saved, "reliefSeen", 0);
                 _pending = saved.ContainsKey("pending") ? saved["pending"] as Dictionary<string, object> : null;
             }
         }
         void SaveIdentity()
         {
             var saved = new Dictionary<string, object>(); saved["server"] = _endpoint; saved["token"] = _token ?? ""; saved["code"] = _code ?? "";
+            saved["reliefSeen"] = (double)_reliefSeen;
             if (_pending != null) saved["pending"] = _pending;
             _ctx.Data.Set("room.identity.v1", saved);
         }
         void SaveFinals() { _ctx.Data.Set(RoomFinalSync.SaveKey, _finals.Write()); }
+        void ObserveRelief(RoomState state)
+        {
+            if (state.ReliefCount <= _reliefSeen) return;
+            long previous = _reliefSeen;
+            _reliefSeen = state.ReliefCount;
+            try { SaveIdentity(); }
+            catch { _reliefSeen = previous; throw; }
+            _mod.NotifyRelief((state.ReliefCount - previous) * PredictionBook.ReliefAmount);
+        }
         public void CaptureFinalSnapshot(MatchSnapshot snapshot)
         {
             if (State == null || !State.Host || State.Settled || snapshot == null || !snapshot.Ended
@@ -112,7 +125,11 @@ namespace YxPrediction
                 var state = RoomState.Read(root["data"] as Dictionary<string, object>);
                 if (state.Code != _finalRequest.Code || state.GameId != _finalRequest.GameId) throw new FormatException();
                 if (_finals.Confirm(_finalRequest, state.Code, state.GameId, state.Settled)) SaveFinals();
-                if (_endpoint == _finalRequest.Server && _token == _finalRequest.Token && _code == state.Code) State = state;
+                if (_endpoint == _finalRequest.Server && _token == _finalRequest.Token)
+                {
+                    if (_code == state.Code) State = state;
+                    ObserveRelief(state);
+                }
                 Message = state.Settled ? "最终结果已确认，房间 " + state.Code + " 已结算" : "房间已封盘，等待完整最终名次";
             }
             catch { Message = "最终结果尚未确认，已保存并将自动补发"; }
@@ -332,7 +349,7 @@ namespace YxPrediction
                     {
                         var data = root["data"] as Dictionary<string, object>;
                         if (Json.GetString(_sent, "action", "") == "register")
-                        { _token = Json.GetString(data, "token", ""); SaveIdentity(); connect = true; }
+                        { _token = Json.GetString(data, "token", ""); _reliefSeen = 0; SaveIdentity(); connect = true; }
                         else if (Json.GetString(_sent,"action","") == "findGame")
                         {
                             string native=Json.GetString(data,"nativeId","");
@@ -344,7 +361,7 @@ namespace YxPrediction
                             State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
-                            SaveIdentity(); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
+                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }
