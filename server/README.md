@@ -35,3 +35,7 @@ Rule-2 purchase locks floor(stake*rate/10000) claim. Exact final rank returns cl
 The earlier README's pool distribution and 97%-of-principal paragraph applies only to rule1; it is not the rule2 model. Discovery, auth and host trust boundary are unchanged. No money or redeemable currency exists. Snapshot base quotes are host-reported, not independently verified against the official game.
 
 Build and test both `node --test server/rooms.test.mjs server/rules.test.mjs`. A C# oracle can be regenerated with `dotnet run --project tests/PredictionChecks.csproj -- --rule-parity .cache/single-player-parity.json`; build.ps1 compares its hash to the reviewed checked-in fixture and stops on drift. Fixture game identities and states are synthetic.
+
+## 0.7.6 matching preference
+
+Create accepts optional boolean `allowMatch` (default true). False persists with the room, including restart, and excludes it from random selection. Existing records without the flag remain matchable. Discovery by native game and explicit code lookup/join remain available; this is a matching preference, not a password or access control. Duplicate create requests join the existing room and cannot overwrite its host preference. Member views include `allowMatch`. Upgrade both rooms.mjs and server.mjs together; old servers ignore the new request field.

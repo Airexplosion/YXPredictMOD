@@ -15,6 +15,18 @@ internal static partial class Program
     { snapshot.States[index] = new PlayerState(100, wins, losses, 0); }
     static void HorseChecks()
     {
+        Check("ranked participants receive the same horse tiers without opening a prediction market", delegate
+        {
+            MatchSnapshot s = Snapshot(1); s.LiveObserver = false;
+            Rating[] ratings = Ratings(true); var profiles = new HorseProfile[8];
+            for (int i = 0; i < 8; i++) profiles[i] = new HorseProfile(ratings[i], 15);
+            var roster = new HorseRoster(); roster.Observe(s, profiles);
+            Equal(roster.Find(s.Players[0].Uid).BaseTitle, "特等马");
+            Equal(roster.Find(s.Players[1].Uid).BaseTitle, "上等马");
+            Equal(roster.Find(s.Players[2].Uid).BaseTitle, "中等马");
+            Equal(roster.Find(s.Players[0].Uid).Profile.DaoXinGames, 15);
+            var book = new PredictionBook(1000); Equal(book.Observe(s, ratings), null); Equal(book.Balance, 1000L);
+        });
         Check("AI titles cover exactly five decorative levels and share one mechanical icon", delegate
         {
             string[] labels = { "电子马·地狱", "电子马·极难", "电子马·困难", "电子马·中等", "电子马·简单" };

@@ -37,13 +37,14 @@ namespace YxPrediction
             roomId = info.roomId;
             return native;
         }
-        public static bool SpectateSelected(out string roomId, out string error)
+        public static bool SpectateSelected(out string roomId, out string error, bool confirmed = false)
         {
             error = null;
             Button native = SelectedButton(out roomId);
             if (native == null || !native.interactable) { error = "请先在仙府大厅选择一个可观战的对局"; return false; }
+            if (confirmed && !NativeSpectateConfirmation.CanBegin(out error)) return false;
             native.onClick.Invoke();
-            return true;
+            return !confirmed || NativeSpectateConfirmation.ConfirmOpened(out error);
         }
         public void Update()
         {

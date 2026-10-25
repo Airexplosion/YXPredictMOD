@@ -61,8 +61,9 @@ export class Rooms {
     return { nativeId, exists: true, available: (r.members.includes(key) || r.members.length < 32) && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000,
       code: r.code, gameId: r.gameId, gameRoomId: nativeId, round: r.round, members: r.members.length };
   }
-  create(key, snapshot) {
+  create(key, snapshot, allowMatch = true) {
     this.account(key); const s = this.snapshot(snapshot);
+    requireThat(typeof allowMatch === 'boolean', '匹配设置无效');
     requireThat(!s.ended, '已结束的对局不能创建房间');
     const existing = Object.values(this.state.rooms).find(r => !r.ended && !r.settled && (r.gameId === s.id || (s.gameRoomId && r.gameRoomId === s.gameRoomId)));
     if (existing) {
@@ -73,7 +74,7 @@ export class Rooms {
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
-        closedThrough: 0, open: false, ended: false, settled: false, rules: s.baseRates ? 2 : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+        closedThrough: 0, open: false, ended: false, settled: false, allowMatch, rules: s.baseRates ? 2 : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       return this.view(code, key);
     });
@@ -99,7 +100,7 @@ export class Rooms {
   random(key, excludedCode = '') {
     this.account(key);
     requireThat(typeof excludedCode === 'string' && (excludedCode === '' || /^[0-9]{6}$/.test(excludedCode)), '排除房间号无效');
-    const candidates = Object.values(this.state.rooms).filter(r => r.code !== excludedCode && this.isOpen(r)
+    const candidates = Object.values(this.state.rooms).filter(r => r.code !== excludedCode && r.allowMatch !== false && this.isOpen(r)
       && !r.settled && r.members.length < 32 && typeof r.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(r.gameRoomId)
       && Object.values(r.positions).some(positions => positions.some(p => p && p.stake > 0)));
     requireThat(candidates.length > 0, '暂无房主在线、已有人投入且可加入的开放房间', 404);
@@ -225,7 +226,7 @@ export class Rooms {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }
