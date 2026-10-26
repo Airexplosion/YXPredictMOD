@@ -39,3 +39,13 @@ Build and test both `node --test server/rooms.test.mjs server/rules.test.mjs`. A
 ## 0.7.6 matching preference
 
 Create accepts optional boolean `allowMatch` (default true). False persists with the room, including restart, and excludes it from random selection. Existing records without the flag remain matchable. Discovery by native game and explicit code lookup/join remain available; this is a matching preference, not a password or access control. Duplicate create requests join the existing room and cannot overwrite its host preference. Member views include `allowMatch`. Upgrade both rooms.mjs and server.mjs together; old servers ignore the new request field.
+
+## 0.7.9 bankruptcy relief guard
+
+An account receives 50 points only when its available balance is below 10 AND it has no unresolved wagers in any room. Zero becomes 50, 9 becomes 59, and 10 is unchanged. All-in purchases, room switching, restart and ended rooms awaiting final ranks cannot bypass this guard. Legacy pool wagers block until their room settles; rules-2 wagers block until individually resolved or completely sold, even if their current sale value is zero. Another member's wagers do not affect eligibility. Once all owned bets settle or are sold, relief may qualify again. Repeated reads, polling and duplicate operation IDs do not repeat the same grant. Relief does not change stakes, rights or recorded payouts.
+
+Account access applies the policy, including legacy low-balance accounts. During a mutation, nested account access shares the outer transaction: relief, position changes and receipts persist once and roll back together on save failure. Views advertise `reliefAmount: 50` and `reliefRequiresNoPendingBets: true`. These capability fields remain compatible with older clients. Deploy this version of rooms.mjs to enforce the guard online; publishing a client Release does not upgrade the contributor-operated public service. No public deployment was performed for this release.
+
+## 0.7.10 grant notification receipts
+
+Each successful grant increments the account's durable `reliefCount`; room views include it, defaulting to zero for legacy accounts. The counter and balance share the same commit and roll back together. Polls, duplicate operation IDs and process restarts do not increment it. The client stores its acknowledged count per service/identity and displays only unseen actual grants. This enables a dismissible notification that automatically closes after three seconds, without a permanent footer rule. Deploy this version of rooms.mjs to supply online grant receipts; old servers cannot provide accurate grant-only notifications. No public service deployment was performed.

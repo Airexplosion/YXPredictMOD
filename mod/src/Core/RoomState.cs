@@ -8,6 +8,9 @@ namespace YxPrediction
     public sealed class RoomState
     {
         public bool AllowMatch;
+        public int ReliefAmount;
+        public long ReliefCount;
+        public bool ReliefRequiresNoPendingBets;
         public string Code, GameId;
         public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
         public bool Host, Open, Settled;
@@ -24,6 +27,9 @@ namespace YxPrediction
             r.Code = Json.GetString(d, "code", ""); r.GameId = Json.GetString(d, "gameId", "");
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.AllowMatch = Json.GetBool(d, "allowMatch", true);
+            r.ReliefAmount = (int)Json.GetNumber(d, "reliefAmount", 0);
+            r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);
+            r.ReliefRequiresNoPendingBets = Json.GetBool(d, "reliefRequiresNoPendingBets", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
             r.Rules=(int)Json.GetNumber(d,"rules",1);

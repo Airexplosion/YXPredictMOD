@@ -15,6 +15,7 @@ namespace YxPrediction
         public string PreparationError { get; private set; }
         public string PreparationBlockedReason { get; private set; }
         public readonly RankSelection Drafts = new RankSelection();
+        public readonly ReliefNotice ReliefNotices = new ReliefNotice();
         string _lastPreparationError;
         ConfigEntry<bool> _enabled;
 #if YX_GAME
@@ -22,6 +23,7 @@ namespace YxPrediction
         public RoomPanel OnlinePanel { get; private set; }
         GameBridge _bridge;
         NativeTheme _theme;
+        ReliefPopup _reliefPopup;
         PanelLayout _layout;
         CharacterBetBar _betBar;
         TalentOrbit _talents;
@@ -36,10 +38,12 @@ namespace YxPrediction
             _enabled = ctx.Config.Bind("prediction", "enabled", true, "允许积分预测；关闭后仍会结算已有投注");
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
-            else { Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value))); Save(); }
+            else Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value)));
+            Save();
             Message = "进入八人观战后自动准备赔率；可在底部角色条下注或点击其中的「总览」";
 #if YX_GAME
             _theme = new NativeTheme(ctx);
+            _reliefPopup = new ReliefPopup(ctx, _theme, ReliefNotices);
             Online = new RoomClient(this, ctx);
             OnlinePanel = new RoomPanel(this, ctx, _theme);
             var savedWin = ctx.Data.Get<Dictionary<string, object>>(PanelLayout.WindowSaveKey, null);
@@ -61,6 +65,7 @@ namespace YxPrediction
 
         public override void OnUpdate()
         {
+            if (Book != null && Book.CanGrantBankruptcyRelief) Save();
 #if YX_GAME
             if (_bridge != null) _bridge.Update();
             _theme.RefreshSource();
@@ -69,6 +74,7 @@ namespace YxPrediction
             if (Horses != null) Horses.Update();
             if (_betBar != null) _betBar.Update();
             if (_talents != null) _talents.Update();
+            if (_reliefPopup != null) _reliefPopup.Update();
 #endif
         }
 
@@ -81,6 +87,7 @@ namespace YxPrediction
             if (_betBar != null) _betBar.Destroy();
             if (_talents != null) _talents.Destroy();
             if (Horses != null) Horses.Destroy();
+            if (_reliefPopup != null) _reliefPopup.Destroy();
 #endif
         }
 
@@ -184,8 +191,9 @@ namespace YxPrediction
                 else if (action == 1 || action == 2) error = Book.Sell(Snapshot, uid, action == 1, version);
                 else if (action == 3) error = Book.Switch(Snapshot, uid, rank, stake, version);
                 else error = "未知交易操作";
-                if (revision != Book.Revision) Save();
+                bool relief = revision != Book.Revision && Save();
                 long delta = Book.Balance - before;
+                if (relief) delta -= PredictionBook.ReliefAmount;
                 return Report(error ?? "操作成功，余额变动 " + (delta >= 0 ? "+" : "") + N(delta) + " 分");
             }
             catch (Exception ex)
@@ -196,8 +204,19 @@ namespace YxPrediction
             }
         }
 
+        public void NotifyRelief(long amount) { ReliefNotices.Notify(amount); }
         string Report(string message) { Message = message; return message; }
-        void Save() { Context.Data.Set(SaveKey, BookCodec.Write(Book)); }
+        bool Save()
+        {
+            bool relief = Book.GrantBankruptcyRelief();
+            Context.Data.Set(SaveKey, BookCodec.Write(Book));
+            if (relief)
+            {
+                Context.Log.Info("无未结算投注且余额低于10分，自动发放50分救济金；当前余额 " + N(Book.Balance));
+                NotifyRelief(PredictionBook.ReliefAmount);
+            }
+            return relief;
+        }
         public static string N(long value) { return value.ToString(CultureInfo.InvariantCulture); }
         public static string Rate(int bps) { return (bps / 10000.0).ToString("0.00", CultureInfo.InvariantCulture) + "x"; }
         public static string Percent(double share) { return (share * 100).ToString("0.00", CultureInfo.InvariantCulture) + "%"; }

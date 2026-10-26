@@ -5,6 +5,8 @@ namespace YxPrediction
 {
     public sealed class PredictionBook
     {
+        public const long ReliefThreshold = 10;
+        public const long ReliefAmount = 50;
         public long Balance;
         public readonly List<Market> Markets = new List<Market>();
         public int Revision;
@@ -13,6 +15,35 @@ namespace YxPrediction
         {
             if (initialPoints < 0 || initialPoints > Odds.MaximumBalance) throw new ArgumentOutOfRangeException("initialPoints");
             Balance = initialPoints;
+        }
+
+        public bool CanGrantBankruptcyRelief
+        {
+            get
+            {
+                if (Balance < 0 || Balance >= ReliefThreshold) return false;
+                // Check the whole wallet, including games no longer being observed.
+                for (int n = 0; n < Markets.Count; n++)
+                {
+                    Market market = Markets[n];
+                    if (market.Settled) continue;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if (!market.IsTrading && market.Tickets[i] != null) return false;
+                        Position position = market.Positions[i];
+                        if (market.IsTrading && !position.Resolved && position.Claim > 0) return false;
+                    }
+                }
+                return true;
+            }
+        }
+
+        public bool GrantBankruptcyRelief()
+        {
+            if (!CanGrantBankruptcyRelief) return false;
+            Balance += ReliefAmount;
+            Revision++;
+            return true;
         }
 
         public Market Find(string id)
