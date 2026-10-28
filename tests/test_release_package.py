@@ -40,7 +40,7 @@ class ReleasePackageTests(unittest.TestCase):
         for key in ("id", "name", "version", "author", "description", "sdkVersion"):
             entry[key] = manifest[key]
         entry["repo"] = manifest["updateUrl"]
-        entry["download"] = manifest["updateUrl"] + "/releases/download/" + self.meta["tag"] + "/" + quote(Path(self.meta["artifact"]).name)
+        entry["download"] = manifest["updateUrl"] + "/releases/download/" + self.meta["tag"] + "/" + quote(self.meta.get("assetName", Path(self.meta["artifact"]).name))
         entry["sha256"] = self.meta["sha256"]
         self.write_json("mods.json", catalog)
 
@@ -81,14 +81,14 @@ class ReleasePackageTests(unittest.TestCase):
         self.meta["artifact"] = "dist/" + filename
         self.write_json(".github/releases/latest.json", self.meta)
         catalog = RELEASE.read_json(self.root / "mods.json")
-        catalog["mods"][0]["download"] = catalog["mods"][0]["repo"] + "/releases/download/" + self.meta["tag"] + "/" + quote(filename)
+        catalog["mods"][0]["download"] = catalog["mods"][0]["repo"] + "/releases/download/" + self.meta["tag"] + "/" + quote(self.meta.get("assetName", filename))
         self.write_json("mods.json", catalog)
 
     def promote_version(self, version):
         manifest = RELEASE.read_json(self.root / "mod/manifest.json")
         manifest["version"] = version
         self.write_json("mod/manifest.json", manifest)
-        self.meta.update(version=version, tag="v" + version, title="v" + version + " naming check")
+        self.meta.update(version=version, tag="v" + version, title="v" + version + " naming check", assetName="tianji-duma-" + version + ".zip")
         self.write_json(".github/releases/latest.json", self.meta)
         catalog = RELEASE.read_json(self.root / "mods.json")
         catalog["mods"][0]["version"] = version
@@ -111,15 +111,33 @@ class ReleasePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unexpected package path"):
             RELEASE.verify(self.root)
 
-    def test_friendly_download_name_is_url_encoded_and_must_match_the_asset(self):
+    def test_github_alias_keeps_the_local_chinese_name_and_matches_the_download(self):
         self.promote_version("0.7.10")
         catalog = RELEASE.read_json(self.root / "mods.json")
-        self.assertIn(quote(RELEASE.PACKAGE_NAME), catalog["mods"][0]["download"])
-        RELEASE.verify(self.root)
-        catalog["mods"][0]["download"] = catalog["mods"][0]["download"].replace(quote(RELEASE.PACKAGE_NAME), RELEASE.PACKAGE_NAME)
+        result = RELEASE.verify(self.root)
+        self.assertEqual(result["name"], RELEASE.PACKAGE_NAME + "-0.7.10.zip")
+        self.assertEqual(result["assetName"], "tianji-duma-0.7.10.zip")
+        self.assertTrue(catalog["mods"][0]["download"].endswith("/" + result["assetName"]))
+        catalog["mods"][0]["download"] = catalog["mods"][0]["download"].replace(result["assetName"], quote(result["name"]))
         self.write_json("mods.json", catalog)
         with self.assertRaisesRegex(ValueError, "Wrong catalog download"):
             RELEASE.verify(self.root)
+
+    def test_invalid_or_mismatched_asset_alias_is_rejected(self):
+        self.promote_version("0.7.10")
+        for asset in ("../outside.zip", "tianji-duma-0.0.0.zip", "-0.7.10.zip"):
+            with self.subTest(asset=asset):
+                self.meta["assetName"] = asset
+                self.write_json(".github/releases/latest.json", self.meta)
+                with self.assertRaisesRegex(ValueError, "Unexpected release asset name"):
+                    RELEASE.verify(self.root)
+
+    def test_legacy_id_named_releases_remain_valid_without_an_alias(self):
+        self.promote_version("0.7.9")
+        self.meta.pop("assetName")
+        self.rename_package(RELEASE.MOD_ID + "-0.7.9.zip")
+        result = RELEASE.verify(self.root)
+        self.assertEqual(result["assetName"], RELEASE.MOD_ID + "-0.7.9.zip")
 
     def test_missing_mechanical_icon_is_rejected_even_with_valid_checksum(self):
         self.rewrite_archive(lambda entries: [(name, data) for name, data in entries if not name.endswith("/机械马.png")])
