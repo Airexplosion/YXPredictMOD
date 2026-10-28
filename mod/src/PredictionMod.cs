@@ -92,6 +92,12 @@ namespace YxPrediction
         }
 
         public void SetStatus(string message) { Message = message; }
+        public void RefreshForTrade()
+        {
+#if YX_GAME
+            if (_bridge != null) _bridge.Poll();
+#endif
+        }
         public void SetQueryStatus(string message) { QueryStatus = message; }
         public void SetFocusedUid(string uid) { if (Snapshot != null) Snapshot.FocusedUid = uid; }
 
@@ -129,7 +135,7 @@ namespace YxPrediction
                 _lastPreparationError = null;
                 if (revision == Book.Revision && !switched && wasOpen == m.TradingWindowOpen && previousWait == m.TradingWaitReason) return;
                 if (m.Settled) Message = "本局已结算，返还 " + N(m.TotalPayout) + " 积分（含中奖本金）";
-                else if (m.IsTrading) Message = m.TradingWindowOpen ? "交易开放：可增持、减半、清仓或换预测；差1名返正中总额25%" : m.TradingWaitReason;
+                else if (m.IsTrading) Message = m.TradingWindowOpen ? (m.ChampionOnly ? "只猜冠军：第二返中奖额25%，第三返10%；第10回合封盘" : "旧持仓可交易；差1名返正中总额25%；第10回合封盘") : m.TradingWaitReason;
                 else if (m.Locked) Message = "已封盘，等待整局结束及八人的最终名次";
                 else Message = m.HasAdjacentReward ? "每人独立下注；差1名返正中总额25%；第5轮结束封盘" : "旧盘口仅正中返还；每人独立下注；第5轮结束封盘";
             }
@@ -181,6 +187,8 @@ namespace YxPrediction
             if (expectedMarketId != null && (Snapshot == null || Snapshot.Id != expectedMarketId)) return Report("观战对局已切换，请查看当前对局后再操作");
             if (PreparationError != null) return Report(PreparationError);
             if ((action == 0 || action == 3) && !Enabled) return Report("积分预测已关闭，仍可减持或清仓已有持仓");
+            Market activeMarket = Snapshot == null ? null : Book.Find(Snapshot.Id);
+            if ((action == 0 || action == 3) && activeMarket != null && !activeMarket.ChampionOnly) return Report("旧盘口保留原持仓，请在新对局预测冠军");
             var backup = BookCodec.Write(Book);
             int revision = Book.Revision;
             long before = Book.Balance;

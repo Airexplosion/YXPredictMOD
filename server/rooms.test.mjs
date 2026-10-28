@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { Rooms } from './rooms.mjs';
+import { Rooms as CurrentRooms } from './rooms.mjs';
+// Historical room contracts keep their original payout/rank engine for migration regression.
+class Rooms extends CurrentRooms { constructor(state, save, now) { super(state, save, now, {championOnly:false}); } }
 import { createHandler } from './server.mjs';
 function setup(save, rules = 1) {
   let time = 100000; const rooms = new Rooms(undefined, save, () => time);
@@ -208,8 +210,8 @@ test('disk restart preserves account and room, resets trading heartbeat, rejects
     let url=`http://127.0.0.1:${server.address().port}/v1/room`;
     const request=async(body,token)=>{const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+(token??'')},body:JSON.stringify(body)});return (await response.json()).data;};
     const user=await request({action:'register',name:'restart'});
-    const snapshot={id:'disk-game',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:String(i),name:String(i)})),ranks:Array(8).fill(0)};
-    const room=await request({action:'create',snapshot},user.token);
+    const snapshot={id:'disk-game',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:String(i),name:String(i)})),ranks:Array(8).fill(0),baseRates:Array(64).fill(40000)};
+    const room=await request({action:'create',protocol:3,snapshot},user.token);
     await request({action:'trade',code:room.code,kind:'buy',player:0,rank:1,stake:100,version:room.version,operation:'disk-trade-001'},user.token);
     await new Promise(resolve=>server.close(resolve));server=null;
     server=start({directory,port:0});await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}/v1/room`;

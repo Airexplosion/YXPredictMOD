@@ -32,6 +32,27 @@ namespace YxPrediction
         string _createNativeId, _lookupCode;
         float _createDeadline;
         bool _allowMatch = true;
+        bool _isPublic = true;
+        int _browserPage;
+        public RoomBrowser Browser { get; private set; }
+        public string WebCode { get; private set; }
+        float _webCodeUntil;
+        public void CreateWebCode()
+        {
+            if (Busy) return;
+            if (!string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://auth.kaigua.vip/prediction/ 登录并绑定"; return; }
+            _afterRegister = "linkCode";
+            if (string.IsNullOrEmpty(_token)) { var register=Body("register");register["name"]=_name.Value;Send(register); }
+            else ConnectReady();
+        }
+        public void FetchRooms(int page)
+        {
+            if (Busy || page < 0 || page > 166) return;
+            _browserPage = page; _afterRegister = "list";
+            Message = "正在读取公开房间…";
+            if (string.IsNullOrEmpty(_token)) { var register = Body("register"); register["name"] = _name.Value; Send(register); }
+            else ConnectReady();
+        }
         string _discoverNative;
         public string DiscoveredNative { get; private set; }
         public string DiscoveredCode { get; private set; }
@@ -71,6 +92,7 @@ namespace YxPrediction
         public void SetMessage(string message) { Message = message; }
         void ReadIdentity()
         {
+            WebCode = null; _webCodeUntil = 0;
             _endpoint = _url.Value.Trim().TrimEnd('/');
             _reliefSeen = 0;
             var saved = _ctx.Data.Get<Dictionary<string, object>>("room.identity.v1", null);
@@ -141,17 +163,18 @@ namespace YxPrediction
             // 结束快照可从旧账本恢复；不能拿当前观战的原生房间ID标记旧对局。
             d["gameRoomId"] = s.Ended ? "" : NativeRoomSpectate.CurrentRoomId();
             d["closedThrough"] = s.ResultsThroughRound; d["open"] = s.TradingOpen && s.LiveObserver; d["ended"] = s.Ended;
-            var players = new List<object>(); var ranks = new List<object>();
+            var players = new List<object>(); var ranks = new List<object>(); var active = new List<object>();
             for (int i = 0; i < 8; i++)
             {
                 var p = new Dictionary<string, object>(); p["uid"] = s.Players[i].Uid; p["name"] = s.Players[i].Name; players.Add(p);
                 int rank = s.Ended ? s.Ranks[i] : s.States != null && s.States[i] != null && s.States[i].Life <= 0 ? s.States[i].FinalRank : 0;
                 ranks.Add(rank >= 1 && rank <= 8 ? rank : 0);
+                active.Add(!s.Ended && s.States != null && s.States.Length == 8 && s.States[i] != null && s.States[i].Life > 0);
             }
-            d["players"] = players; d["ranks"] = ranks; return d;
+            d["players"] = players; d["ranks"] = ranks; d["active"] = active; return d;
         }
         Dictionary<string, object> Body(string action) { var d = new Dictionary<string, object>(); d["action"] = action; if (!string.IsNullOrEmpty(_code)) d["code"] = _code; return d; }
-        public bool Create(bool allowMatch, string expectedNative)
+        public bool Create(bool allowMatch, string expectedNative, bool isPublic = true)
         {
             if (Busy) { Message = "等待上一操作确认"; return false; }
             if (NativeRoomSpectate.IsLobby)
@@ -163,6 +186,7 @@ namespace YxPrediction
                 { Message = "请等待本局房间查询完成；已有房间请直接加入"; return false; }
             }
             _allowMatch = allowMatch;
+            _isPublic = isPublic;
             Connect("", true);
             return _createNativeId != null || _request != null;
         }
@@ -205,13 +229,15 @@ namespace YxPrediction
         }
         void ConnectReady()
         {
+            if (_afterRegister == "linkCode") { _afterRegister=null;Send(Body("linkCode"));return; }
+            if (_afterRegister == "list") { _afterRegister = null; var list = Body("list"); list["page"] = _browserPage; Send(list); return; }
             if (_afterRegister == "findGame") { _afterRegister=null; var find=Body("findGame"); find["nativeId"]=_discoverNative; Send(find); return; }
             if (_afterRegister == "lookup") { _afterRegister = null; var lookup = Body("lookup"); lookup["code"] = _lookupCode; Send(lookup); return; }
             if (_afterRegister == "random") { _afterRegister = null; var random = Body("random"); random["exclude"] = _code ?? ""; Send(random); return; }
             MatchSnapshot s = _mod.Snapshot;
             if (s == null || !s.LiveObserver) { Message = "观战已离开，请重新连接"; return; }
             var body = Body(_afterRegister); body["gameId"] = s.Id;
-            if (_afterRegister == "create") {if(_mod.Current==null){Message="Elo基础倍率仍在准备，请稍后创建";return;}body["snapshot"] = RatedSnapshot(s);body["allowMatch"] = _allowMatch;}
+            if (_afterRegister == "create") {if(_mod.Current==null){Message="Elo基础倍率仍在准备，请稍后创建";return;}body["snapshot"] = RatedSnapshot(s);body["allowMatch"] = _isPublic && _allowMatch;body["isPublic"] = _isPublic;}
             _afterRegister = null; Send(body);
         }
         public void RandomJoin()
@@ -236,7 +262,9 @@ namespace YxPrediction
         }
         public void Trade(string kind, int player, int rank, long stake)
         {
+            _mod.RefreshForTrade();
             MatchSnapshot s = _mod.Snapshot;
+            if (!BettingAccess.CanTrade(State, s, player)) { Message = "第10回合起封盘；已淘汰或退出的角色不能下注"; return; }
             if (Busy || State == null || !State.Open || !PredictionVisibility.CanShow() || s == null || s.Id != State.GameId || !s.TradingOpen || s.Ended || s.Round != State.Round || s.ResultsThroughRound >= s.Round) { Message = "当前不可交易，等待房间与观战状态同步"; return; }
             var d = Body("trade"); d["kind"] = kind; d["player"] = player; d["rank"] = rank; d["stake"] = stake;
             d["version"] = State.Version; d["operation"] = Guid.NewGuid().ToString("N");
@@ -244,6 +272,7 @@ namespace YxPrediction
         }
         void Send(Dictionary<string, object> body, string server = null, string credential = null)
         {
+            body["protocol"] = 3;
             if (server == null && !string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(GameClientUtil.uid))
             {
                 var identity = new Dictionary<string, object>();
@@ -350,6 +379,10 @@ namespace YxPrediction
                         var data = root["data"] as Dictionary<string, object>;
                         if (Json.GetString(_sent, "action", "") == "register")
                         { _token = Json.GetString(data, "token", ""); _reliefSeen = 0; SaveIdentity(); connect = true; }
+                        else if (Json.GetString(_sent,"action","") == "linkCode")
+                        { WebCode=Json.GetString(data,"code","");_webCodeUntil=Time.unscaledTime+295;GUIUtility.systemCopyBuffer=WebCode;Message="已复制绑定码 "+WebCode+"；5分钟内到 auth.kaigua.vip/prediction/ 登录并绑定"; }
+                        else if (Json.GetString(_sent,"action","") == "list")
+                        { Browser = RoomBrowser.Read(data); Message = Browser.Total == 0 ? "暂无在线公开房间" : "选择公开房间加入观战"; }
                         else if (Json.GetString(_sent,"action","") == "findGame")
                         {
                             string native=Json.GetString(data,"nativeId","");
@@ -361,7 +394,7 @@ namespace YxPrediction
                             State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
-                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
+                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules>=3?"只猜冠军；第二返25%，第三返10%；第10回合起封盘":State.Rules==2?"旧持仓沿用差一名25%规则，仅可减持或等待结算":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }
