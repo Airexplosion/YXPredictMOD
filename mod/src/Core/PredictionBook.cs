@@ -7,6 +7,7 @@ namespace YxPrediction
     {
         public const long ReliefThreshold = 10;
         public const long ReliefAmount = 50;
+        public const int BettingCloseRound = 10;
         public long Balance;
         public readonly List<Market> Markets = new List<Market>();
         public int Revision;
@@ -138,6 +139,8 @@ namespace YxPrediction
             if (snapshot.Round != market.HighestRound) return "对局状态正在同步，请稍后重试";
             int index = market.FindPlayer(uid);
             if (index < 0) return "该玩家不在本局";
+            if (snapshot.States != null) for (int i = 0; i < snapshot.Players.Length; i++)
+                if (snapshot.Players[i].Uid == uid && (i >= snapshot.States.Length || snapshot.States[i] == null || snapshot.States[i].Life <= 0)) return "该玩家已淘汰或退出，不能下注";
             if (market.Tickets[index] != null) return "该玩家已下注，不能修改或重复下注";
             if (rank < 1 || rank > 8) return "请选择1至8名";
             if (stake < 1 || stake > Odds.MaximumStake) return "本金须为1至10000的整数积分";
@@ -227,6 +230,7 @@ namespace YxPrediction
                 if (final != null) { market.FinalRanks = final; market.Settled = true; TradingChange(market); }
                 return;
             }
+            if (market.HighestRound >= BettingCloseRound) { market.TradingWaitReason = "第10回合起已封盘，等待结算"; return; }
             if (market.Locked) { market.TradingWaitReason = "已收到整局结束信号，等待最终名次"; return; }
             if (!snapshot.LiveObserver || !snapshot.TradingOpen || snapshot.Round <= market.ClosedThroughRound)
             { market.TradingWaitReason = "本轮交易暂停，等待下一轮修炼阶段"; return; }
@@ -240,7 +244,7 @@ namespace YxPrediction
             if (changed)
             {
                 int[] rates;
-                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round); }
+                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round, market.ChampionOnly); }
                 catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
                 market.QuoteStates = states; market.QuoteRates = rates; market.QuoteRound = snapshot.Round; TradingChange(market);
             }
@@ -258,6 +262,8 @@ namespace YxPrediction
             if (!market.TradingWindowOpen || snapshot.Round != market.QuoteRound) return market.TradingWaitReason ?? "当前交易暂停";
             index = market.FindPlayer(uid);
             if (index < 0) return "该玩家不在本局";
+            for (int i = 0; i < 8; i++) if (snapshot.Players[i].Uid == uid
+                && (snapshot.States == null || snapshot.States[i] == null || snapshot.States[i].Life <= 0)) return "该玩家已淘汰或退出，不能交易";
             if (market.KnownRanks[index] > 0 || market.Positions[index].Resolved) return "该玩家名次已确定，不能交易";
             if (expectedVersion != market.TradeVersion) return "报价或持仓已更新，请查看新报价后再操作";
             if (market.Positions[index].Actions >= Position.MaximumActions) return "该玩家本局操作次数已达512次";

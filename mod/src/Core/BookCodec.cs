@@ -120,7 +120,7 @@ namespace YxPrediction
                 }
             }
             var rates = Array(data, "rates", 64, 64);
-            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(market.Ratings, market.QuoteStates, market.QuoteRound);
+            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(market.Ratings, market.QuoteStates, market.QuoteRound, market.ChampionOnly);
             for (int i = 0; i < 64; i++)
             {
                 int rate = ArrayNumber(rates, i, 0, Odds.MaximumRateBps);
@@ -133,6 +133,7 @@ namespace YxPrediction
             {
                 var row = ObjectAt(positions, i); Position p = market.Positions[i];
                 p.Rank = (int)Number(row, "rank", 0, 8); p.Claim = Number(row, "claim", 0, Position.MaximumClaim);
+                if (market.ChampionOnly && p.Rank > 1) throw new FormatException("冠军持仓名次无效");
                 p.Cost = Number(row, "cost", 0, Position.MaximumInvested); p.Invested = Number(row, "invested", 0, Position.MaximumInvested);
                 p.CashReturned = Number(row, "returned", 0, Position.MaximumClaim); p.FinalPayout = Number(row, "paid", 0, Position.MaximumClaim);
                 p.Actions = (int)Number(row, "actions", 0, Position.MaximumActions); p.Resolved = Json.GetBool(row, "resolved", false);
@@ -203,7 +204,7 @@ namespace YxPrediction
                 var rawRates = Array(row, "rates", 64, 64);
                 var rates = new int[64];
                 for (int i = 0; i < 64; i++) rates[i] = ArrayNumber(rawRates, i, 10100, Odds.MaximumRateBps);
-                int rules = formatVersion == 1 ? Odds.ExactOnlyRuleVersion : (int)Number(row, "rules", Odds.ExactOnlyRuleVersion, formatVersion == 2 ? Odds.AdjacentRuleVersion : Odds.TradingRuleVersion);
+                int rules = formatVersion == 1 ? Odds.ExactOnlyRuleVersion : (int)Number(row, "rules", Odds.ExactOnlyRuleVersion, formatVersion == 2 ? Odds.AdjacentRuleVersion : Odds.CurrentRuleVersion);
                 var market = new Market(id, players, ratings, rates, rules);
                 market.HighestRound = (int)Number(row, "round", 1, 100000);
                 market.Locked = Json.GetBool(row, "locked", false);

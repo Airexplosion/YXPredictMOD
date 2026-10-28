@@ -152,9 +152,9 @@ internal static partial class Program
             MatchSnapshot s = Snapshot(1); PredictionBook old = LegacyBook(s); old.Bet(s, s.Players[0].Uid, 1, 10);
             PredictionBook b = BookCodec.Read(LegacyData(old)); Equal(b.Find(s.Id).RuleVersion, 1); Equal(b.Find(s.Id).Tickets[0].Payout, 76L);
             s.Ended = true; s.Ranks = new int[] { 2, 1, 3, 4, 5, 6, 7, 8 }; b.Observe(s, null); Equal(b.Balance, 990L);
-            MatchSnapshot fresh = Snapshot(1); fresh.Id = "new-rules"; b.Observe(fresh, Ratings(false)); Equal(b.Find(fresh.Id).RuleVersion, 3);
+            MatchSnapshot fresh = Snapshot(1); fresh.Id = "new-rules"; b.Observe(fresh, Ratings(false)); Equal(b.Find(fresh.Id).RuleVersion, 4);
             b.Bet(fresh, fresh.Players[0].Uid, 1, 10); fresh.Ended = true; fresh.Ranks = s.Ranks; b.Observe(fresh, null);
-            Equal(b.Balance, 995L); b = Reload(b); Equal(b.Find(s.Id).RuleVersion, 1); Equal(b.Find(fresh.Id).RuleVersion, 3);
+            Equal(b.Balance, 994L); b = Reload(b); Equal(b.Find(s.Id).RuleVersion, 1); Equal(b.Find(fresh.Id).RuleVersion, 4);
         });
         Check("v1 settled records preserve credited amounts without retroactive awards", delegate
         {
@@ -222,8 +222,8 @@ internal static partial class Program
                 Equal(mod.Book.Balance, 990L);
                 s.Round = 6; mod.AcceptSnapshot(s, null); True(!mod.Current.Locked && mod.Current.TradingWindowOpen);
                 s.Ended = true; s.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }; mod.AcceptSnapshot(s, null);
-                Equal(mod.Book.Balance, 1051L); True(mod.Current.Settled);
-                mod.AcceptSnapshot(s, null); Equal(mod.Book.Balance, 1051L);
+                Equal(mod.Book.Balance, 1046L); True(mod.Current.Settled);
+                mod.AcceptSnapshot(s, null); Equal(mod.Book.Balance, 1046L);
                 True(host.Events("dataChanged").Length >= 5);
                 host.SoftDisable(Id); Equal(host.PressHotkey("F8"), 0);
                 foreach (var log in host.Logs()) True(log.Lvl != "error");
@@ -253,11 +253,12 @@ internal static partial class Program
                 mod.AcceptSnapshot(s, Ratings(false)); mod.PlaceBet(s.Players[0].Uid, 1, 10);
                 host.SetConfig(Id, new Dictionary<string, object> { ["prediction"] = new Dictionary<string, object> { ["enabled"] = false } });
                 mod.PlaceBet(s.Players[1].Uid, 2, 10); Equal(mod.Book.Balance, 990L);
-                s.Ended = true; s.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }; mod.AcceptSnapshot(s, null); Equal(mod.Book.Balance, 1051L);
+                s.Ended = true; s.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }; mod.AcceptSnapshot(s, null); Equal(mod.Book.Balance, 1046L);
             }
         });
         MarketCapacityChecks();
         TradingChecks();
+        ChampionChecks();
         LifeChecks();
         LifeShareChecks();
         TrendChecks();
@@ -274,9 +275,9 @@ internal static partial class Program
     }
 
     static PredictionBook Open(MatchSnapshot s) { return FixedBook(s, Ratings(true), 2); }
-    static PredictionBook FixedBook(MatchSnapshot s, Rating[] ratings, int rules)
+    static PredictionBook FixedBook(MatchSnapshot s, Rating[] ratings, int rules, long balance = 1000)
     {
-        var b = new PredictionBook(1000);
+        var b = new PredictionBook(balance);
         b.Markets.Add(new Market(s.Id, s.Players, ratings, Odds.Rates(ratings, rules), rules)); b.Observe(s, null); return b;
     }
     static PredictionBook LegacyBook(MatchSnapshot s)
