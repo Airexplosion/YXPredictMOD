@@ -2,7 +2,7 @@
 
 网页`server/web/`默认与攻略站同域。它使用原`/v1/guides/login`和`logout`，每次私有请求前从`/v1/guides/prediction-ticket`领取短期身份票，不读取HttpOnly登录Cookie，也不把攻略会话交给房间服务。
 
-`auth-guide-ticket.patch`是本项目自有认证服务`apps/auth-server/src/guides/routes.ts`的最小适配差异。把它应用于拥有`registerGuideRoutes`、`service.session()`和同源保护的攻略服务；该文件属于单独的加载器仓库，不是此MOD构建依赖。请按各自认证框架适配，不要安装替换整个认证服务或覆盖已有数据库。
+`auth-guide-ticket.patch`是本项目自有认证服务`apps/auth-server/src/guides/routes.ts`的最小适配差异。使用`git apply --unidiff-zero integration/auth-guide-ticket.patch`应用（零上下文补丁），或手动移植这两处变更。目标是拥有`registerGuideRoutes`、`service.session()`和同源保护的攻略服务；该文件属于单独的加载器仓库，不是此MOD构建依赖。请按各自认证框架适配，不要安装替换整个认证服务或覆盖已有数据库。
 
 两侧分别注入同一随机32字节十六进制`YX_PREDICTION_BRIDGE_KEY`，以操作系统权限保护。不要复用许可证签名/隐私散列密钥。攻略端验证现有会话及当前授权状态后签发：
 
