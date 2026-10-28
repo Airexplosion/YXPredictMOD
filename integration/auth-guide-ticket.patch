@@ -2,18 +2,9 @@ diff --git a/apps/auth-server/src/guides/routes.ts b/apps/auth-server/src/guides
 index cbb9a6b..191f6b2 100644
 --- a/apps/auth-server/src/guides/routes.ts
 +++ b/apps/auth-server/src/guides/routes.ts
-@@ -4,6 +4,7 @@ import { GuideError, type GuideService } from './service.js';
- import { GUIDE_HTML, GUIDE_JS } from './page.js';
- import { CARD_PICKER_JS } from './card-picker.js';
- import { GUIDE_I18N_JS } from './i18n.js';
+@@ -6,0 +7 @@ import { GUIDE_I18N_JS } from './i18n.js';
 +import { createHmac } from 'node:crypto';
- 
- export function registerGuideRoutes(app: FastifyInstance, service: GuideService) {
-   const cookieName = 'yx_guide_session';
-@@ -63,6 +64,15 @@ export function registerGuideRoutes(app: FastifyInstance, service: GuideService)
-     scope.get('/v1/guides/me', async req => {
-       const r = service.session(token(req)); return { name: r.characterName };
-     });
+@@ -65,0 +67,9 @@ export function registerGuideRoutes(app: FastifyInstance, service: GuideService)
 +    scope.post('/v1/guides/prediction-ticket', async req => {
 +      const key = process.env.YX_PREDICTION_BRIDGE_KEY ?? '';
 +      if (!/^[a-f0-9]{64}$/i.test(key)) throw new GuideError(503, '赌马网页登录尚未开启');
@@ -23,6 +14,3 @@ index cbb9a6b..191f6b2 100644
 +      const signature = createHmac('sha256', Buffer.from(key, 'hex')).update(payload).digest('base64url');
 +      return { ticket: payload + '.' + signature };
 +    });
-     scope.get('/v1/guides/mine', async req => service.mine(service.session(token(req)).uidHash));
-     scope.post('/v1/guides/drafts', async req => service.save(service.session(token(req)).uidHash, req.body));
-     scope.put('/v1/guides/drafts/:id', async req => {
