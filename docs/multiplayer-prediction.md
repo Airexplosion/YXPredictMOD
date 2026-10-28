@@ -74,8 +74,10 @@ sdk-extensions为公开SDK 636a3d7的同源UI组件：NativeControlStyle、Nativ
 
 **尚待实机验证**：当前原生皮肤/分辨率、数字真实输入、仙命与其他MOD组合、完整跨对局加入/创建、多人整局，以及Elo实际帧时长。本轮未启动或操作游戏，自动化通过不等于完整客户端实测。
 
-正式发布元数据`.github/releases/latest.json`、管理器目录`mods.json`及安装包统一为0.7.10，使用既有Release工作流核验后发布。历史ZIP保留；发布前执行14项包体验证及verify-release脚本，确认manifest、说明、素材、目录与SHA256一致。
+正式发布元数据`.github/releases/latest.json`、管理器目录`mods.json`及安装包统一为0.7.10，使用既有Release工作流核验后发布。历史ZIP保留；发布前执行16项包体验证及verify-release脚本，确认manifest、说明、素材、目录与SHA256一致。
 
 本轮0.7.10正式安装包为`dist/天机赌马-0.7.10.zip`，Release元数据、管理器清单与包内版本同步为0.7.10。新增4项通知状态回归、2组生产RoomClient发放记录检查；游戏DLL确认通知接线与确认按钮绑定，尚未实机验收弹窗视觉。
 
 安装包从0.7.10起统一命名为`天机赌马-<版本号>.zip`；`scripts/package.ps1`负责SDK打包、补入说明及命名，完整构建末尾调用同一脚本。正式发布时填写对应文件名，并对下载链接的中文文件名做URL编码。历史正式版本文件名和下载链接保留，包内根目录及MOD ID不变。
+
+GitHub Release接口实际会将中文附件名过滤为`-版本号.zip`，上传后重命名仍会过滤。因此本地及仓库文件名保持中文，Release改用`tianji-duma-<版本号>.zip`传输名，label保留中文包名；发布校验、目录下载URL及CI下载匹配均使用assetName。

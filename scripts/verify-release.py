@@ -47,6 +47,11 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     legacy_artifact = "dist/" + MOD_ID + "-" + version + ".zip"
     legacy_version = tuple(map(int, version.split("."))) <= (0, 7, 9)
     require(meta["artifact"] == expected_artifact or (legacy_version and meta["artifact"] == legacy_artifact), "Unexpected package path")
+    asset_name = meta.get("assetName", artifact.name)
+    # GitHub strips Chinese from uploaded filenames; keep the local ZIP Chinese
+    # and publish an ASCII transport alias with the Chinese name as its label.
+    expected_asset = "tianji-duma-" + version + ".zip"
+    require(asset_name == expected_asset or (legacy_version and asset_name == artifact.name and asset_name.isascii()), "Unexpected release asset name")
     require(hashlib.sha256(artifact.read_bytes()).hexdigest() == meta["sha256"], "Package checksum mismatch")
     manifest = read_json(root / "mod/manifest.json")
     require(manifest["id"] == MOD_ID and manifest["version"] == version, "Manifest/version mismatch")
@@ -75,16 +80,16 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     for key in ("id", "name", "version", "author", "description", "sdkVersion"):
         require(entry.get(key) == manifest.get(key), "Catalog/manifest mismatch: " + key)
     require(entry["repo"] == manifest["updateUrl"], "Wrong catalog repository")
-    expected_url = manifest["updateUrl"] + "/releases/download/" + meta["tag"] + "/" + quote(artifact.name)
+    expected_url = manifest["updateUrl"] + "/releases/download/" + meta["tag"] + "/" + quote(asset_name)
     require(entry["download"] == expected_url, "Wrong catalog download")
     require(entry["sha256"] == meta["sha256"], "Catalog/package checksum mismatch")
-    return dict(meta, name=artifact.name)
+    return dict(meta, name=artifact.name, assetName=asset_name)
 
 
 if __name__ == "__main__":
     data = verify(Path(__file__).resolve().parent.parent, os.environ.get("GITHUB_REPOSITORY", "Teraen/YXPredictMOD"))
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-            for key in ("version", "tag", "artifact", "notes", "sha256", "title", "name"):
+            for key in ("version", "tag", "artifact", "notes", "sha256", "title", "name", "assetName"):
                 output.write(key + "=" + data[key] + "\n")
     print("RELEASE CHECK PASS: " + data["tag"] + "; 12 files; ZIP/source/catalog checksums verified")

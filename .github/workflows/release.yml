@@ -37,10 +37,14 @@ jobs:
           RELEASE_TITLE: ${{ steps.package.outputs.title }}
           PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          ASSET_NAME: ${{ steps.package.outputs.assetName }}
           PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
           RELEASE_NOTES: ${{ steps.package.outputs.notes }}
         run: |
           set -euo pipefail
+          mkdir -p .release-upload
+          cp "$PACKAGE_PATH" ".release-upload/$ASSET_NAME"
+          upload_spec=".release-upload/$ASSET_NAME#$PACKAGE_NAME"
           existing_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)
           if [ "$existing_draft" = "false" ]; then
             echo 'This version is already published. Publish a new version instead.' >&2
@@ -52,12 +56,12 @@ jobs:
               echo 'Existing draft belongs to a different commit.' >&2
               exit 1
             fi
-            gh release upload "$RELEASE_TAG" "$PACKAGE_PATH" --clobber
+            gh release upload "$RELEASE_TAG" "$upload_spec" --clobber
           else
-            gh release create "$RELEASE_TAG" "$PACKAGE_PATH" --draft --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES"
+            gh release create "$RELEASE_TAG" "$upload_spec" --draft --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES"
           fi
           mkdir -p .release-verify
-          gh release download "$RELEASE_TAG" --pattern "$PACKAGE_NAME" --dir .release-verify
-          printf '%s  %s\n' "$PACKAGE_SHA256" ".release-verify/$PACKAGE_NAME" | sha256sum --check -
+          gh release download "$RELEASE_TAG" --pattern "$ASSET_NAME" --dir .release-verify
+          printf '%s  %s\n' "$PACKAGE_SHA256" ".release-verify/$ASSET_NAME" | sha256sum --check -
           gh release edit "$RELEASE_TAG" --draft=false --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
