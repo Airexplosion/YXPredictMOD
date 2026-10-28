@@ -1,4 +1,4 @@
-> 0.7.10测试版：移除常驻救济说明，实际发放后弹窗提示，可确认关闭或等待3秒自动消失；保留房间设置、一键观战和Elo并发加载。走势图仅保留命元和命元占比，左右等宽。完整多人对局与当前界面仍需实机验证。完整说明见[多人预测说明](https://github.com/Teraen/YXPredictMOD/blob/main/docs/multiplayer-prediction.md)。
+> 0.7.10：移除常驻救济说明，实际发放后弹窗提示，可确认关闭或等待3秒自动消失；保留房间设置、一键观战和Elo并发加载。走势图仅保留命元和命元占比，左右等宽。完整多人对局与当前界面仍需实机验证。完整说明见[多人预测说明](https://github.com/Teraen/YXPredictMOD/blob/main/docs/multiplayer-prediction.md)。
 
 # 天机赌马（动态积分版 0.7.10）
 
