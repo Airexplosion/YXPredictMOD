@@ -42,6 +42,18 @@ test('daily persistence errors roll back credit, profile and ledger, and balance
  fail=true;assert.throws(()=>x.web.checkIn(x.user));assert.deepEqual(x.rooms.state,before);fail=false;assert.equal(x.web.checkIn(x.user).balance,1200);
  x.time(86400001);x.rooms.state.accounts[x.key].balance=1e12-100;assert.throws(()=>x.web.checkIn(x.user));assert.equal(x.rooms.state.accounts[x.key].balance,1e12-100);
 });
+test('parallel check-ins from distinct valid identity proofs credit exactly once',async()=>{
+ const x=setup();x.web.bind(x.user,x.web.issueCode(x.key).code);const origin='https://duma.kaigua.vip';
+ const server=http.createServer(createHandler(x.rooms,{bridgeKey,now:()=>100000,webOrigin:origin}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  const replies=await Promise.all(Array.from({length:12},async(_,i)=>{
+   const response=await fetch('http://127.0.0.1:'+server.address().port+'/web/check-in',{method:'POST',headers:{'content-type':'application/json','x-prediction-client':'1',origin,'x-prediction-identity':ticket({...x.user,expiresAt:160000+i})},body:'{}'});
+   assert.equal(response.status,200);return (await response.json()).data.checkInReceipt;
+  }));
+  assert.equal(replies.filter(r=>!r.duplicate).length,1);assert.equal(replies.reduce((sum,r)=>sum+r.amount,0),200);
+  assert.equal(x.rooms.state.accounts[x.key].balance,1200);assert.equal(Object.keys(x.rooms.state.walletEvents).length,1);assert.equal(x.web.me(x.user).net,0);
+ }finally{await new Promise(r=>server.close(r));}
+});
 test('unbound and bound accounts all rank, successful binding merges only that verified owner',()=>{
  const x=setup(),otherKey=x.rooms.register('未绑定仙友').token;
  assert.equal(x.web.leaderboard().total,2);x.web.bind(x.user,x.web.issueCode(x.key).code);assert.equal(x.web.leaderboard().total,2);
