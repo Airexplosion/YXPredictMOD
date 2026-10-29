@@ -254,7 +254,7 @@ namespace YxPrediction
             if(_loading!=null){_loading.SetActive(loading&&!_minimized);if(loading){_loading.transform.SetAsLastSibling();_loadingLabel.text=(blocked==null?"数据加载中…":"暂时无法开盘")+((char)10).ToString()+(blocked??_mod.QueryStatus??_mod.Message??"等待八人观战数据");}}
             _status.text = r == null ? (blocked==null?"Elo / 对局数据加载中…":"开盘受阻，请查看下方原因")
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
-                + (r.Settled ? "已结算" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 分" + (r.Host ? " · 你是房主" : "");
+                + (r.Settled ? "已结算" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 马币" + (r.Host ? " · 你是房主" : "");
             if (HasCurrentRoom())
             {
                 string members = "成员：";
@@ -372,8 +372,8 @@ namespace YxPrediction
                 int quoteAt=_index*8+Math.Max(1,_chosen)-1;
                 string rate=_chosen==0?"—":!_panel.HasCurrentRoom()||r.Rules>=2?PredictionMod.Rate(r.QuoteRates[quoteAt]):selected>0?(total/(double)selected).ToString("0.00",CultureInfo.InvariantCulture)+"x":"暂无投入";
                 _oddsLabel.text=rate=="暂无投入"?"—":rate;
-                _holdingLabel.text=r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules>=2?r.Claims[_index]:r.Stakes[_index])+"分":"未持仓";
-                _resultLabel.text=r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名 · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"分":_panel.HasCurrentRoom()&&r.Rules>=2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
+                _holdingLabel.text=r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules>=2?r.Claims[_index]:r.Stakes[_index])+"马币":"未持仓";
+                _resultLabel.text=r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名 · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"马币":_panel.HasCurrentRoom()&&r.Rules>=2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
                 _half.SetActive(r.Stakes[_index]>0);_sell.SetActive(r.Stakes[_index]>0);
                 _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == 1 ? "增持" : "换冠军" : "押冠军");
             }

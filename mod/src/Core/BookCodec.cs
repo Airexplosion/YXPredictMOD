@@ -181,7 +181,7 @@ namespace YxPrediction
 
         public static PredictionBook Read(Dictionary<string, object> root)
         {
-            if (root == null) throw new FormatException("积分存档为空");
+            if (root == null) throw new FormatException("马币存档为空");
             int formatVersion = (int)Number(root, "version", 1, 5);
             var book = new PredictionBook(Number(root, "balance", 0, Odds.MaximumBalance));
             var markets = Array(root, "markets", 0, 12);

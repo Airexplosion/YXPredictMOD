@@ -99,7 +99,7 @@ internal static partial class Program
                 for (int i = 0; i < 12; i++)
                 {
                     MatchSnapshot s = CapacitySnapshot(i); mod.AcceptSnapshot(s, Ratings(true));
-                    Equal(mod.PlaceBet(s.Players[0].Uid, 1, 1), "下注成功，已扣除 1 积分");
+                    Equal(mod.PlaceBet(s.Players[0].Uid, 1, 1), "下注成功，已扣除 1 马币");
                 }
                 string before = Json.Serialize(BookCodec.Write(mod.Book));
                 mod.SetQueryStatus("Elo查询完成，命中8");

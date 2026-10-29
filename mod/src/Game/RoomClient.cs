@@ -13,6 +13,8 @@ namespace YxPrediction
     // UnityWebRequest completion is polled on the Unity main thread. No async or CLR callback queues.
     public sealed class RoomClient
     {
+        public const string DefaultServer = "https://duma.kaigua.vip";
+        const string LegacyServer = "https://auth.kaigua.vip/prediction";
         readonly PredictionMod _mod;
         readonly ModContext _ctx;
         readonly ConfigEntry<string> _url, _name;
@@ -40,7 +42,7 @@ namespace YxPrediction
         public void CreateWebCode()
         {
             if (Busy) return;
-            if (!string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://auth.kaigua.vip/prediction/ 登录并绑定"; return; }
+            if (!string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://duma.kaigua.vip 登录并绑定"; return; }
             _afterRegister = "linkCode";
             if (string.IsNullOrEmpty(_token)) { var register=Body("register");register["name"]=_name.Value;Send(register); }
             else ConnectReady();
@@ -83,7 +85,8 @@ namespace YxPrediction
         public RoomClient(PredictionMod mod, ModContext ctx)
         {
             _mod = mod; _ctx = ctx;
-            _url = ctx.Config.Bind("online", "server", "https://auth.kaigua.vip/prediction", "独立娱乐积分房间服务地址；外网使用HTTPS");
+            _url = ctx.Config.Bind("online", "server", DefaultServer, "独立娱乐马币房间服务地址；外网使用HTTPS");
+            if (_url.Value.Trim().TrimEnd('/') == LegacyServer) _url.Value = DefaultServer;
             _name = ctx.Config.Bind("online", "name", "观众", "房间昵称（首次注册时使用，1至24字）");
             ReadIdentity();
             _finals = RoomFinalSync.Read(ctx.Data.Get<Dictionary<string, object>>(RoomFinalSync.SaveKey, null));
@@ -96,11 +99,14 @@ namespace YxPrediction
             _endpoint = _url.Value.Trim().TrimEnd('/');
             _reliefSeen = 0;
             var saved = _ctx.Data.Get<Dictionary<string, object>>("room.identity.v1", null);
-            if (saved != null && Json.GetString(saved, "server", "") == _endpoint)
+            string savedServer = Json.GetString(saved, "server", "");
+            bool migrate = _endpoint == DefaultServer && savedServer == LegacyServer;
+            if (saved != null && (savedServer == _endpoint || migrate))
             {
                 _token = Json.GetString(saved, "token", ""); _code = Json.GetString(saved, "code", "");
                 _reliefSeen = (long)Json.GetNumber(saved, "reliefSeen", 0);
                 _pending = saved.ContainsKey("pending") ? saved["pending"] as Dictionary<string, object> : null;
+                if (migrate) SaveIdentity();
             }
         }
         void SaveIdentity()
@@ -258,7 +264,7 @@ namespace YxPrediction
         public void Leave()
         {
             if (Busy) { Message = "先等待在途操作确认后再离开"; return; }
-            _code = null; State = null; SaveIdentity(); Message = "已离开；已投入的积分仍留在原房间等待结算，可用原房间号重连";
+            _code = null; State = null; SaveIdentity(); Message = "已离开；已投入的马币仍留在原房间等待结算，可用原房间号重连";
         }
         public void Trade(string kind, int player, int rank, long stake)
         {
@@ -348,7 +354,7 @@ namespace YxPrediction
             }
             if (_match != null && _request == null)
             {
-                if (_match.Expired(Time.unscaledTime)) { _match = null; Message = "未在90秒内进入目标实时观战，匹配已取消；没有扣除积分"; }
+                if (_match.Expired(Time.unscaledTime)) { _match = null; Message = "未在90秒内进入目标实时观战，匹配已取消；没有扣除马币"; }
                 else if (_match.CanJoin(_mod.Snapshot, Time.unscaledTime))
                 {
                     var join = Body("join"); join["code"] = _match.Code; join["gameId"] = _match.GameId;
@@ -380,7 +386,7 @@ namespace YxPrediction
                         if (Json.GetString(_sent, "action", "") == "register")
                         { _token = Json.GetString(data, "token", ""); _reliefSeen = 0; SaveIdentity(); connect = true; }
                         else if (Json.GetString(_sent,"action","") == "linkCode")
-                        { WebCode=Json.GetString(data,"code","");_webCodeUntil=Time.unscaledTime+295;GUIUtility.systemCopyBuffer=WebCode;Message="已复制绑定码 "+WebCode+"；5分钟内到 auth.kaigua.vip/prediction/ 登录并绑定"; }
+                        { WebCode=Json.GetString(data,"code","");_webCodeUntil=Time.unscaledTime+295;GUIUtility.systemCopyBuffer=WebCode;Message="已复制绑定码 "+WebCode+"；5分钟内到 duma.kaigua.vip 登录并绑定"; }
                         else if (Json.GetString(_sent,"action","") == "list")
                         { Browser = RoomBrowser.Read(data); Message = Browser.Total == 0 ? "暂无在线公开房间" : "选择公开房间加入观战"; }
                         else if (Json.GetString(_sent,"action","") == "findGame")
@@ -394,7 +400,7 @@ namespace YxPrediction
                             State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
-                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules>=3?"只猜冠军；第二返25%，第三返10%；第10回合起封盘":State.Rules==2?"旧持仓沿用差一名25%规则，仅可减持或等待结算":"旧房间沿用原资金池结算规则";
+                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 马币" : State.Rules>=3?"只猜冠军；第二返25%，第三返10%；第10回合起封盘":State.Rules==2?"旧持仓沿用差一名25%规则，仅可减持或等待结算":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }
@@ -411,7 +417,7 @@ namespace YxPrediction
                     if (entered)
                     {
                         _match = selected;
-                        Message = "已匹配房间 " + selected.Code + "，请确认游戏原生观战提示；进入相同实时对局后自动加入，不会自动投入积分";
+                        Message = "已匹配房间 " + selected.Code + "，请确认游戏原生观战提示；进入相同实时对局后自动加入，不会自动投入马币";
                     }
                     else Message = error;
                 }

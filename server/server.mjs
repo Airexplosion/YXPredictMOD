@@ -4,11 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Rooms, RoomError } from './rooms.mjs';
 import { PredictionWeb } from './web.mjs';
+import { createAuthRelay } from './auth.mjs';
 
 export function createHandler(rooms, options = {}) {
   const buckets = new Map();
   const web = new PredictionWeb(rooms, options);
-  const webOrigin = options.webOrigin ?? process.env.PREDICTION_WEB_ORIGIN ?? 'https://auth.kaigua.vip';
+  const webOrigin = options.webOrigin ?? process.env.PREDICTION_WEB_ORIGIN ?? 'https://duma.kaigua.vip';
+  const relayAuth = createAuthRelay({...options,webOrigin});
   return async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -29,13 +31,14 @@ export function createHandler(rooms, options = {}) {
       const requestUrl = new URL(req.url,'http://localhost');
       if (req.method === 'GET' && requestUrl.pathname === '/web/leaderboard') { res.end(JSON.stringify({ok:true,data:web.leaderboard(Number(requestUrl.searchParams.get('page')??0))}));return; }
       if (req.method === 'GET' && req.url === '/web/me') { res.end(JSON.stringify({ok:true,data:web.me(web.identity(req.headers['x-prediction-identity']))}));return; }
-      if (req.method !== 'POST' || !['/v1/room','/web/bind','/web/profile'].includes(req.url)) throw new RoomError('接口不存在', 404);
-      if(req.url.startsWith('/web/')&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
+      if (req.method !== 'POST' || !['/v1/room','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket'].includes(req.url)) throw new RoomError('接口不存在', 404);
+      if((req.url.startsWith('/web/')||req.url.startsWith('/auth/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
       let size = 0, chunks = [];
       for await (const chunk of req) { size += chunk.length; if (size > 32768) throw new RoomError('请求过大', 413); chunks.push(chunk); }
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RoomError('JSON无效'); }
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
-      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']); const data=req.url==='/web/bind'?web.bind(user,body.code):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
+      if(req.url.startsWith('/auth/')){await relayAuth(req,res,body);return;}
+      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']); const data=req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
       const key = req.headers.authorization?.replace(/^Bearer /, '');
       if (body.action !== 'register' && body.identity !== undefined) rooms.identify(key, body.identity);
       let result;
