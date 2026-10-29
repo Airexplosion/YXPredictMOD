@@ -52,7 +52,7 @@ namespace YxPrediction
 }
 internal static class Program
 {
-    const string Id="review.client", Server="https://auth.kaigua.vip/prediction";
+    const string Id="review.client", Server="https://duma.kaigua.vip";
     static void Require(bool ok,string error) { if(!ok)throw new Exception(error); }
     static void Set(object target,string field,object value) { target.GetType().GetField(field,BindingFlags.NonPublic|BindingFlags.Instance).SetValue(target,value); }
     static MatchSnapshot Snapshot(bool ended=false,int known=8)
@@ -192,6 +192,7 @@ internal static class Program
         ReliefReceipts();Console.WriteLine("PASS actual relief receipts notify once across polling, reload and a later grant");
         ReliefOnFinalRetry();Console.WriteLine("PASS final retries preserve relief notices and isolate another server's grants");
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
+        DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
     }
     static void ReliefReceipts()
     {
@@ -257,6 +258,21 @@ internal static class Program
             Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-1234567890","Code not copied");int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;
             mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count,"Fresh code was needlessly regenerated");
             UnityEngine.Time.unscaledTime=301;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Expired code reused");
+        }
+    }
+    static void DomainMigration()
+    {
+        using(var host=TestHost.Start())
+        {
+            UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
+            var pending=new Dictionary<string,object>{{"action","trade"},{"operation","migration-operation"},{"code","123456"}};
+            var identity=new Dictionary<string,object>{{"server","https://auth.kaigua.vip/prediction"},{"token",new string('b',48)},{"code","123456"},{"pending",pending},{"reliefSeen",2.0}};
+            var data=new Dictionary<string,object>{{"room.identity.v1",identity}};
+            var config=new Dictionary<string,object>{{"online",new Dictionary<string,object>{{"server","https://auth.kaigua.vip/prediction/"}}}};
+            var mod=host.Load<PredictionMod>(Id,"0.7.12",data:data,config:config);
+            var saved=mod.Ctx.Data.Get<Dictionary<string,object>>("room.identity.v1",null);
+            Require((string)saved["server"]==Server&&(string)saved["token"]==new string('b',48)&&Json.GetNumber(saved,"reliefSeen",0)==2,"Migration lost saved account identity: server="+(string)saved["server"]+" tokenMatches="+((string)saved["token"]==new string('b',48))+" relief="+Json.GetNumber(saved,"reliefSeen",0));
+            mod.Client.Update();Require(Last.url==Server+"/v1/room"&&(string)Last.Body["operation"]=="migration-operation","Pending operation changed on migration");
         }
     }
 }

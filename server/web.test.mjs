@@ -18,10 +18,35 @@ test('guide identity proof authenticates, expires and cannot be tampered or sign
 });
 test('binding requires one-time possession, cannot steal an owner and survives reloading',()=>{
  const x=setup(),code=x.web.issueCode(x.key).code;assert.equal(x.web.me(x.user).linked,false);
+ assert.equal(x.web.leaderboard().total,1);assert.equal(x.web.leaderboard().items[0].name,'原昵称');
  assert.throws(()=>x.web.bind(x.user,'TP-0000000000'));assert.equal(x.web.bind(x.user,code).linked,true);assert.throws(()=>x.web.bind(x.user,code));
  const code2=x.web.issueCode(x.key).code;assert.throws(()=>x.web.bind({...x.user,subject:other},code2));assert.equal(x.rooms.state.accounts[x.key].webOwner,subject);
  const reloaded=new PredictionWeb(new Rooms(structuredClone(x.rooms.state)),{bridgeKey});assert.equal(reloaded.me(x.user).accounts,1);
  const key=x.rooms.register('第二账户').token;x.web.bind(x.user,x.web.issueCode(key).code);assert.equal(x.web.me(x.user).balance,2000);
+});
+test('daily check-in adds 200 to the bound betting account once per China day and never inflates profit',()=>{
+ const x=setup();assert.throws(()=>x.web.checkIn(x.user));x.web.bind(x.user,x.web.issueCode(x.key).code);
+ const before=x.web.me(x.user);assert.equal(before.checkIn.claimed,false);
+ const first=x.web.checkIn(x.user);assert.equal(first.balance,1200);assert.equal(first.net,0);assert.equal(first.checkInReceipt.amount,200);
+ assert.equal(x.web.leaderboard().items[0].net,0);assert.equal(x.web.checkIn(x.user).checkInReceipt.duplicate,true);assert.equal(x.rooms.state.accounts[x.key].balance,1200);
+ x.web.rename(x.user,'改名后');assert.equal(x.web.checkIn(x.user).checkInReceipt.duplicate,true);
+ const second=x.rooms.register('第二账户').token;x.web.bind(x.user,x.web.issueCode(second).code);assert.equal(x.web.checkIn(x.user).checkInReceipt.duplicate,true);
+ x.time(Date.parse('1970-01-01T15:59:59.999Z'));assert.equal(x.web.checkIn(x.user).checkInReceipt.duplicate,true);
+ x.time(Date.parse('1970-01-01T16:00:00.000Z'));assert.equal(x.web.checkIn(x.user).checkInReceipt.amount,200);
+ assert.equal(x.rooms.state.accounts[x.key].balance,1400);assert.equal(x.rooms.state.accounts[second].balance,1000);
+ assert.equal(Object.keys(x.rooms.state.walletEvents).length,2);assert.equal(x.web.me(x.user).net,0);
+ const again=new PredictionWeb(new Rooms(structuredClone(x.rooms.state)),{bridgeKey,now:()=>Date.parse('1970-01-01T16:00:01Z')});assert.equal(again.checkIn(x.user).checkInReceipt.duplicate,true);
+});
+test('daily persistence errors roll back credit, profile and ledger, and balance limits reject safely',()=>{
+ let fail=false;const x=setup(()=>{if(fail)throw Error('disk');});x.web.bind(x.user,x.web.issueCode(x.key).code);const before=structuredClone(x.rooms.state);
+ fail=true;assert.throws(()=>x.web.checkIn(x.user));assert.deepEqual(x.rooms.state,before);fail=false;assert.equal(x.web.checkIn(x.user).balance,1200);
+ x.time(86400001);x.rooms.state.accounts[x.key].balance=1e12-100;assert.throws(()=>x.web.checkIn(x.user));assert.equal(x.rooms.state.accounts[x.key].balance,1e12-100);
+});
+test('unbound and bound accounts all rank, successful binding merges only that verified owner',()=>{
+ const x=setup(),otherKey=x.rooms.register('未绑定仙友').token;
+ assert.equal(x.web.leaderboard().total,2);x.web.bind(x.user,x.web.issueCode(x.key).code);assert.equal(x.web.leaderboard().total,2);
+ x.web.bind(x.user,x.web.issueCode(otherKey).code);assert.equal(x.web.leaderboard().total,1);assert.equal(x.web.leaderboard().items[0].name,x.user.name);
+ const board=JSON.stringify(x.web.leaderboard());for(const secret of [x.key,otherKey,subject])assert.equal(board.includes(secret),false);
 });
 test('binding code expires, replacement invalidates old code and failed persistence does not consume it',()=>{
  let fail=false;const x=setup(()=>{if(fail)throw new Error('disk');});

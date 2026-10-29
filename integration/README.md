@@ -1,3 +1,5 @@
+> 当前0.7.12已改为马币、独立赌马域名和全部账户上榜，并新增每日签到；详见[迁移说明](../docs/duma-migration-checkin.md)。下文为0.7.11接入方式或历史规则说明。
+
 # 接入现有攻略网页登录
 
 网页`server/web/`默认与攻略站同域。它使用原`/v1/guides/login`和`logout`，每次私有请求前从`/v1/guides/prediction-ticket`领取短期身份票，不读取HttpOnly登录Cookie，也不把攻略会话交给房间服务。

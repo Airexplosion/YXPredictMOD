@@ -1,3 +1,5 @@
+> 当前0.7.12已改为马币、独立赌马域名和全部账户上榜，并新增每日签到；详见[迁移说明](../docs/duma-migration-checkin.md)。下文为0.7.11接入方式或历史规则说明。
+
 # Independent free-points room server
 
 Node 22+; no third-party dependencies. Start with `node server/server.mjs` from the repository root, or run `node --test server/rooms.test.mjs` for tests.

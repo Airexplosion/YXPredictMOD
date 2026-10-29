@@ -209,7 +209,7 @@ export class Rooms {
           const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;
           requireThat(removed>0,'剩余权益不足减半，请使用清仓');
           const returned=sale(p.claim,r.quoteRates[input.player*8+p.rank-1],input.kind==='half');
-          requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'积分余额已达上限');
+          requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'马币余额已达上限');
           const released=Number(BigInt(p.stake)*BigInt(removed)/BigInt(p.claim));
           p.claim-=removed;p.stake-=released;account.balance+=returned;
           if(!p.claim)positions[input.player]=p=null;
@@ -222,7 +222,7 @@ export class Rooms {
       if (input.kind === 'buy' || input.kind === 'switch') {
         requireThat(integer(input.rank, 1, 8) && !r.ranks.includes(input.rank), '请选择仍可能的名次');
         if(r.rules>=2)requireThat(input.rank<=8-r.ranks.filter(Boolean).length&&r.quoteRates[input.player*8+input.rank-1]>0,'该名次已不可能达到');
-        requireThat(integer(input.stake, 1, 10000) && account.balance >= input.stake, '积分不足或投入须为1至10000整数');
+        requireThat(integer(input.stake, 1, 10000) && account.balance >= input.stake, '马币不足或投入须为1至10000整数');
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
         account.balance -= input.stake;
         if (p) {p.stake += input.stake;if(r.rules>=2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
@@ -239,7 +239,7 @@ export class Rooms {
       for(let i=0;i<8;i++){
         const p=ps[i];if(!p||p.resolved||!r.ranks[i])continue;
         const payout=returnFor(p.claim,p.rank,r.ranks[i],r.rules===3);
-        requireThat(this.state.accounts[key].balance+payout<=1000000000000,'积分余额已达上限');
+        requireThat(this.state.accounts[key].balance+payout<=1000000000000,'马币余额已达上限');
         this.state.accounts[key].balance+=payout;r.payouts[key]=(r.payouts[key]??0)+payout;p.payout=payout;p.resolved=true;
       }
     }

@@ -40,7 +40,7 @@ namespace YxPrediction
             _selected = 1;
             _index=index;
             _name.text=r.Names[index];_rank.text="冠军"; _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);
-            _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules>=2?r.Claims[index]:r.Stakes[index])+"分":"未持仓";
+            _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules>=2?r.Claims[index]:r.Stakes[index])+"马币":"未持仓";
             HorseMember horse=_mod.Horses.FindMember(focus);
             _bar.Badge.sprite=horse==null?null:_mod.Horses.GetSprite(horse.IconTitle);
             _bar.Badge.gameObject.SetActive(!_collapsed&&_bar.Badge.sprite!=null);

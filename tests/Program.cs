@@ -319,7 +319,7 @@ internal static partial class Program
     static void Demo()
     {
         var s = Snapshot(1); PredictionBook book = TradeBook(s);
-        Console.WriteLine("动态积分预测演示（模拟数据）：初始 " + book.Balance);
+        Console.WriteLine("动态马币预测演示（模拟数据）：初始 " + book.Balance);
         Buy(book, s, 0, 1, 100); Console.WriteLine("首轮押玩家1夺冠100分；正中权益 " + book.Find(s.Id).Positions[0].Claim);
         s.Round = 6; s.States[0] = new PlayerState(160, 5, 0, 0); book.Observe(s, null);
         Console.WriteLine("第6轮仍可交易；参考清仓值 " + TradingOdds.Sale(book.Find(s.Id), 0, false));

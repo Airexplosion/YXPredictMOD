@@ -35,7 +35,7 @@ namespace YxPrediction
 
         public override void OnLoad(ModContext ctx)
         {
-            _enabled = ctx.Config.Bind("prediction", "enabled", true, "允许积分预测；关闭后仍会结算已有投注");
+            _enabled = ctx.Config.Bind("prediction", "enabled", true, "允许马币预测；关闭后仍会结算已有投注");
             var initial = ctx.Config.Bind("prediction", "startingPoints", 1000, "仅首次创建存档使用，之后不会重置余额");
             if (ctx.Data.Has(SaveKey)) Book = BookCodec.Read(ctx.Data.Get<Dictionary<string, object>>(SaveKey, null));
             else Book = new PredictionBook(Math.Max(0, Math.Min(1000000, initial.Value)));
@@ -60,7 +60,7 @@ namespace YxPrediction
             ctx.Events.OnNetIn<Proto.BattleResult>(_bridge.OnBattleResult);
             ctx.Events.OnNetIn<Proto.AllBattleResults>(_bridge.OnAllBattleResults);
 #endif
-            ctx.Log.Info("观战预测已加载：本地积分模式，原生UI融合，认证时长接口未接入");
+            ctx.Log.Info("观战预测已加载：本地马币模式，原生UI融合，认证时长接口未接入");
         }
 
         public override void OnUpdate()
@@ -126,7 +126,7 @@ namespace YxPrediction
                     if (snapshot.LiveObserver && snapshot.IsEightPlayerMatch() && ratings != null
                         && Book.Find(snapshot.Id) == null && !Book.HasNewMarketCapacity)
                     {
-                        PreparationBlockedReason = "无法开盘：12局已有投注记录尚未结算，积分与持仓已保留";
+                        PreparationBlockedReason = "无法开盘：12局已有投注记录尚未结算，马币与持仓已保留";
                         Message = PreparationBlockedReason;
                     }
                     return;
@@ -134,7 +134,7 @@ namespace YxPrediction
                 PreparationError = null;
                 _lastPreparationError = null;
                 if (revision == Book.Revision && !switched && wasOpen == m.TradingWindowOpen && previousWait == m.TradingWaitReason) return;
-                if (m.Settled) Message = "本局已结算，返还 " + N(m.TotalPayout) + " 积分（含中奖本金）";
+                if (m.Settled) Message = "本局已结算，返还 " + N(m.TotalPayout) + " 马币（含中奖本金）";
                 else if (m.IsTrading) Message = m.TradingWindowOpen ? (m.ChampionOnly ? "只猜冠军：第二返中奖额25%，第三返10%；第10回合封盘" : "旧持仓可交易；差1名返正中总额25%；第10回合封盘") : m.TradingWaitReason;
                 else if (m.Locked) Message = "已封盘，等待整局结束及八人的最终名次";
                 else Message = m.HasAdjacentReward ? "每人独立下注；差1名返正中总额25%；第5轮结束封盘" : "旧盘口仅正中返还；每人独立下注；第5轮结束封盘";
@@ -160,14 +160,14 @@ namespace YxPrediction
 #endif
             if (expectedFocusUid != null && (expectedFocusUid != uid || FocusSelection.Uid(Snapshot) != expectedFocusUid)) return Report("观战对象已切换，请查看当前玩家后再操作");
             if (expectedMarketId != null && (Snapshot == null || Snapshot.Id != expectedMarketId)) return Report("观战对局已切换，请查看当前对局后再操作");
-            if (!Enabled) return Report("积分预测已关闭");
+            if (!Enabled) return Report("马币预测已关闭");
             var backup = BookCodec.Write(Book);
             int revision = Book.Revision;
             try
             {
                 string error = Book.Bet(Snapshot, uid, rank, stake);
                 if (revision != Book.Revision) Save();
-                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 积分");
+                return Report(error ?? "下注成功，已扣除 " + N(stake) + " 马币");
             }
             catch
             {
@@ -186,7 +186,7 @@ namespace YxPrediction
             if (expectedFocusUid != null && (expectedFocusUid != uid || FocusSelection.Uid(Snapshot) != expectedFocusUid)) return Report("观战对象已切换，请查看当前玩家后再操作");
             if (expectedMarketId != null && (Snapshot == null || Snapshot.Id != expectedMarketId)) return Report("观战对局已切换，请查看当前对局后再操作");
             if (PreparationError != null) return Report(PreparationError);
-            if ((action == 0 || action == 3) && !Enabled) return Report("积分预测已关闭，仍可减持或清仓已有持仓");
+            if ((action == 0 || action == 3) && !Enabled) return Report("马币预测已关闭，仍可减持或清仓已有持仓");
             Market activeMarket = Snapshot == null ? null : Book.Find(Snapshot.Id);
             if ((action == 0 || action == 3) && activeMarket != null && !activeMarket.ChampionOnly) return Report("旧盘口保留原持仓，请在新对局预测冠军");
             var backup = BookCodec.Write(Book);
@@ -202,7 +202,7 @@ namespace YxPrediction
                 bool relief = revision != Book.Revision && Save();
                 long delta = Book.Balance - before;
                 if (relief) delta -= PredictionBook.ReliefAmount;
-                return Report(error ?? "操作成功，余额变动 " + (delta >= 0 ? "+" : "") + N(delta) + " 分");
+                return Report(error ?? "操作成功，余额变动 " + (delta >= 0 ? "+" : "") + N(delta) + " 马币");
             }
             catch (Exception ex)
             {
@@ -220,7 +220,7 @@ namespace YxPrediction
             Context.Data.Set(SaveKey, BookCodec.Write(Book));
             if (relief)
             {
-                Context.Log.Info("无未结算投注且余额低于10分，自动发放50分救济金；当前余额 " + N(Book.Balance));
+                Context.Log.Info("无未结算投注且余额低于10马币，自动发放50马币救济金；当前余额 " + N(Book.Balance));
                 NotifyRelief(PredictionBook.ReliefAmount);
             }
             return relief;

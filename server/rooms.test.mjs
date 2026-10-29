@@ -35,7 +35,7 @@ test('all-in wagers block relief and duplicate purchases cannot manufacture poin
     assert.equal(result.reliefAmount,50);assert.equal(result.reliefRequiresNoPendingBets,true);
     assert.equal(result.balance,0);assert.equal(result.positions[0].stake,1000);assert.equal(saves,1);
     assert.equal(x.trade(x.a,0,1,1000,'buy','bankrupt-buy-001').balance,0);assert.equal(saves,1);
-    assert.throws(()=>x.trade(x.a,0,1,50,'buy','bankrupt-buy-002'),/积分不足/);
+    assert.throws(()=>x.trade(x.a,0,1,50,'buy','bankrupt-buy-002'),/马币不足/);
     assert.equal(x.rooms.view(x.code,x.a).positions[0].stake,1000);assert.equal(saves,1);
     const reloaded=new Rooms(structuredClone(x.rooms.state));
     assert.equal(reloaded.view(x.code,x.a).balance,0);
@@ -72,7 +72,7 @@ test('half and failed switch keep relief blocked; selling the last zero-value cl
   x.snapshot.round=2;x.snapshot.baseRates[0]=0;x.rooms.sync(x.code,x.a,x.snapshot);
   let result=x.trade(x.a,0,0,0,'half');assert.equal(result.balance,0);assert.ok(result.positions[0].claim>0);
   const before=structuredClone(x.rooms.state);
-  assert.throws(()=>x.trade(x.a,0,2,1,'switch'),/积分不足/);assert.deepEqual(x.rooms.state,before);
+  assert.throws(()=>x.trade(x.a,0,2,1,'switch'),/马币不足/);assert.deepEqual(x.rooms.state,before);
   saves=0;result=x.trade(x.a,0,0,0,'sell','last-zero-sale');
   assert.equal(result.balance,50);assert.equal(result.positions[0],null);assert.equal(result.payout,0);assert.equal(saves,1);
   assert.equal(x.trade(x.a,0,0,0,'sell','last-zero-sale').balance,50);assert.equal(saves,1);

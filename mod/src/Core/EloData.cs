@@ -6,7 +6,7 @@ namespace YxPrediction
 {
     public static class EloData
     {
-        public const string BaseUrl = "https://raymondwrw.github.io/yxp-card-stats/data/elo/p/";
+        public const string BaseUrl = "https://elo.kaigua.vip/data/elo/p/";
         public static bool IsPublicUid(string uid)
         {
             if (uid == null || uid.Length != 24) return false;
