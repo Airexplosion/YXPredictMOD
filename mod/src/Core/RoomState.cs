@@ -15,25 +15,57 @@ namespace YxPrediction
         public bool ReliefRequiresNoPendingBets;
         public string Code, GameId;
         public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
-        public bool Host, Open, Settled;
+        public bool Host, Open, Settled, Forfeited, TradingClosed;
         public int Version, Round, Members, Rules;
         public int[] BaseRates=new int[64], QuoteRates=new int[64], Factors=new int[64];
         public long[] Claims=new long[8], FinalPayouts=new long[8];
         public long Balance, Payout;
         public readonly string[] Uids = new string[8], Names = new string[8];
-        public readonly int[] Ranks = new int[8], MyRanks = new int[8];
+        public string[] HorseTitles;
+        public bool HorseShuffle;
+        public readonly int[] Ranks = new int[8], MyRanks = new int[8], RankMinimum = new int[8], RankMaximum = new int[8];
+        public string ResultPlace(int player)
+        {
+            return RankMinimum[player] > 0 && RankMinimum[player] < RankMaximum[player]
+                ? "第" + RankMinimum[player].ToString(CultureInfo.InvariantCulture) + "–" + RankMaximum[player].ToString(CultureInfo.InvariantCulture) + "名同出" : "最终第" + Ranks[player].ToString(CultureInfo.InvariantCulture) + "名";
+        }
         public readonly long[] Stakes = new long[8], Pools = new long[64];
+        public bool HasPendingBets
+        {
+            get
+            {
+                if (Settled || Forfeited) return false;
+                for (int i = 0; i < 8; i++) if ((Rules < 2 || Ranks[i] == 0) && (Claims[i] > 0 || Stakes[i] > 0)) return true;
+                return false;
+            }
+        }
         public static RoomState Read(Dictionary<string, object> d)
         {
             var r = new RoomState();
             r.Code = Json.GetString(d, "code", ""); r.GameId = Json.GetString(d, "gameId", "");
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.AllowMatch = Json.GetBool(d, "allowMatch", true);
+            r.HorseShuffle = Json.GetBool(d, "horseShuffle", false);
+            var titles = Json.GetArray(d, "horseTitles");
+            if (titles != null)
+            {
+                if (titles.Count != 8) throw new FormatException("马匹称号维度错误");
+                r.HorseTitles = new string[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    string title = titles[i] as string;
+                    if (title == null || title.Length > 40) throw new FormatException("马匹称号格式错误");
+                    r.HorseTitles[i] = title;
+                }
+            }
             r.IsPublic = Json.GetBool(d, "isPublic", r.AllowMatch);
             r.ReliefAmount = (int)Json.GetNumber(d, "reliefAmount", 0);
             r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);
             r.ReliefRequiresNoPendingBets = Json.GetBool(d, "reliefRequiresNoPendingBets", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
+            r.Forfeited = Json.GetBool(d, "forfeited", false);
+            r.TradingClosed = Json.GetBool(d, "tradingClosed", false) || r.Round >= PredictionBook.BettingCloseRound;
+            r.Open = r.Open && !r.Forfeited && !r.TradingClosed;
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
             r.Rules=(int)Json.GetNumber(d,"rules",1);
             if(r.Rules>=2){
@@ -58,6 +90,10 @@ namespace YxPrediction
                 var player = players[i] as Dictionary<string, object>;
                 r.Uids[i] = Json.GetString(player, "uid", ""); r.Names[i] = Json.GetString(player, "name", "");
                 r.Ranks[i] = Convert.ToInt32(ranks[i], CultureInfo.InvariantCulture);
+                var minimum = Json.GetArray(d,"rankMinimum"); var maximum = Json.GetArray(d,"rankMaximum");
+                if ((minimum != null && minimum.Count != 8) || (maximum != null && maximum.Count != 8)) throw new FormatException("名次区间维度错误");
+                r.RankMinimum[i] = minimum == null ? r.Ranks[i] : Convert.ToInt32(minimum[i],CultureInfo.InvariantCulture);
+                r.RankMaximum[i] = maximum == null ? r.Ranks[i] : Convert.ToInt32(maximum[i],CultureInfo.InvariantCulture);
                 if (active != null) { if (!(active[i] is bool)) throw new FormatException("选手状态无效"); r.Active[i] = (bool)active[i]; }
                 if (r.Ranks[i] > 0) r.Active[i] = false;
                 var pos = positions[i] as Dictionary<string, object>;

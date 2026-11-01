@@ -37,10 +37,10 @@ namespace YxPrediction
             int index = -1; if (r != null) for(int i=0;i<8;i++) if(r.Uids[i]==focus) index=i;
             if(index<0) { _root.SetActive(false); return; }
             if (_uid != focus || _game != r.GameId || _room != r.Code) { _uid=focus;_game=r.GameId;_room=r.Code;_index=index;_stake.SetText("10"); }
-            _selected = 1;
+            _selected = r.Rules >= 3 ? 1 : r.MyRanks[index];
             _index=index;
-            _name.text=r.Names[index];_rank.text="冠军"; _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);
-            _holding.text=r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules>=2?r.Claims[index]:r.Stakes[index])+"马币":"未持仓";
+            _name.text=r.Names[index];_rank.text=r.Rules>=3?"冠军":_selected>0?"第"+PredictionMod.N(_selected)+"名（旧）":"旧盘口"; _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);
+            _holding.text=r.Forfeited && r.Ranks[index]==0 ? "离场已放弃" : r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules>=2?r.Claims[index]:r.Stakes[index])+"马币":"未持仓";
             HorseMember horse=_mod.Horses.FindMember(focus);
             _bar.Badge.sprite=horse==null?null:_mod.Horses.GetSprite(horse.IconTitle);
             _bar.Badge.gameObject.SetActive(!_collapsed&&_bar.Badge.sprite!=null);

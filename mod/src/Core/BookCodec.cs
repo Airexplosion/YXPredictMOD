@@ -11,7 +11,7 @@ namespace YxPrediction
         public static Dictionary<string, object> Write(PredictionBook book)
         {
             var root = Obj();
-            root["version"] = 5;
+            root["version"] = 6;
             root["balance"] = book.Balance;
             var markets = new List<object>();
             root["markets"] = markets;
@@ -21,9 +21,11 @@ namespace YxPrediction
                 var row = Obj();
                 row["id"] = m.Id;
                 row["rules"] = m.RuleVersion;
+                row["horseShuffle"] = m.UseHorseShuffle;
                 row["round"] = m.HighestRound;
                 row["locked"] = m.Locked;
                 row["settled"] = m.Settled;
+                row["abandoned"] = m.Abandoned;
                 row["payout"] = m.TotalPayout;
                 var players = new List<object>();
                 var rates = new List<object>();
@@ -88,6 +90,9 @@ namespace YxPrediction
                 positions.Add(row);
             }
             for (int i = 0; i < 64; i++) rates.Add(m.QuoteRates[i]);
+            var minimum = new List<object>(); var maximum = new List<object>(); var rounds = new List<object>();
+            for (int i = 0; i < 8; i++) { minimum.Add(m.RankMinimum[i]); maximum.Add(m.RankMaximum[i]); rounds.Add(m.EliminationRounds[i]); }
+            data["rankMinimum"] = minimum; data["rankMaximum"] = maximum; data["eliminationRounds"] = rounds;
             data["states"] = states; data["rates"] = rates; data["known"] = known; data["positions"] = positions;
             return data;
         }
@@ -106,6 +111,22 @@ namespace YxPrediction
                 if (rank > 0) seen[rank] = true;
                 market.KnownRanks[i] = rank;
             }
+            if (data.ContainsKey("rankMinimum") || data.ContainsKey("rankMaximum") || data.ContainsKey("eliminationRounds"))
+            {
+                var minimum = Array(data,"rankMinimum",8,8); var maximum = Array(data,"rankMaximum",8,8); var rounds = Array(data,"eliminationRounds",8,8);
+                for (int i = 0; i < 8; i++)
+                {
+                    int low = ArrayNumber(minimum,i,0,8), high = ArrayNumber(maximum,i,0,8);
+                    market.RankMinimum[i] = low; market.RankMaximum[i] = high; market.EliminationRounds[i] = ArrayNumber(rounds,i,0,100000);
+                    if ((low == 0) != (high == 0) || low > high || (low > 0 && (market.KnownRanks[i] < low || market.KnownRanks[i] > high))) throw new FormatException("同出区间存档无效");
+                    if (low < high)
+                    {
+                        int members = 0;
+                        for (int j = 0; j < 8; j++) if (ArrayNumber(minimum,j,0,8) == low && ArrayNumber(maximum,j,0,8) == high && ArrayNumber(rounds,j,0,100000) == market.EliminationRounds[i]) members++;
+                        if (market.EliminationRounds[i] == 0 || members != high-low+1) throw new FormatException("同出分组存档无效");
+                    }
+                }
+            }
             var states = Array(data, "states", market.QuoteRound == 0 ? 0 : 8, market.QuoteRound == 0 ? 0 : 8);
             if (states.Count == 8)
             {
@@ -120,7 +141,7 @@ namespace YxPrediction
                 }
             }
             var rates = Array(data, "rates", 64, 64);
-            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(market.Ratings, market.QuoteStates, market.QuoteRound, market.ChampionOnly);
+            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(HorseShuffle.Ratings(market), market.QuoteStates, market.QuoteRound, market.ChampionOnly);
             for (int i = 0; i < 64; i++)
             {
                 int rate = ArrayNumber(rates, i, 0, Odds.MaximumRateBps);
@@ -140,7 +161,7 @@ namespace YxPrediction
                 if (p.Cost > p.Invested || p.Invested > p.Actions * Odds.MaximumStake || p.Claim > p.Invested * 50
                     || p.CashReturned + p.Claim > p.Invested * 50 || (p.Claim == 0 && (p.Rank != 0 || p.Cost != 0))
                     || (p.Claim > 0 && p.Rank == 0) || p.Resolved != (market.KnownRanks[i] > 0)
-                    || p.FinalPayout != (p.Resolved ? p.ReturnFor(market.KnownRanks[i]) : 0)) throw new FormatException("持仓记录损坏");
+                    || p.FinalPayout != (p.Resolved ? market.ReturnFor(i, market.KnownRanks[i]) : 0)) throw new FormatException("持仓记录损坏");
                 paid += p.FinalPayout;
             }
             if (paid != market.TotalPayout) throw new FormatException("逐人结算总额损坏");
@@ -182,7 +203,7 @@ namespace YxPrediction
         public static PredictionBook Read(Dictionary<string, object> root)
         {
             if (root == null) throw new FormatException("马币存档为空");
-            int formatVersion = (int)Number(root, "version", 1, 5);
+            int formatVersion = (int)Number(root, "version", 1, 6);
             var book = new PredictionBook(Number(root, "balance", 0, Odds.MaximumBalance));
             var markets = Array(root, "markets", 0, 12);
             for (int n = 0; n < markets.Count; n++)
@@ -206,9 +227,12 @@ namespace YxPrediction
                 for (int i = 0; i < 64; i++) rates[i] = ArrayNumber(rawRates, i, 10100, Odds.MaximumRateBps);
                 int rules = formatVersion == 1 ? Odds.ExactOnlyRuleVersion : (int)Number(row, "rules", Odds.ExactOnlyRuleVersion, formatVersion == 2 ? Odds.AdjacentRuleVersion : Odds.CurrentRuleVersion);
                 var market = new Market(id, players, ratings, rates, rules);
+                market.UseHorseShuffle = formatVersion >= 6 && Json.GetBool(row, "horseShuffle", false);
                 market.HighestRound = (int)Number(row, "round", 1, 100000);
                 market.Locked = Json.GetBool(row, "locked", false);
                 market.Settled = Json.GetBool(row, "settled", false);
+                market.Abandoned = Json.GetBool(row, "abandoned", false);
+                if (market.Abandoned && (!market.Locked || market.Settled)) throw new FormatException("离场放弃状态损坏");
                 market.TotalPayout = Number(row, "payout", 0, Odds.MaximumBalance);
                 if (formatVersion >= 4)
                 {
@@ -271,7 +295,7 @@ namespace YxPrediction
                         if (seen[rank]) throw new FormatException("最终名次重复");
                         seen[rank] = true;
                         market.FinalRanks[i] = rank;
-                        if (market.IsTrading && rank != market.KnownRanks[i]) throw new FormatException("最终名次与逐人结算不符");
+                        if (market.IsTrading && rank != market.KnownRanks[i] && (market.RankMinimum[i] == 0 || rank < market.RankMinimum[i] || rank > market.RankMaximum[i])) throw new FormatException("最终名次与逐人结算不符");
                         Ticket ticket = market.Tickets[i];
                         if (ticket != null) payout += ticket.ReturnFor(rank, market.RuleVersion);
                     }

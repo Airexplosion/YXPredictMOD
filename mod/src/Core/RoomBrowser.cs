@@ -37,7 +37,7 @@ namespace YxPrediction
     {
         public static bool CanTrade(RoomState room, MatchSnapshot snapshot, int player)
         {
-            if (room == null || snapshot == null || player < 0 || player >= 8 || !room.Open || room.Settled
+            if (room == null || snapshot == null || player < 0 || player >= 8 || !room.Open || room.Settled || room.Forfeited || room.TradingClosed
                 || room.Round >= PredictionBook.BettingCloseRound || snapshot.Round >= PredictionBook.BettingCloseRound
                 || room.GameId != snapshot.Id || !room.Active[player] || room.Ranks[player] > 0 || snapshot.Players == null || snapshot.States == null) return false;
             for (int i = 0; i < snapshot.Players.Length; i++)

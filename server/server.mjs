@@ -47,15 +47,16 @@ export function createHandler(rooms, options = {}) {
       switch (body.action) {
         case 'register': result = rooms.register(body.name); break;
         case 'linkCode': result = web.issueCode(key); break;
-        case 'create': if(rooms.championOnly&&(body.protocol!==3||!body.snapshot?.baseRates))throw new RoomError('请更新至0.7.11并等待冠军倍率就绪后创建房间',409);result = rooms.create(key, body.snapshot, body.allowMatch, body.isPublic); break;
+        case 'create': if(rooms.championOnly&&(![3,4].includes(body.protocol)||!body.snapshot?.baseRates))throw new RoomError('请更新MOD并等待冠军倍率就绪后创建房间',409);if(body.snapshot?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后创建随机换档房间',409);result = rooms.create(key, body.snapshot, body.allowMatch, body.isPublic); break;
         case 'list': result = rooms.list(key, body.page); break;
-        case 'join': if(rooms.state.rooms[body.code]?.rules===3&&body.protocol!==3)throw new RoomError('请更新至0.7.11后加入冠军预测房间',409);result = rooms.join(body.code, key, body.gameId); break;
+        case 'join': if(rooms.state.rooms[body.code]?.rules===3&&![3,4].includes(body.protocol))throw new RoomError('请更新MOD后加入冠军预测房间',409);if(rooms.state.rooms[body.code]?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后加入随机换档房间',409);result = rooms.join(body.code, key, body.gameId); break;
         case 'findGame': result = rooms.findByGame(key, body.nativeId); break;
         case 'lookup': result = rooms.lookup(key, body.code); break;
         case 'random': result = rooms.random(key, body.exclude ?? ''); break;
         case 'view': result = rooms.view(body.code, key); break;
         case 'sync': result = rooms.sync(body.code, key, body.snapshot); break;
-        case 'trade': result = rooms.trade(body.code, key, body); break;
+        case 'trade': if(rooms.state.rooms[body.code]?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后参与随机换档房间',409);result = rooms.trade(body.code, key, body); break;
+        case 'abandon': result = rooms.abandon(body.code, key, body.gameId, body.operation); break;
         default: throw new RoomError('操作无效');
       }
       res.end(JSON.stringify({ok: true, data: result}));

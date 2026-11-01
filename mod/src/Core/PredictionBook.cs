@@ -5,6 +5,7 @@ namespace YxPrediction
 {
     public sealed class PredictionBook
     {
+        public const int TradingClosingRound = 10;
         public const long ReliefThreshold = 10;
         public const long ReliefAmount = 50;
         public const int BettingCloseRound = 10;
@@ -27,7 +28,7 @@ namespace YxPrediction
                 for (int n = 0; n < Markets.Count; n++)
                 {
                     Market market = Markets[n];
-                    if (market.Settled) continue;
+                    if (market.Settled || market.Abandoned) continue;
                     for (int i = 0; i < 8; i++)
                     {
                         if (!market.IsTrading && market.Tickets[i] != null) return false;
@@ -45,6 +46,28 @@ namespace YxPrediction
             Balance += ReliefAmount;
             Revision++;
             return true;
+        }
+
+        public static bool HasPendingBets(Market market)
+        {
+            if (market.Settled || market.Abandoned) return false;
+            for (int i = 0; i < 8; i++)
+                if (market.IsTrading ? !market.Positions[i].Resolved && market.Positions[i].Claim > 0 : market.Tickets[i] != null) return true;
+            return false;
+        }
+
+        public int AbandonExcept(string activeId)
+        {
+            int count = 0;
+            for (int n = 0; n < Markets.Count; n++)
+            {
+                Market market = Markets[n];
+                if (market.Id == activeId || !HasPendingBets(market)) continue;
+                market.Abandoned = true; market.Locked = true; market.TradingWindowOpen = false;
+                market.TradingWaitReason = "离场已放弃未结算投注，不退本金、不再返奖";
+                Revision++; count++;
+            }
+            return count;
         }
 
         public Market Find(string id)
@@ -71,7 +94,7 @@ namespace YxPrediction
             get
             {
                 if (Markets.Count < 12) return true;
-                for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled || !HasFinancialHistory(Markets[i])) return true;
+                for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled || Markets[i].Abandoned || !HasFinancialHistory(Markets[i])) return true;
                 return false;
             }
         }
@@ -87,7 +110,7 @@ namespace YxPrediction
                 if (Markets.Count >= 12)
                 {
                     int removable = -1;
-                    for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled) { removable = i; break; }
+                    for (int i = 0; i < Markets.Count; i++) if (Markets[i].Settled || Markets[i].Abandoned) { removable = i; break; }
                     // Never drop invested/previously sold/partially paid markets. Merely
                     // observing another game must not exhaust the accounting capacity.
                     if (removable < 0)
@@ -96,11 +119,18 @@ namespace YxPrediction
                     Markets.RemoveAt(removable);
                 }
                 market = new Market(snapshot.Id, snapshot.Players, ratings, Odds.Rates(ratings));
+                market.UseHorseShuffle = snapshot.ShuffleHorses;
+                if (market.UseHorseShuffle)
+                {
+                    int[] shuffled = Odds.Rates(HorseShuffle.Ratings(market));
+                    for (int i = 0; i < 64; i++) market.BaseRates[i] = shuffled[i];
+                }
                 Markets.Add(market);
                 Revision++;
             }
             // 同一局必须始终是同一组UID；不依赖列表顺序。
             for (int i = 0; i < 8; i++) if (market.FindPlayer(snapshot.Players[i].Uid) < 0) return null;
+            if (market.Abandoned) { market.TradingWaitReason = "离场已放弃未结算投注，不退本金、不再返奖"; return market; }
             if (!market.Settled && snapshot.Round >= market.HighestRound && snapshot.RemainingSwaps != null && snapshot.RemainingSwaps.Length == 8)
             {
                 for (int i = 0; i < 8; i++)
@@ -181,6 +211,8 @@ namespace YxPrediction
             if (snapshot.Round > market.HighestRound) { market.HighestRound = snapshot.Round; Revision++; }
             if (snapshot.ResultsThroughRound > market.ClosedThroughRound)
             { market.ClosedThroughRound = snapshot.ResultsThroughRound; TradingChange(market); }
+            if (!market.Locked && (market.HighestRound >= BettingCloseRound || market.ClosedThroughRound >= TradingClosingRound))
+            { market.Locked = true; TradingChange(market); }
             int[] final = FinalRanks(market, snapshot);
             PlayerState[] states = null;
             if (snapshot.States != null && snapshot.States.Length == 8)
@@ -192,34 +224,70 @@ namespace YxPrediction
                     states[market.FindPlayer(snapshot.Players[i].Uid)] = snapshot.States[i];
                 }
             }
-            var known = new int[8]; var seen = new bool[9];
-            if (final == null && states != null)
+            bool grouped = snapshot.EliminationRounds != null && snapshot.EliminationRounds.Length == 8;
+            for (int i = 0; i < 8; i++) if (market.EliminationRounds[i] > 0) grouped = true;
+            EliminationPlan plan = null;
+            int[] known;
+            if (grouped)
             {
-                int alive = 0;
-                for (int i = 0; i < 8; i++) if (states[i].Life > 0) alive++;
+                if (!snapshot.Ended && !snapshot.TradingOpen && !snapshot.RoundResultsComplete)
+                { market.TradingWaitReason = "等待本轮完整战果，防止把同出拆为单人结算"; return; }
+                var incoming = new int[8]; var rounds = new int[8]; var dead = new bool[8];
                 for (int i = 0; i < 8; i++)
-                    if ((states[i].Life > 0 && states[i].FinalRank != 0)
-                        || (states[i].Life <= 0 && states[i].FinalRank > 0 && states[i].FinalRank <= alive))
-                    { market.TradingWaitReason = "确定名次与存活人数尚未对齐"; return; }
+                {
+                    int at = market.FindPlayer(snapshot.Players[i].Uid);
+                    incoming[at] = final != null ? final[at] : states != null && states[at].Life <= 0 ? states[at].FinalRank : 0;
+                    dead[at] = final != null || (states != null && states[at].Life <= 0) || market.KnownRanks[at] > 0;
+                    rounds[at] = snapshot.EliminationRounds == null ? 0 : snapshot.EliminationRounds[i];
+                }
+                try { plan = EliminationPlan.Build(incoming, rounds, dead, market.KnownRanks, market.RankMinimum, market.RankMaximum, market.EliminationRounds); }
+                catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
+                known = plan.Ranks;
+                if (states != null)
+                    for (int i = 0; i < 8; i++) if (dead[i] && known[i] > 0) states[i] = new PlayerState(states[i].Life, states[i].Wins, states[i].Losses, known[i]);
             }
-            for (int i = 0; i < 8; i++)
+            else
             {
-                int rank = final != null ? final[i] : (states != null && states[i].Life <= 0 ? states[i].FinalRank : 0);
-                if (rank == 0) rank = market.KnownRanks[i];
-                if ((market.KnownRanks[i] > 0 && rank != market.KnownRanks[i]) || (rank > 0 && seen[rank])
-                    || (final == null && market.KnownRanks[i] > 0 && states != null && states[i].Life > 0))
-                { market.TradingWaitReason = "淘汰名次正在同步"; return; }
-                known[i] = rank; if (rank > 0) seen[rank] = true;
+                known = new int[8]; var seen = new bool[9];
+                if (final == null && states != null)
+                {
+                    int alive = 0;
+                    for (int i = 0; i < 8; i++) if (states[i].Life > 0) alive++;
+                    for (int i = 0; i < 8; i++)
+                        if ((states[i].Life > 0 && states[i].FinalRank != 0)
+                            || (states[i].Life <= 0 && states[i].FinalRank > 0 && states[i].FinalRank <= alive))
+                        { market.TradingWaitReason = "确定名次与存活人数尚未对齐"; return; }
+                }
+                for (int i = 0; i < 8; i++)
+                {
+                    int rank = final != null ? final[i] : (states != null && states[i].Life <= 0 ? states[i].FinalRank : 0);
+                    if (rank == 0) rank = market.KnownRanks[i];
+                    if ((market.KnownRanks[i] > 0 && rank != market.KnownRanks[i]) || (rank > 0 && seen[rank])
+                        || (final == null && market.KnownRanks[i] > 0 && states != null && states[i].Life > 0))
+                    { market.TradingWaitReason = "淘汰名次正在同步"; return; }
+                    known[i] = rank; if (rank > 0) seen[rank] = true;
+                }
+                int confirmed = 0;
+                for (int i = 0; i < 8; i++) if (known[i] > 0) confirmed++;
+                if (final == null)
+                    for (int i = 0; i < 8; i++) if (known[i] > 0 && known[i] <= 8 - confirmed)
+                    { market.TradingWaitReason = "淘汰名次尚未对齐，等待同轮完整结果"; return; }
             }
             // 先验证整批，再逐人结算；部分淘汰可以提前入账，最终结果不重复派奖。
             long payment = 0;
-            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += market.Positions[i].ReturnFor(known[i]);
-            if (payment > Odds.MaximumBalance - Balance) throw new InvalidOperationException("马币余额超过上限，保留待结算");
+            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += plan == null ? market.ReturnFor(i, known[i]) : market.ChampionOnly ? EliminationPlan.ChampionReturn(market.Positions[i].Claim, plan.Minimum[i], plan.Maximum[i]) : EliminationPlan.Return(market.Positions[i].Claim, market.Positions[i].Rank, plan.Minimum[i], plan.Maximum[i]);
+            if (payment > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过上限，保留待结算");
+            if (plan != null)
+                for (int i = 0; i < 8; i++)
+                {
+                    if (market.EliminationRounds[i] != plan.Rounds[i] || market.RankMinimum[i] != plan.Minimum[i] || market.RankMaximum[i] != plan.Maximum[i])
+                    { market.EliminationRounds[i] = plan.Rounds[i]; market.RankMinimum[i] = plan.Minimum[i]; market.RankMaximum[i] = plan.Maximum[i]; TradingChange(market); }
+                }
             for (int i = 0; i < 8; i++)
             {
                 if (known[i] == 0 || market.Positions[i].Resolved) continue;
                 Position position = market.Positions[i];
-                market.KnownRanks[i] = known[i]; position.FinalPayout = position.ReturnFor(known[i]); position.Resolved = true;
+                market.KnownRanks[i] = known[i]; position.FinalPayout = market.ReturnFor(i, known[i]); position.Resolved = true;
                 TradingChange(market);
             }
             Balance += payment; market.TotalPayout += payment;
@@ -230,8 +298,12 @@ namespace YxPrediction
                 if (final != null) { market.FinalRanks = final; market.Settled = true; TradingChange(market); }
                 return;
             }
-            if (market.HighestRound >= BettingCloseRound) { market.TradingWaitReason = "第10回合起已封盘，等待结算"; return; }
-            if (market.Locked) { market.TradingWaitReason = "已收到整局结束信号，等待最终名次"; return; }
+            if (market.Locked)
+            {
+                market.TradingWaitReason = market.HighestRound >= BettingCloseRound || market.ClosedThroughRound >= TradingClosingRound
+                    ? "第10回合起已封盘；已有投注继续结算" : "已收到整局结束信号，等待最终名次";
+                return;
+            }
             if (!snapshot.LiveObserver || !snapshot.TradingOpen || snapshot.Round <= market.ClosedThroughRound)
             { market.TradingWaitReason = "本轮交易暂停，等待下一轮修炼阶段"; return; }
             if (states == null) return;
@@ -244,7 +316,7 @@ namespace YxPrediction
             if (changed)
             {
                 int[] rates;
-                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round, market.ChampionOnly); }
+                try { rates = TradingOdds.Rates(HorseShuffle.Ratings(market), states, snapshot.Round, market.ChampionOnly); }
                 catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
                 market.QuoteStates = states; market.QuoteRates = rates; market.QuoteRound = snapshot.Round; TradingChange(market);
             }
@@ -258,7 +330,8 @@ namespace YxPrediction
             market = Find(snapshot.Id);
             if (market == null || !market.IsTrading) return "此盘口采用旧版固定投注规则";
             if (Observe(snapshot, null) == null) return "本局玩家信息不一致";
-            if (market.Settled || market.Locked || snapshot.Ended) return "本局交易已结束";
+            if (market.Abandoned) return "离场已放弃本局未结算投注，不能重新下注";
+            if (market.Settled || market.Locked || snapshot.Ended) return "本局已封盘，不能再交易";
             if (!market.TradingWindowOpen || snapshot.Round != market.QuoteRound) return market.TradingWaitReason ?? "当前交易暂停";
             index = market.FindPlayer(uid);
             if (index < 0) return "该玩家不在本局";

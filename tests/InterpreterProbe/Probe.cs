@@ -26,6 +26,16 @@ namespace YxPrediction
                 ratings[i] = new Rating(4400 - i * 160, 150, true);
                 players[i] = new Player("player" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "player", false);
             }
+            var shuffled = new MatchSnapshot { Id = "probe-shuffle", Round = 1, LiveObserver = true, TradingOpen = true, Players = players, ShuffleHorses = true, States = new PlayerState[8] };
+            for (int i = 0; i < 8; i++) shuffled.States[i] = new PlayerState(100, 0, 0, 0);
+            var shuffledBook = new PredictionBook(1000); Market shuffledMarket = shuffledBook.Observe(shuffled, ratings);
+            int shuffledRate = shuffledMarket.QuoteRates[0], moved = 0; int[] sourceSlots = HorseShuffle.Sources(shuffled.Id, players);
+            for (int i = 0; i < 8; i++) if (sourceSlots[i] != i) moved++;
+            if (moved != 2 && moved != 3) throw new Exception("Shuffle cycle failed");
+            if (shuffledBook.Buy(shuffled, players[0].Uid, 1, 37, shuffledMarket.TradeVersion) != null) throw new Exception("Shuffled purchase failed");
+            shuffledBook = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(shuffledBook))));
+            if (!shuffledBook.Find(shuffled.Id).UseHorseShuffle || shuffledBook.Find(shuffled.Id).QuoteRates[0] != shuffledRate || shuffledBook.Balance != 963) throw new Exception("Shuffle persistence changed odds or funds");
+            if (HorseShuffle.Titles(shuffledBook.Find(shuffled.Id)).Length != 8) throw new Exception("Shuffled titles missing");
             var snapshot = new MatchSnapshot { Id = "probe", Round = 2, LiveObserver = true, Players = players };
             var book = new PredictionBook(1000);
             book.Markets.Add(new Market(snapshot.Id, players, ratings, Odds.Rates(ratings, 2), 2));
@@ -47,10 +57,13 @@ namespace YxPrediction
             CapacityFlow(players, ratings);
             TradingFlow(players, ratings);
             ChampionFlow(players, ratings);
+            ChampionGroupedFlow(players, ratings);
             LifeFlow(players, ratings);
             SharedTrendsFlow(players, ratings);
             RankSelectionFlow(players, ratings);
             ProtocolRankFlow(players, ratings);
+            DepartureClosingFlow(players, ratings);
+            CohortFlow(players, ratings);
             HorseFlow(players, ratings);
             PanelLayoutFlow();
             RoomWireFixture.Verify();
@@ -143,6 +156,40 @@ namespace YxPrediction
             if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
         }
 
+        static void CohortFlow(Player[] players, Rating[] ratings)
+        {
+            for (int predicted = 6; predicted <= 8; predicted++)
+            {
+                var states = new PlayerState[8]; for (int i = 0; i < 8; i++) states[i] = new PlayerState(100,0,0,0);
+                var s = new MatchSnapshot { Id = "cohort", Round = 4, LiveObserver = true, TradingOpen = true, Players = players, States = states, EliminationRounds = new int[8] };
+                var b = HistoricalBook(s,ratings); Market m = b.Find(s.Id); b.Buy(s,players[7].Uid,predicted,100,m.TradeVersion); long claim = m.Positions[7].Claim;
+                s.Round=5;s.TradingOpen=false;s.RoundResultsComplete=true;s.EliminationRounds[6]=s.EliminationRounds[7]=5;
+                states[6]=states[7]=new PlayerState(0,2,3,0);b.Observe(s,null);
+                long expected=900+(predicted==6?0:claim);
+                if (b.Balance!=expected || !m.Positions[7].Resolved || m.RankMinimum[7]!=7 || m.RankMaximum[7]!=8) throw new Exception("Cohort payout failed");
+                b=BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b))));b.Observe(s,null);
+                s.Ended=true;s.Ranks=new int[]{1,2,3,4,5,6,8,7};b.Observe(s,null);
+                if(b.Balance!=expected || !b.Find(s.Id).Settled) throw new Exception("Cohort reload/final paid twice");
+            }
+        }
+
+        static void DepartureClosingFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var s = new MatchSnapshot { Id = "departure-close", Round = 9, LiveObserver = true, TradingOpen = true, Players = players, States = states };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            if (b.Buy(s, players[0].Uid, 1, 1000, m.TradeVersion) != null) throw new Exception("Round ten purchase failed");
+            s.Round = 10; s.ResultsThroughRound = 10; b.Observe(s, null);
+            if (!m.Locked || m.TradingWindowOpen || b.Sell(s, players[0].Uid, false, m.TradeVersion) == null) throw new Exception("Round ten close failed");
+            if (b.AbandonExcept(null) != 1 || !b.GrantBankruptcyRelief() || b.Balance != 50) throw new Exception("Departure relief failed");
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b))));
+            if (!b.Find(s.Id).Abandoned || b.GrantBankruptcyRelief()) throw new Exception("Departure was not persistent");
+            var queue = new RoomDepartureSync(); queue.Capture("https://example.test", "token", "123456", s.Id);
+            queue = RoomDepartureSync.Read(Json.ParseObject(Json.Serialize(queue.Write())));
+            if (queue.Count != 1 || !queue.Confirm(queue.At(0), "123456", s.Id, true) || queue.Count != 0) throw new Exception("Departure queue failed");
+        }
+
         static void ProtocolRankFlow(Player[] players, Rating[] ratings)
         {
             var states = new PlayerState[8]; var ranks = new int[8];
@@ -160,7 +207,7 @@ namespace YxPrediction
             b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); m = b.Find(s.Id);
             for (int i = 0; i < 8; i++) { states[i] = GameRanks.ReadState(life[i], 0, 0, raw[i]); ranks[i] = GameRanks.FromProtocol(raw[i]); }
             b.Observe(s, null);
-            if (b.Balance != expected || m.KnownRanks[6] != 8 || !m.Positions[6].Resolved || m.TradingWindowOpen)
+            if (b.Balance != expected || m.KnownRanks[6] != 8 || !m.Positions[6].Resolved || m.TradingWindowOpen || !m.Locked)
                 throw new Exception("Normalized ranks did not recover pending rewards");
             s.Ended = true; b.Observe(s, null);
             if (!m.Settled || m.FinalRanks[5] != 1 || b.Balance != expected) throw new Exception("Zero based winner settlement failed");
@@ -239,6 +286,19 @@ namespace YxPrediction
             var b = new PredictionBook(1000);
             b.Markets.Add(new Market(s.Id, s.Players, ratings, Odds.Rates(ratings, 3), 3)); b.Observe(s, null); return b;
         }
+        static void ChampionGroupedFlow(Player[] players, Rating[] ratings)
+        {
+            var states=new PlayerState[8];for(int i=0;i<8;i++)states[i]=new PlayerState(100,0,0,0);
+            var s=new MatchSnapshot{Id="champion-group",Round=1,Players=players,States=states,LiveObserver=true,TradingOpen=true,EliminationRounds=new int[8]};
+            var book=new PredictionBook(1000);Market m=book.Observe(s,ratings);book.Buy(s,players[2].Uid,1,101,m.TradeVersion);long claim=m.Positions[2].Claim;
+            s.Round=9;s.TradingOpen=false;s.RoundResultsComplete=true;
+            for(int i=1;i<8;i++){states[i]=new PlayerState(0,0,0,i+1);s.EliminationRounds[i]=10-i;}
+            s.EliminationRounds[2]=s.EliminationRounds[1];states[1]=states[2]=new PlayerState(0,0,0,0);book.Observe(s,null);
+            if(m.Positions[2].FinalPayout!=claim/4 || book.Balance!=899+claim/4)throw new Exception("Champion cohort maximum failed");
+            book=BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));s.Ended=true;s.Ranks=new int[]{1,3,2,4,5,6,7,8};book.Observe(s,null);
+            if(book.Balance!=899+claim/4 || !book.Find(s.Id).Settled)throw new Exception("Champion grouped final repeated or reset reward");
+        }
+
         static void ChampionFlow(Player[] players, Rating[] ratings)
         {
             var states = new PlayerState[8]; for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);

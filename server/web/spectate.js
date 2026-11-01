@@ -28,11 +28,11 @@ async function join(){
 function draw(){
  if(!room)return;
  $('watch-code').textContent='仙府对局 · #'+room.code;$('watch-title').textContent=room.hostName+' 的观战席';
- $('watch-live').textContent=room.settled?'本局已结算':room.ended?'等待最终战果':!room.fresh?'战况来源离线':room.round>=10?'第 '+room.round+' 回合 · 已封盘':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段');
+ $('watch-live').textContent=room.settled?'本局已结算':room.ended?'等待最终战果':!room.fresh?'战况来源离线':(room.round>=10||room.tradingClosed)?'第 '+room.round+' 回合 · 已封盘':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段');
  $('watch-live').className=room.fresh&&!room.ended?'live-text':'muted';
- $('horse-grid').replaceChildren();
+ $('watch-rule').textContent=(room.horseShuffle?'本局随机交换2–3匹真人马的档位 · ':'只猜冠军 · ')+'第10回合封盘';$('horse-grid').replaceChildren();
  room.players.forEach((p,i)=>{const card=node('button',undefined,'horse-card c'+i+(i===selected?' selected':''));card.type='button';card.setAttribute('aria-pressed',String(i===selected));card.onclick=()=>{selected=i;draw()};
-  const head=node('div',undefined,'horse-card-head');head.append(node('span',String(i+1).padStart(2,'0'),'horse-number'),node('span',p.rank?'第 '+p.rank+' 名':p.active?'在场':'已退出','horse-state'));card.append(head,node('h3',p.name));
+  const head=node('div',undefined,'horse-card-head');head.append(node('span',String(i+1).padStart(2,'0'),'horse-number'),node('span',p.rank?(p.rankMinimum<p.rankMaximum?'第 '+p.rankMinimum+'–'+p.rankMaximum+'名同出':'第 '+p.rank+' 名'):p.active?'在场':'已退出','horse-state'));card.append(head,node('h3',p.name),node('span',p.horseTitle||'','horse-tier'));
   const life=node('div',undefined,'horse-life');life.append(node('strong',p.state?String(p.state.life):'—'),node('span','命元'));card.append(life);
   card.append(node('p',p.state?p.state.wins+'胜 / '+p.state.losses+'负':'等待公开战况','muted'));
   const quote=node('div',undefined,'horse-quote');quote.append(node('span','冠军倍率'),node('strong',p.quoteRate?rate(p.quoteRate):'—'));card.append(quote,node('small',p.baseRate?'基础 '+rate(p.baseRate)+' × 系数 '+rate(p.factor):'等待基础倍率','muted'));
@@ -75,8 +75,8 @@ function drawBet(){
  $('watch-join').hidden=joined;$('watch-join').textContent=!window.predictionMe?'登录并入席':window.predictionMe.linked?'加入此房间':'开通马币后入席';$('bet-controls').hidden=!joined;
  $('bet-quote').textContent=p.quoteRate?rate(p.quoteRate):'—';const claim=Number.isSafeInteger(amount)&&amount>0?Math.floor(amount*p.quoteRate/10000):0;
  $('bet-return').textContent=fmt(claim)+' 马币';$('bet-partial').textContent=fmt(Math.floor(claim/4))+' / '+fmt(Math.floor(claim/10));
- $('held-position').textContent=position?fmt(position.stake)+' 马币':'暂无投入';$('held-claim').textContent=position?'锁定冠军返还 '+fmt(position.claim??0)+' 马币'+(position.resolved?' · 已结算':''):'';
- let reason=room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':!room.fresh?'战况来源暂时离线，已暂停交易。':room.round>=10?'第10回合起已封盘，等待本局结算。':!room.open?'等待下一修炼阶段开放交易。':!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有持仓，请加入新的冠军预测房间。':'';
+ $('held-position').textContent=position?fmt(position.stake)+' 马币':'暂无投入';$('held-claim').textContent=position?(wallet?.forfeited?'已离场放弃，不再返还':'锁定冠军返还 '+fmt(position.claim??0)+' 马币'+(position.resolved?' · 已结算':'')):'';
+ let reason=wallet?.forfeited?'已离场放弃本局持仓，仅可查看，不再返还。':room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':!room.fresh?'战况来源暂时离线，已暂停交易。':(room.round>=10||room.tradingClosed)?'第10回合起已封盘，等待本局结算。':!room.open?'等待下一修炼阶段开放交易。':!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有持仓，请加入新的冠军预测房间。':'';
  if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=reason;$('bet-retry').hidden=!pending||pending.owner!==window.predictionMe?.id;
  $('bet-buy').disabled=busy||!!reason||!Number.isSafeInteger(amount)||amount<1||amount>10000||amount>(wallet?.balance??0);
  $('bet-half').disabled=$('bet-sell').disabled=busy||!!reason||!position||position.resolved;

@@ -100,3 +100,11 @@ test('web HTTP serves CSP assets, public ranking, authenticated profile and same
   const me=await fetch(base+'/web/me',{headers});assert.equal((await me.json()).data.linked,true);
  }finally{await new Promise(r=>server.close(r));}
 });
+test('forfeited wagers are realized losses, not held capital, and cannot receive future champion rewards',()=>{
+ const x=setup();const snapshot={id:'forfeit-stats',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'p'+i,name:'p'+i})),ranks:Array(8).fill(0),baseRates:Array(64).fill(40000)};
+ const code=x.rooms.create(x.key,snapshot).code;x.rooms.trade(code,x.key,{kind:'buy',player:0,rank:1,stake:1000,version:x.rooms.view(code,x.key).version,operation:'forfeit-all-in'});
+ x.rooms.abandon(code,x.key,snapshot.id,'forfeit-departure');
+ assert.equal(x.web.leaderboard().items[0].net,-1000);assert.equal(x.web.totals().get(x.key).held,0);assert.equal(x.rooms.state.accounts[x.key].balance,50);
+ snapshot.round=15;snapshot.ended=true;snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(code,x.key,snapshot);
+ assert.equal(x.rooms.state.accounts[x.key].balance,50);assert.equal(x.web.leaderboard().items[0].net,-1000);
+});

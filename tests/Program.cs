@@ -25,6 +25,7 @@ internal static partial class Program
             True(PublicCardSequence.Copy(new int[9]) == null);
             True(PublicCardSequence.Copy(new int[] { -1 }) == null);
         });
+        HorseShuffleChecks();
         Check("equal Elo gives uniform rank probabilities", delegate
         {
             double[] p = Odds.Probabilities(Ratings(false));
@@ -268,6 +269,7 @@ internal static partial class Program
         MarketCapacityChecks();
         TradingChecks();
         ChampionChecks();
+        ChampionCohortChecks();
         LifeChecks();
         LifeShareChecks();
         TrendChecks();
@@ -276,6 +278,8 @@ internal static partial class Program
         HorseChecks();
         PanelLayoutChecks();
         ReliefChecks();
+        DepartureAndClosingChecks();
+        CohortChecks();
         ReliefNoticeChecks();
         Check("room final snapshots persist, keep complete ranks and require matching settlement confirmation", RoomFixFixture.VerifyFinals);
         Check("room rank drafts share purchased updates by UID and keep bought players first", RoomFixFixture.VerifySelections);

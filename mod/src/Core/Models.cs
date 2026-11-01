@@ -42,6 +42,9 @@ namespace YxPrediction
         public string FocusedUid;
         public int[] RemainingSwaps;
         public PublicBattle[] PublicBattles;
+        public int[] EliminationRounds;
+        public bool RoundResultsComplete;
+        public bool ShuffleHorses;
 
         public bool IsEightPlayerMatch()
         {
@@ -101,12 +104,20 @@ namespace YxPrediction
         public readonly Rating[] Ratings;
         public readonly int[] BaseRates;
         public readonly int RuleVersion;
+        public bool UseHorseShuffle;
         public bool HasAdjacentReward { get { return RuleVersion >= Odds.AdjacentRuleVersion; } }
         public bool IsTrading { get { return RuleVersion >= Odds.TradingRuleVersion; } }
         public bool ChampionOnly { get { return RuleVersion >= Odds.ChampionRuleVersion; } }
         public readonly Ticket[] Tickets = new Ticket[8];
         public readonly Position[] Positions = new Position[8];
         public readonly int[] KnownRanks = new int[8];
+        public readonly int[] RankMinimum = new int[8], RankMaximum = new int[8], EliminationRounds = new int[8];
+        public long ReturnFor(int player, int rank)
+        {
+            if (ChampionOnly) return RankMinimum[player] > 0 ? EliminationPlan.ChampionReturn(Positions[player].Claim, RankMinimum[player], RankMaximum[player]) : Positions[player].ReturnFor(rank);
+            return RankMinimum[player] > 0 ? EliminationPlan.Return(Positions[player].Claim, Positions[player].Rank, RankMinimum[player], RankMaximum[player])
+                : Positions[player].ReturnFor(rank);
+        }
         public readonly LifeHistory[] Life = new LifeHistory[8];
         public readonly SwapHistory[] Swaps = new SwapHistory[8];
         public PlayerState[] QuoteStates;
@@ -120,6 +131,7 @@ namespace YxPrediction
         public int HighestRound;
         public bool Locked;
         public bool Settled;
+        public bool Abandoned;
         public int[] FinalRanks;
         public long TotalPayout;
 

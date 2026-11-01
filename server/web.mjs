@@ -52,7 +52,8 @@ export class PredictionWeb {
     return {code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,version:r.version,rules:r.rules??1,
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,open:this.rooms.isOpen(r),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
-        state:r.states?.[i]??null,baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),frames:clonePublic(r.frames??[]),battles:clonePublic(r.battles??[])};
+        horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],state:r.states?.[i]??null,baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
+      horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),battles:clonePublic(r.battles??[])};
   }
   listRooms(page=0) {
     ensure(Number.isSafeInteger(page)&&page>=0&&page<=166,'房间页码无效');
@@ -72,7 +73,7 @@ export class PredictionWeb {
     } else if(body.action==='trade')this.rooms.trade(r.code,key,body);
     else ensure(body.action==='view','操作无效');
     const view=this.rooms.view(r.code,key);
-    return {room:this.watch(r),wallet:{name:this.rooms.displayName(key),balance:view.balance,positions:clonePublic(view.positions),payout:view.payout},me:this.me(user)};
+    return {room:this.watch(r),wallet:{name:this.rooms.displayName(key),balance:view.balance,positions:clonePublic(view.positions),payout:view.payout,forfeited:view.forfeited??false},me:this.me(user)};
   }
   bind(user,code) {
     ensure(typeof code==='string'&&/^TP-[A-F0-9]{10}$/.test(code.trim().toUpperCase()),'请输入MOD中显示的绑定码');
@@ -116,7 +117,7 @@ export class PredictionWeb {
     for(const room of Object.values(this.rooms.state.rooms))for(const key of room.members){
       const row=stats.get(key);if(!row)continue;
       const positions=room.positions[key]??[];
-      if(!room.settled)for(const p of positions)if(p&&!p.resolved)row.held+=p.stake;
+      if(!room.settled&&!room.forfeited?.[key])for(const p of positions)if(p&&!p.resolved)row.held+=p.stake;
       const played=positions.some(p=>p)||room.actionCounts?.[key]?.some(n=>n>0)||Object.keys(room.receipts).some(id=>id.startsWith(key+':'));
       if(played&&room.settled){row.games++;if((room.payouts[key]??0)>0)row.wins++;}
     }

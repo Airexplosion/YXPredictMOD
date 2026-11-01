@@ -1,5 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $cache = Join-Path $root '.cache/ILRuntime'
 $archive = Join-Path $cache 'v2.1.0.zip'

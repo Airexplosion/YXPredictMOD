@@ -42,7 +42,7 @@ internal static partial class Program
             ProtocolState(s, new int[] { -18, 48, 0, 29, -12, 74, -19, 66 }, new int[] { 4, 2, 5, 3, 6, 0, 7, 1 });
             b.Observe(s, null); Market m = b.Find(s.Id);
             Equal(m.KnownRanks[6], 8); True(m.Positions[6].Resolved); Equal(m.Positions[6].FinalPayout, 388L);
-            Equal(b.Balance, 1348L); True(!m.TradingWindowOpen); True(m.HighestRound >= PredictionBook.BettingCloseRound);
+            Equal(b.Balance, 1348L); True(!m.TradingWindowOpen && m.Locked);
             Equal(m.KnownRanks[0], 5); Equal(m.KnownRanks[2], 6); Equal(m.KnownRanks[4], 7);
             True(!m.Positions[1].Resolved && !m.Settled);
             b.Observe(s, null); b = Reload(b); b.Observe(s, null); Equal(b.Balance, 1348L);

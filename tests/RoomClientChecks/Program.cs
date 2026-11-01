@@ -57,12 +57,12 @@ internal static class Program
     static void Set(object target,string field,object value) { target.GetType().GetField(field,BindingFlags.NonPublic|BindingFlags.Instance).SetValue(target,value); }
     static MatchSnapshot Snapshot(bool ended=false,int known=8)
     {
-        var s=new MatchSnapshot {Id="game",Round=10,LiveObserver=true,TradingOpen=!ended,Ended=ended,Players=new Player[8],Ranks=new int[8]};
+        var s=new MatchSnapshot {Id="game",Round=9,LiveObserver=true,TradingOpen=!ended,Ended=ended,Players=new Player[8],Ranks=new int[8]};
         for(int i=0;i<8;i++){s.Players[i]=new Player("uid"+i,"player"+i,false);s.Ranks[i]=ended&&i<known?i+1:0;}return s;
     }
     static Dictionary<string,object> View(bool settled=false)
     {
-        var d=new Dictionary<string,object> {{"code","123456"},{"gameId","game"},{"host",true},{"members",1},{"round",10},{"version",0},{"open",!settled},{"settled",settled},{"balance",1000},{"payout",0}};
+        var d=new Dictionary<string,object> {{"code","123456"},{"gameId","game"},{"host",true},{"members",1},{"round",9},{"version",0},{"open",!settled},{"settled",settled},{"balance",1000},{"payout",0}};
         var players=new List<object>();var ranks=new List<object>();var positions=new List<object>();var pools=new List<object>();
         for(int i=0;i<8;i++){players.Add(new Dictionary<string,object>{{"uid","uid"+i},{"name","player"+i}});ranks.Add(settled?i+1:0);positions.Add(null);var pool=new List<object>();for(int j=0;j<8;j++)pool.Add(0);pools.Add(pool);}
         d["players"]=players;d["ranks"]=ranks;d["positions"]=positions;d["totals"]=pools;return d;
@@ -76,8 +76,8 @@ internal static class Program
     static PredictionMod Setup(TestHost host)
     {
         UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
-        var mod=host.Load<PredictionMod>(Id,"0.7.4");mod.Snapshot=Snapshot();
-        Set(mod.Client,"_token",new string('a',48));Set(mod.Client,"_code","123456");Set(mod.Client,"<State>k__BackingField",RoomState.Read(View()));
+        var mod=host.Load<PredictionMod>(Id,"0.7.4");mod.Snapshot=Snapshot();mod.Snapshot.States=new PlayerState[8];for(int i=0;i<8;i++)mod.Snapshot.States[i]=new PlayerState(100,0,0,0);
+        Set(mod.Client,"_token",new string('a',48));Set(mod.Client,"_code","123456");Set(mod.Client,"<State>k__BackingField",RoomState.Read(Json.ParseObject(Json.Serialize(View()))));
         return mod;
     }
     static int Pending(PredictionMod mod) { return RoomFinalSync.Read(mod.Ctx.Data.Get<Dictionary<string,object>>(RoomFinalSync.SaveKey,null)).Count; }
@@ -153,6 +153,90 @@ internal static class Program
             Complete(settled:true);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Pending(mod)==0,"Recovered book result was not confirmed");
         }
     }
+    static int Departures(PredictionMod mod) { return RoomDepartureSync.Read(mod.Ctx.Data.Get<Dictionary<string,object>>(RoomDepartureSync.SaveKey,null)).Count; }
+    static void Holding(PredictionMod mod)
+    {
+        var state=View();((List<object>)state["positions"])[0]=new Dictionary<string,object>{{"rank",1},{"stake",1000}};
+        Set(mod.Client,"<State>k__BackingField",RoomState.Read(Json.ParseObject(Json.Serialize(state))));
+    }
+    static void CompleteDeparture(bool ack=true,long relief=1,string game="game")
+    {
+        var data=View();data["gameId"]=game;data["abandonConfirmed"]=ack;data["forfeited"]=true;data["open"]=false;data["balance"]=50;data["reliefCount"]=relief;
+        Last.isDone=true;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",data}});
+    }
+    static void DepartureDelivery()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);
+            mod.Client.ObserveLocation("game");Require(Departures(mod)==0,"Focus change forfeited same game");
+            mod.Snapshot=null;mod.Client.ObserveLocation(null);Require(Departures(mod)==1,"Departure not persisted immediately");
+            mod.Client.Update();Require((string)Last.Body["action"]=="abandon","Departure action not sent");
+            string operation=(string)Last.Body["operation"];
+            CompleteDeparture(false);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Departures(mod)==1,"Legacy response confirmed unsupported forfeiture");
+            UnityEngine.Time.unscaledTime=6;mod.Client.Update();Require((string)Last.Body["operation"]==operation,"Retry operation identity changed");
+            CompleteDeparture(game:"other");UnityEngine.Time.unscaledTime=6.1f;mod.Client.Update();Require(Departures(mod)==1,"Mismatched game confirmed departure");
+            UnityEngine.Time.unscaledTime=12;mod.Client.Update();CompleteDeparture();UnityEngine.Time.unscaledTime=12.1f;mod.Client.Update();
+            Require(Departures(mod)==0&&mod.Client.State.Forfeited,"Valid acknowledgement not applied");
+            Require(mod.ReliefNotices.PendingAmount==50,"Actual relief not notified");
+        }
+    }
+    static void DepartureReloadIsolation()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.ObserveLocation(null);
+            var data=new Dictionary<string,object>{{RoomDepartureSync.SaveKey,mod.Ctx.Data.Get<Dictionary<string,object>>(RoomDepartureSync.SaveKey,null)}};
+            mod=host.Reload<PredictionMod>(Id,"0.7.11",data:data);
+            host.SetConfig(Id,new Dictionary<string,object>{{"online",new Dictionary<string,object>{{"server","https://other.example"}}}});
+            mod.Client.Update();Require(Last.url==Server+"/v1/room"&&Last.Headers["Authorization"]=="Bearer "+new string('a',48),"Departure sent to another service/identity");
+            CompleteDeparture();UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Departures(mod)==0,"Reloaded departure not confirmed");
+            Require(mod.Client.State==null&&mod.ReliefNotices.PendingAmount==0,"Another identity received old departure credits");
+        }
+    }
+    static void InFlightDeparture()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.Trade("buy",0,1,1000);
+            Require((string)Last.Body["action"]=="trade","Fixture did not start purchase");
+            mod.Snapshot=null;mod.Client.ObserveLocation(null);Require(Departures(mod)==1,"In-flight purchase was missed");
+            var data=View();((List<object>)data["positions"])[0]=new Dictionary<string,object>{{"rank",1},{"stake",1000}};
+            Last.isDone=true;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",data}});
+            UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();mod.Client.Update();Require((string)Last.Body["action"]=="abandon","Purchase not reconciled before abandonment");
+            CompleteDeparture();UnityEngine.Time.unscaledTime=0.2f;mod.Client.Update();Require(Departures(mod)==0,"In-flight departure did not finish");
+        }
+    }
+    static void CompletedResultsAndCutoff()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.CaptureFinalSnapshot(Snapshot(true));mod.Client.ObserveLocation(null);
+            Require(Departures(mod)==0&&Pending(mod)==1,"Complete final results were forfeited instead of retried");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.CaptureFinalSnapshot(Snapshot(true,3));mod.Client.ObserveLocation(null);
+            Require(Departures(mod)==1,"Partial final blocked departure forever");
+        }
+        foreach(bool nextRound in new[]{false,true})
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);if(nextRound)mod.Snapshot.Round=11;else mod.Snapshot.ResultsThroughRound=10;
+            mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Client allowed trading after ten using stale server state");
+        }
+    }
+    static void CohortTransport()
+    {
+        var s=Snapshot();s.EliminationRounds=new[]{0,0,0,0,0,0,5,5};s.TradingOpen=false;
+        var wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(s)));
+        Require(Json.GetArray(wire,"eliminationRounds").Count==8&&!Json.GetBool(wire,"roundComplete",true),"Partial battle transport lost evidence");
+        s.RoundResultsComplete=true;wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(s)));Require(Json.GetBool(wire,"roundComplete",false),"Complete result did not reach server");
+        var q=new RoomFinalSync();s.Ended=true;s.Ranks=new[]{1,2,3,4,5,6,7,8};q.Capture(Server,"token","123456",RoomClient.Snapshot(s));
+        q=RoomFinalSync.Read(Json.ParseObject(Json.Serialize(q.Write())));Require(Json.GetArray(q.At(0).Snapshot,"eliminationRounds").Count==8,"Durable final lost cohort evidence");
+        var view=View();view["rankMinimum"]=new List<object>{0,0,0,0,0,0,7,7};view["rankMaximum"]=new List<object>{0,0,0,0,0,0,8,8};
+        var state=RoomState.Read(Json.ParseObject(Json.Serialize(view)));Require(state.ResultPlace(6)=="第7–8名同出","UI shows provisional individual order instead of cohort interval");
+    }
     static bool Calls(MethodDefinition method,string name)
     { foreach(var i in method.Body.Instructions){var call=i.Operand as MethodReference;if(call!=null&&call.Name==name)return true;}return false; }
     static void Bindings(string path)
@@ -161,6 +245,8 @@ internal static class Program
         {
             string[] types={"PredictionMod","CharacterBetBar","RoomPanel"};string[] methods={"AcceptSnapshot","Update","CurrentView"};string[] targets={"CaptureFinalSnapshot","CanTrade","Observe"};
             for(int n=0;n<types.Length;n++){bool found=false;foreach(var method in module.GetType("YxPrediction."+types[n]).Methods)if(method.Name==methods[n])found=Calls(method,targets[n]);Require(found,"Missing production binding "+types[n]);}
+            foreach(var method in module.GetType("YxPrediction.GameBridge").Methods)
+                if(method.Name=="Poll"||method.Name=="OnStatus")Require(Calls(method,"ObserveLocation"),"Confirmed location is not wired to departure handling");
             var popup=module.GetType("YxPrediction.ReliefPopup");Require(popup!=null,"Relief popup missing from game DLL");
             foreach(var method in module.GetType("YxPrediction.PredictionMod").Methods)
             {
@@ -183,6 +269,11 @@ internal static class Program
     {
         if(args.Length>0){Bindings(args[0]);return;}
         PublicFeedWire();Console.WriteLine("PASS live public table wire preserves cards, names, mirror and winner without private hands");
+        CohortTransport();Console.WriteLine("PASS cohort rounds and complete-result evidence survive host transport, retries and interval UI decoding");
+        DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
+        DepartureReloadIsolation();Console.WriteLine("PASS departure queue survives reload without leaking credentials or notices to another service");
+        InFlightDeparture();Console.WriteLine("PASS in-flight purchase completes before departure forfeiture");
+        CompletedResultsAndCutoff();Console.WriteLine("PASS complete final rewards survive departure, incomplete wagers forfeit, tenth-round cutoff is enforced locally");
         FinalDelivery(false);Console.WriteLine("PASS final result persisted before leaving and delivered after scene is gone");
         FinalDelivery(true);Console.WriteLine("PASS lost final request retries after leaving, acknowledgement stops retries");
         ReloadAndEndpointIsolation();Console.WriteLine("PASS final queue survives reload and isolates server credentials/connections");
@@ -193,6 +284,7 @@ internal static class Program
         ReliefReceipts();Console.WriteLine("PASS actual relief receipts notify once across polling, reload and a later grant");
         ReliefOnFinalRetry();Console.WriteLine("PASS final retries preserve relief notices and isolate another server's grants");
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
+        MigratedDeparture();Console.WriteLine("PASS original-domain departure receipts apply once to the migrated identity");
         DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
     }
     static void PublicFeedWire()
@@ -260,8 +352,8 @@ internal static class Program
     {
         using(var host=TestHost.Start())
         {
-            var mod=Setup(host);mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Round ten sent an order");
-            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==3,"List request missing protocol/page");
+            var mod=Setup(host);mod.Snapshot.Round=10;mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Round ten sent an order");
+            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==4,"List request missing protocol/page");
             Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"page\":1,\"total\":7,\"rooms\":[{\"code\":\"654321\",\"hostName\":\"甲\",\"available\":true}]}}";
             mod.Client.Update();Require(mod.Client.Browser.Rooms[0].Code=="654321","List response not parsed");
             mod.Client.CreateWebCode();Require((string)Last.Body["action"]=="linkCode","Binding request missing");
@@ -269,6 +361,18 @@ internal static class Program
             Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-1234567890","Code not copied");int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;
             mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count,"Fresh code was needlessly regenerated");
             UnityEngine.Time.unscaledTime=301;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Expired code reused");
+        }
+    }
+    static void MigratedDeparture()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.ObserveLocation(null);
+            var queue=mod.Ctx.Data.Get<Dictionary<string,object>>(RoomDepartureSync.SaveKey,null);
+            ((Dictionary<string,object>)Json.GetArray(queue,"jobs")[0])["server"]="https://auth.kaigua.vip/prediction";
+            var data=new Dictionary<string,object>{{RoomDepartureSync.SaveKey,queue},{"room.identity.v1",new Dictionary<string,object>{{"server",Server},{"token",new string('a',48)},{"code","123456"}}}};
+            mod=host.Reload<PredictionMod>(Id,"0.7.13",data:data);mod.Client.Update();Require(Last.url.StartsWith("https://auth.kaigua.vip/prediction/"),"Original endpoint was changed on retry");
+            CompleteDeparture();UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(mod.Client.State.Forfeited&&mod.ReliefNotices.PendingAmount==50&&Departures(mod)==0,"Migrated account lost its receipt or relief notification");
         }
     }
     static void DomainMigration()

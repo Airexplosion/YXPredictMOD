@@ -1,3 +1,5 @@
+> 0.7.13整合规则：第二/第三同出均返25%，第三/第四同出均返10%，同出取最高比例；第10回合开始封盘；离场自动放弃未结算权益，不退本金、不再领奖。保留已支付金额，排行榜不再将已放弃本金计入持仓。部署需要完整server目录（含eliminations.mjs）和兼容代理。以下旧版本说明以本段为准。
+
 > 当前0.7.12已改为马币、独立赌马域名和全部账户上榜，并新增每日签到；详见[迁移说明](../docs/duma-migration-checkin.md)。下文为0.7.11接入方式或历史规则说明。
 
 # Independent free-points room server
@@ -56,3 +58,18 @@ Each successful grant increments the account's durable `reliefCount`; room views
 See [current rules and verification](../docs/champion-rooms-web.md) and [guide login adapter](../integration/README.md). New rooms accept champion predictions only, pay 100/25/10% of locked claims for first/second/third, close all trading at round 10, and reject exited players. Legacy holdings retain their promises and do not accept new buys. Public listing is independent of random matching; private creation disables both discovery methods.
 
 Deploy `web.mjs` and the entire `web/` folder alongside the room service. `YX_PREDICTION_BRIDGE_KEY` is a dedicated random 32-byte hex secret shared with the existing guide auth server; never commit it. The public board is accessible without login; account binding/profile changes use short guide identity proofs plus a one-time MOD possession code. See integration instructions before enabling it. The historical sections below describe previous room protocols, including the old pool calculation; they do not define the current champion rules.
+
+
+## 0.7.11 departure and round-ten close
+
+Deploy both rooms.mjs and server.mjs for the authenticated `abandon` action: `{code, gameId, operation}`. Membership and game identity must match. It durably forfeits this account's unresolved rights, never refunds principal, preserves paid rewards and returns `abandonConfirmed: true`. Repeated requests do not repeat relief. Forfeiture applies only to this account/game and prevents new bets even after rejoining. All rooms still participate in the no-pending-bets relief guard. Mutation and relief share the same save transaction and rollback. Views expose `forfeited` and `tradingClosed`.
+
+Round ten's preparation remains tradable. `closedThrough >= 10` or `round > 10` latches trading closed; no buy/half/sell/switch after that, including legacy saved rooms lacking the new flag. Later results still settle. New clients durably retry departure requests using original credentials and server; unsupported old services never confirm or receive client-invented credits. No public service deployment was performed.
+
+Current rule-2 simultaneous eliminations require distinct game-confirmed ranks forming the bottom tail before paying. UID remapping makes display order irrelevant. Each locked claim pays once: exact 100%, adjacent 25% rounded down, otherwise zero. A final snapshot never repays a resolved position. Legacy pool rooms retain their pool contract; forfeited members cannot receive later pool payouts.
+
+## 0.7.12 simultaneous elimination intervals
+
+Deploy eliminations.mjs alongside rooms.mjs and server.mjs. New host snapshots include eight eliminationRounds (zero means unknown/alive) and a boolean roundComplete. At full-round completion, all players with the same confirmed elimination round occupy a continuous placement interval. Predicting any place inside a multi-player interval returns 100% of that player's locked claim; outside returns zero, including adjacent places. Single exits retain the 25% adjacent payout. Group payouts require neither the order inside the cohort nor the end of the entire match. Partial battle packets cannot prematurely pay singleton adjacency.
+
+Snapshots without the extension keep their existing contract. Previously paid legacy positions remain frozen. Store rankMinimum/rankMaximum and eliminationRounds with positions; canonical internal ranks only allocate quote slots. View intervals must be used instead of presenting these slots as exact game placements. Later final ordering inside a cohort does not repeat or recalculate payments. Mutations, payments, relief and interval state share a save transaction. No public service deployment performed.

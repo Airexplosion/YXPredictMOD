@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {Rooms} from './rooms.mjs';
 import {PredictionWeb} from './web.mjs';
 const user={subject:'a'.repeat(64),name:'云上观众'};
-function fixture(save){let now=100000;const rooms=new Rooms(undefined,save,()=>now);const host=rooms.register('房主').token;
- const snapshot={id:'web-game',gameRoomId:'native-web',round:2,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'private-uid-'+i,name:'选手'+i})),ranks:Array(8).fill(0),active:Array(8).fill(true),baseRates:Array(64).fill(40000),states:Array.from({length:8},(_,i)=>({life:100-i,wins:1,losses:0}))};
+function fixture(save,horseShuffle=false){let now=100000;const rooms=new Rooms(undefined,save,()=>now);const host=rooms.register('房主').token;
+ const snapshot={horseShuffle,id:'web-game',gameRoomId:'native-web',round:2,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'private-uid-'+i,name:'选手'+i})),ranks:Array(8).fill(0),active:Array(8).fill(true),baseRates:Array(64).fill(40000),states:Array.from({length:8},(_,i)=>({life:100-i,wins:1,losses:0}))};
  const code=rooms.create(host,snapshot).code;const web=new PredictionWeb(rooms,{now:()=>now});return {rooms,host,snapshot,code,web,time:n=>now=n};}
 test('web account opens once per verified identity, reuses MOD binding and rolls back failed grants',()=>{
  const x=fixture();assert.equal(x.web.me(user).accounts,0);x.web.openAccount(user);x.web.openAccount(user);assert.equal(x.web.me(user).balance,1000);assert.equal(x.web.me(user).accounts,1);
@@ -58,4 +58,12 @@ test('conflicting battle results, foreign identities, invalid card data and spec
   assert.throws(()=>x.rooms.sync(x.code,x.host,{...x.snapshot,battles:[{...battle,...bad}]}));assert.deepEqual(x.rooms.state,before);
  }
  assert.equal(x.web.watch(x.web.publicRoom(x.code)).battles[0].secondCards,null);
+});
+test('the game-wide horse titles stay bound to UID, hide numeric scores and cannot change after the opening quote',()=>{
+ const x=fixture(undefined,true);x.snapshot.horseTitles=['特等马','上等马','中等马','中等马','中等马','中等马','牛马','海马'];
+ x.rooms.sync(x.code,x.host,x.snapshot);const expected=x.web.watch(x.web.publicRoom(x.code)).players.map(p=>p.horseTitle);
+ x.snapshot.players.reverse();x.snapshot.horseTitles.reverse();x.snapshot.states.reverse();x.rooms.sync(x.code,x.host,x.snapshot);
+ assert.deepEqual(x.web.watch(x.web.publicRoom(x.code)).players.map(p=>p.horseTitle),expected);assert.equal(x.rooms.view(x.code,x.host).horseShuffle,true);
+ const before=structuredClone(x.rooms.state);
+ for(const input of [{horseTitles:Array(8).fill('中等马 4000')},{horseTitles:Array(8).fill('上等马')},{horseShuffle:false}]){assert.throws(()=>x.rooms.sync(x.code,x.host,{...x.snapshot,...input}));assert.deepEqual(x.rooms.state,before);}
 });
