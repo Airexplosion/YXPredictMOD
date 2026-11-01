@@ -21,6 +21,8 @@ namespace YxPrediction
         public long[] Claims=new long[8], FinalPayouts=new long[8];
         public long Balance, Payout;
         public readonly string[] Uids = new string[8], Names = new string[8];
+        public string[] HorseTitles;
+        public bool HorseShuffle;
         public readonly int[] Ranks = new int[8], MyRanks = new int[8], RankMinimum = new int[8], RankMaximum = new int[8];
         public string ResultPlace(int player)
         {
@@ -43,6 +45,19 @@ namespace YxPrediction
             r.Code = Json.GetString(d, "code", ""); r.GameId = Json.GetString(d, "gameId", "");
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.AllowMatch = Json.GetBool(d, "allowMatch", true);
+            r.HorseShuffle = Json.GetBool(d, "horseShuffle", false);
+            var titles = Json.GetArray(d, "horseTitles");
+            if (titles != null)
+            {
+                if (titles.Count != 8) throw new FormatException("马匹称号维度错误");
+                r.HorseTitles = new string[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    string title = titles[i] as string;
+                    if (title == null || title.Length > 40) throw new FormatException("马匹称号格式错误");
+                    r.HorseTitles[i] = title;
+                }
+            }
             r.IsPublic = Json.GetBool(d, "isPublic", r.AllowMatch);
             r.ReliefAmount = (int)Json.GetNumber(d, "reliefAmount", 0);
             r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);

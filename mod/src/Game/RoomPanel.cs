@@ -278,6 +278,7 @@ namespace YxPrediction
             if (HasCurrentRoom()) { Selections.Observe(_mod.Online.State); return _mod.Online.State; }
             Market m = _mod.Current; if (m == null) { Selections.Observe(null); return null; }
             var r = new RoomState(); r.Rules = m.ChampionOnly ? 3 : 2; r.Forfeited = m.Abandoned; r.TradingClosed = m.Locked; r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
+            r.HorseShuffle = m.UseHorseShuffle; if (m.UseHorseShuffle) r.HorseTitles = HorseShuffle.Titles(m);
             r.BaseRates=m.BaseRates;r.QuoteRates=m.QuoteRates;for(int j=0;j<64;j++)r.Factors[j]=10000;
             r.Open = m.TradingWindowOpen; r.Settled = m.Settled; r.Balance = _mod.Book.Balance; r.Members = 1;
             for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.RankMinimum[i] = m.RankMinimum[i]; r.RankMaximum[i] = m.RankMaximum[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
@@ -360,7 +361,8 @@ namespace YxPrediction
                     _selfFlag.gameObject.SetActive(snapshot!=null&&FocusSelection.Uid(snapshot)==r.Uids[_index]);
                     HorseMember horse=_panel._mod.Horses.FindMember(r.Uids[_index]);
                     _horseTitle.text=horse==null?"":horse.Caption;
-                    if(_panel._detailed && horse!=null && horse.Profile!=null && horse.Profile.Rating.Found) { _horseTitle.enableWordWrapping=true; _horseTitle.text += ((char)10).ToString()+"Elo "+PredictionMod.N((long)horse.Profile.Rating.Score); } else _horseTitle.enableWordWrapping=false;
+                    if (r.HorseTitles != null) _horseTitle.text = r.HorseTitles[_index] + (horse != null && horse.Tags.Length > 0 ? " · " + horse.Tags : "");
+                    _horseTitle.enableWordWrapping=false;
                     if(horse!=null) _horseTitle.color=TianJiFeature.ColorOf(horse.Title);
                     _horseIcon.sprite=horse==null?null:_panel._mod.Horses.GetSprite(horse.IconTitle);
                     _horseIcon.gameObject.SetActive(_horseIcon.sprite!=null);

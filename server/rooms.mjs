@@ -68,6 +68,15 @@ export class Rooms {
     requireThat(s.active === undefined || (Array.isArray(s.active) && s.active.length === 8 && s.active.every(x => typeof x === 'boolean')), '选手状态无效');
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
     requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础倍率格式无效');
+    requireThat(s.horseShuffle===undefined||typeof s.horseShuffle==='boolean','换档规则格式无效');
+    requireThat(s.horseTitles===undefined||(Array.isArray(s.horseTitles)&&s.horseTitles.length===8&&s.horseTitles.every(title=>typeof title==='string'&&title.length<=40&&!/[0-9\x00-\x1f\x7f]/.test(title))),'马匹称号格式无效');
+    requireThat(s.states === undefined || (Array.isArray(s.states) && s.states.length === 8 && s.states.every(p => p === null || (p && integer(p.life,-1000000,1000000) && integer(p.wins,0,100000) && integer(p.losses,0,100000)))),'公开战况格式无效');
+    const cards=value=>value===null||(Array.isArray(value)&&value.length<=8&&value.every(id=>integer(id,0,2147483647)));
+    const names=(value,ids)=>value===undefined||value===null||(Array.isArray(value)&&Array.isArray(ids)&&value.length===ids.length&&value.every(name=>typeof name==='string'&&name.length<=80&&!/[\x00-\x1f\x7f]/.test(name)));
+    requireThat(s.battles===undefined||(Array.isArray(s.battles)&&s.battles.length<=16&&s.battles.every(b=>b&&integer(b.round,Math.max(1,s.round-1),s.round)
+      && s.players.some(p=>p.uid===b.first)&&s.players.some(p=>p.uid===b.second)&&typeof b.winner==='string'&&['',b.first,b.second].includes(b.winner)
+      &&typeof b.firstMirror==='boolean'&&typeof b.secondMirror==='boolean'&&cards(b.firstCards)&&cards(b.secondCards)&&names(b.firstNames,b.firstCards)&&names(b.secondNames,b.secondCards)
+      &&integer(b.firstLife,-1000000,1000000)&&integer(b.secondLife,-1000000,1000000))),'公开牌桌或战果格式无效');
     requireThat(s.eliminationRounds === undefined || (Array.isArray(s.eliminationRounds) && s.eliminationRounds.length === 8 && s.eliminationRounds.every(round => integer(round,0,s.round)) && typeof s.roundComplete === 'boolean'), '出局轮次格式无效');
     return s;
   }
@@ -95,8 +104,10 @@ export class Rooms {
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
-        closedThrough: 0, open: false, ended: false, settled: false, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+        closedThrough: 0, open: false, ended: false, settled: false, horseShuffle:s.horseShuffle??false, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
+      const featured=this.websiteRoom();
+      if(isPublic&&(!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
       return this.view(code, key);
     });
   }
@@ -133,6 +144,11 @@ export class Rooms {
     const before = JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active]);
     requireThat(r.gameId === s.id && r.players.every(p => s.players.some(q => q.uid === p.uid)), '房间名单或对局不一致');
     requireThat(s.round >= r.round, '拒绝旧回合状态');
+    if(s.horseTitles){
+      const titles=r.players.map(p=>s.horseTitles[s.players.findIndex(q=>q.uid===p.uid)]);
+      requireThat(!r.horseTitles||JSON.stringify(r.horseTitles)===JSON.stringify(titles),'本局马匹称号已锁定');r.horseTitles=titles;
+    }
+    if(s.horseShuffle!==undefined){requireThat((r.horseShuffle??false)===s.horseShuffle,'本局换档规则已锁定，请在下一新局使用新规则');r.horseShuffle=s.horseShuffle;}
     if(r.rules>=2 && (r.quoteRound === undefined || s.round>r.round)){
       if(s.baseRates) r.baseRates=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
       const totals=Array.from({length:8},()=>Array(8).fill(0));
@@ -148,9 +164,36 @@ export class Rooms {
     if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
-    r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
+    r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough,...(s.battles??[]).map(b=>b.round)); r.ended ||= s.ended;
     r.tradingClosed ||= r.round >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
+    if (s.states) {
+      r.states = r.players.map(p => clone(s.states[s.players.findIndex(q => q.uid === p.uid)]));
+      r.frames ??= [];
+      const frame={round:r.round,states:clone(r.states),ranks:[...r.ranks]};
+      if(r.frames.at(-1)?.round===r.round)r.frames[r.frames.length-1]=frame;
+      else {r.frames.push(frame);if(r.frames.length>100)r.frames.shift();}
+    }
+    if(s.battles){
+      r.battles??=[];
+      for(const battle of s.battles){
+        let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
+        let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
+        let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
+        if(first>second||(first===second&&firstMirror&&!secondMirror)){
+          [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
+        }
+        const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
+        const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
+          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror};
+        const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
+        requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
+        for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
+        if(old){for(const field of ['winner','firstCards','secondCards'])if(row[field]===null)row[field]=old[field];r.battles[at]=row;}
+        else r.battles.push(row);
+      }
+      r.battles.sort((a,b)=>a.round-b.round||a.id.localeCompare(b.id));if(r.battles.length>800)r.battles.splice(0,r.battles.length-800);
+    }
     if(r.rules>=2 && (s.eliminationRounds || r.eliminationRounds)) {
       if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks,r.active]))r.version++;return; }
       const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
@@ -191,6 +234,10 @@ export class Rooms {
     });
   }
   publicRoom(r) { return r.isPublic ?? r.allowMatch !== false; }
+  websiteRoom() {
+    const room=this.state.rooms[this.state.websiteRoomCode];
+    return room&&this.publicRoom(room)?room:null;
+  }
   list(key, page = 0) {
     this.account(key);
     requireThat(integer(page, 0, 166), '房间列表页码无效');
@@ -290,6 +337,6 @@ export class Rooms {
     for (const [member,ps] of Object.entries(r.positions)) if(r.rules<2 || !r.forfeited?.[member]) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.displayName(member), uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
       isPublic:this.publicRoom(r), active:r.active ?? r.ranks.map(rank=>!rank), reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round >= 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, rankMinimum: r.rankMinimum ?? r.ranks, rankMaximum: r.rankMaximum ?? r.ranks, totals,
-      positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
+      horseTitles:r.horseTitles??null,horseShuffle:r.horseShuffle??false,positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

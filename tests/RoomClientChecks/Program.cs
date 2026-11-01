@@ -268,6 +268,7 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        PublicFeedWire();Console.WriteLine("PASS live public table wire preserves cards, names, mirror and winner without private hands");
         CohortTransport();Console.WriteLine("PASS cohort rounds and complete-result evidence survive host transport, retries and interval UI decoding");
         DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
         DepartureReloadIsolation();Console.WriteLine("PASS departure queue survives reload without leaking credentials or notices to another service");
@@ -285,6 +286,16 @@ internal static class Program
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
         MigratedDeparture();Console.WriteLine("PASS original-domain departure receipts apply once to the migrated identity");
         DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
+    }
+    static void PublicFeedWire()
+    {
+        var snapshot=Snapshot(false);snapshot.PublicBattles=new PublicBattle[] {new PublicBattle {Round=9,FirstUid=snapshot.Players[0].Uid,SecondUid=snapshot.Players[1].Uid,
+            WinnerUid=snapshot.Players[0].Uid,FirstCards=new int[] {1000011,0},SecondCards=null,FirstNames=new string[] {"云舞诀",""},SecondNames=null,FirstLife=100,SecondLife=80,FirstMirror=false,SecondMirror=true}};
+        var wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(snapshot)));var rows=Json.GetArray(wire,"battles");
+        Require(rows!=null&&rows.Count==1,"Public battle missing from actual client snapshot");var row=(Dictionary<string,object>)rows[0];
+        Require(Json.GetString(row,"winner","")==snapshot.Players[0].Uid&&Json.GetBool(row,"secondMirror",false),"Winner or mirror lost");
+        Require(Json.GetArray(row,"firstCards").Count==2&&Json.GetArray(row,"firstNames")[0] as string=="云舞诀","Table names or slots lost");
+        Require(!row.ContainsKey("handCards")&&!row.ContainsKey("privateData"),"Private data leaked into public feed");
     }
     static void ReliefReceipts()
     {
@@ -342,7 +353,7 @@ internal static class Program
         using(var host=TestHost.Start())
         {
             var mod=Setup(host);mod.Snapshot.Round=10;mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Round ten sent an order");
-            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==3,"List request missing protocol/page");
+            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==4,"List request missing protocol/page");
             Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"page\":1,\"total\":7,\"rooms\":[{\"code\":\"654321\",\"hostName\":\"甲\",\"available\":true}]}}";
             mod.Client.Update();Require(mod.Client.Browser.Rooms[0].Code=="654321","List response not parsed");
             mod.Client.CreateWebCode();Require((string)Last.Body["action"]=="linkCode","Binding request missing");
