@@ -182,6 +182,7 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        PublicFeedWire();Console.WriteLine("PASS live public table wire preserves cards, names, mirror and winner without private hands");
         FinalDelivery(false);Console.WriteLine("PASS final result persisted before leaving and delivered after scene is gone");
         FinalDelivery(true);Console.WriteLine("PASS lost final request retries after leaving, acknowledgement stops retries");
         ReloadAndEndpointIsolation();Console.WriteLine("PASS final queue survives reload and isolates server credentials/connections");
@@ -193,6 +194,16 @@ internal static class Program
         ReliefOnFinalRetry();Console.WriteLine("PASS final retries preserve relief notices and isolate another server's grants");
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
         DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
+    }
+    static void PublicFeedWire()
+    {
+        var snapshot=Snapshot(false);snapshot.PublicBattles=new PublicBattle[] {new PublicBattle {Round=9,FirstUid=snapshot.Players[0].Uid,SecondUid=snapshot.Players[1].Uid,
+            WinnerUid=snapshot.Players[0].Uid,FirstCards=new int[] {1000011,0},SecondCards=null,FirstNames=new string[] {"云舞诀",""},SecondNames=null,FirstLife=100,SecondLife=80,FirstMirror=false,SecondMirror=true}};
+        var wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(snapshot)));var rows=Json.GetArray(wire,"battles");
+        Require(rows!=null&&rows.Count==1,"Public battle missing from actual client snapshot");var row=(Dictionary<string,object>)rows[0];
+        Require(Json.GetString(row,"winner","")==snapshot.Players[0].Uid&&Json.GetBool(row,"secondMirror",false),"Winner or mirror lost");
+        Require(Json.GetArray(row,"firstCards").Count==2&&Json.GetArray(row,"firstNames")[0] as string=="云舞诀","Table names or slots lost");
+        Require(!row.ContainsKey("handCards")&&!row.ContainsKey("privateData"),"Private data leaked into public feed");
     }
     static void ReliefReceipts()
     {

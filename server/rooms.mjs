@@ -67,6 +67,13 @@ export class Rooms {
     requireThat(s.active === undefined || (Array.isArray(s.active) && s.active.length === 8 && s.active.every(x => typeof x === 'boolean')), '选手状态无效');
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
     requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础倍率格式无效');
+    requireThat(s.states === undefined || (Array.isArray(s.states) && s.states.length === 8 && s.states.every(p => p === null || (p && integer(p.life,-1000000,1000000) && integer(p.wins,0,100000) && integer(p.losses,0,100000)))),'公开战况格式无效');
+    const cards=value=>value===null||(Array.isArray(value)&&value.length<=8&&value.every(id=>integer(id,0,2147483647)));
+    const names=(value,ids)=>value===undefined||value===null||(Array.isArray(value)&&Array.isArray(ids)&&value.length===ids.length&&value.every(name=>typeof name==='string'&&name.length<=80&&!/[\x00-\x1f\x7f]/.test(name)));
+    requireThat(s.battles===undefined||(Array.isArray(s.battles)&&s.battles.length<=16&&s.battles.every(b=>b&&integer(b.round,Math.max(1,s.round-1),s.round)
+      && s.players.some(p=>p.uid===b.first)&&s.players.some(p=>p.uid===b.second)&&typeof b.winner==='string'&&['',b.first,b.second].includes(b.winner)
+      &&typeof b.firstMirror==='boolean'&&typeof b.secondMirror==='boolean'&&cards(b.firstCards)&&cards(b.secondCards)&&names(b.firstNames,b.firstCards)&&names(b.secondNames,b.secondCards)
+      &&integer(b.firstLife,-1000000,1000000)&&integer(b.secondLife,-1000000,1000000))),'公开牌桌或战果格式无效');
     return s;
   }
   findByGame(key, nativeId) {
@@ -95,6 +102,8 @@ export class Rooms {
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
         closedThrough: 0, open: false, ended: false, settled: false, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
+      const featured=this.websiteRoom();
+      if(isPublic&&(!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
       return this.view(code, key);
     });
   }
@@ -146,13 +155,40 @@ export class Rooms {
     if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
-    r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
+    r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough,...(s.battles??[]).map(b=>b.round)); r.ended ||= s.ended;
     r.open = r.round < 10 && !r.ended && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
     r.active ??= Array(8).fill(true);
     for (let i = 0; i < 8; i++) {
       if (r.ranks[i] && ranks[i] && r.ranks[i] !== ranks[i]) throw new RoomError('确定名次冲突');
       if (ranks[i]) r.ranks[i] = ranks[i];
       if (ranks[i] || (s.active && !s.active[s.players.findIndex(p => p.uid === r.players[i].uid)])) r.active[i] = false;
+    }
+    if (s.states) {
+      r.states = r.players.map(p => clone(s.states[s.players.findIndex(q => q.uid === p.uid)]));
+      r.frames ??= [];
+      const frame={round:r.round,states:clone(r.states),ranks:[...r.ranks]};
+      if(r.frames.at(-1)?.round===r.round)r.frames[r.frames.length-1]=frame;
+      else {r.frames.push(frame);if(r.frames.length>100)r.frames.shift();}
+    }
+    if(s.battles){
+      r.battles??=[];
+      for(const battle of s.battles){
+        let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
+        let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
+        let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
+        if(first>second||(first===second&&firstMirror&&!secondMirror)){
+          [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
+        }
+        const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
+        const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
+          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror};
+        const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
+        requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
+        for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
+        if(old){for(const field of ['winner','firstCards','secondCards'])if(row[field]===null)row[field]=old[field];r.battles[at]=row;}
+        else r.battles.push(row);
+      }
+      r.battles.sort((a,b)=>a.round-b.round||a.id.localeCompare(b.id));if(r.battles.length>800)r.battles.splice(0,r.battles.length-800);
     }
     const known = r.ranks.filter(Boolean); requireThat(new Set(known).size === known.length, '名次重复');
     if(r.rules>=2 && !r.ended) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
@@ -169,6 +205,10 @@ export class Rooms {
   }
   isOpen(r) { return r.round < 10 && r.open && !r.ended && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
   publicRoom(r) { return r.isPublic ?? r.allowMatch !== false; }
+  websiteRoom() {
+    const room=this.state.rooms[this.state.websiteRoomCode];
+    return room&&this.publicRoom(room)?room:null;
+  }
   list(key, page = 0) {
     this.account(key);
     requireThat(integer(page, 0, 166), '房间列表页码无效');

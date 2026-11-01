@@ -1,6 +1,7 @@
 import {createHash,createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
 const digest=s=>createHash('sha256').update(s).digest('hex');
+const clonePublic=value=>JSON.parse(JSON.stringify(value));
 const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status);};
 export class PredictionWeb {
   constructor(rooms,{bridgeKey=process.env.YX_PREDICTION_BRIDGE_KEY??'',now=Date.now}={}) {this.rooms=rooms;this.key=bridgeKey;this.now=now;this.codes=new Map();}
@@ -24,12 +25,62 @@ export class PredictionWeb {
   }
   profile(user) { return this.rooms.state.profiles?.[user.subject]??{name:user.name||'观众'}; }
   owned(user) {return Object.entries(this.rooms.state.accounts).filter(([,a])=>a.webOwner===user.subject);}
+  openAccount(user) {
+    if(this.owned(user).length)return this.me(user);
+    ensure(Object.keys(this.rooms.state.accounts).length<10000,'服务器账户已满');
+    this.rooms.commit(()=>{
+      const key=randomBytes(24).toString('hex');
+      this.rooms.state.accounts[key]={name:this.profile(user).name,balance:1000,webOwner:user.subject,webCreated:true};
+      this.rooms.state.profiles??={};
+      this.rooms.state.profiles[user.subject]={...this.profile(user),playAccount:key};
+    });
+    return this.me(user);
+  }
+  playKey(user) {
+    const owned=this.owned(user),profile=this.profile(user);
+    ensure(owned.length,'请先开通网页马币，或绑定已有MOD账户',409);
+    return (owned.find(([key])=>key===profile.playAccount)||owned.find(([key])=>key===profile.rewardAccount)||owned.slice().sort(([a],[b])=>a.localeCompare(b))[0])[0];
+  }
+  publicRoom(code) {
+    ensure(typeof code==='string'&&/^[0-9]{6}$/.test(code)&&this.rooms.state.rooms[code],'房间不存在',404);
+    const r=this.rooms.state.rooms[code];ensure(this.rooms.websiteRoom()?.code===code,'此房间仅在游戏内开放，网站只直播一场公开对局',403);return r;
+  }
+  watch(r) {
+    const fresh=this.rooms.now()-(this.rooms.syncTimes.get(r.code)??-Infinity)<=15000;
+    const totals=Array(8).fill(0);
+    for(const positions of Object.values(r.positions))for(let i=0;i<8;i++)if(positions[i])totals[i]+=positions[i].stake;
+    return {code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,version:r.version,rules:r.rules??1,
+      members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,open:this.rooms.isOpen(r),ended:r.ended,settled:r.settled,
+      updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
+        state:r.states?.[i]??null,baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),frames:clonePublic(r.frames??[]),battles:clonePublic(r.battles??[])};
+  }
+  listRooms(page=0) {
+    ensure(Number.isSafeInteger(page)&&page>=0&&page<=166,'房间页码无效');
+    const featured=this.rooms.websiteRoom(),rooms=featured?[featured]:[];
+    return {page:0,total:rooms.length,rooms:rooms.map(r=>({code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,members:r.members.length,open:this.rooms.isOpen(r),names:r.players.map(p=>p.name)}))};
+  }
+  play(user,body) {
+    if(body.action==='openAccount')return {me:this.openAccount(user)};
+    const key=this.playKey(user);
+    ensure(typeof body.code==='string'&&/^[0-9]{6}$/.test(body.code),'请输入六位房间号');
+    const r=this.rooms.state.rooms[body.code];ensure(r,'房间不存在',404);
+    ensure(this.rooms.websiteRoom()?.code===r.code||(body.action==='view'&&(r.ended||r.settled)&&r.members.includes(key)),'此房间仅在游戏内开放，网站只直播一场公开对局',403);
+    if(body.action==='join') {
+      ensure(!r.ended&&!r.settled,'本局已结束',409);
+      ensure(this.rooms.now()-(this.rooms.syncTimes.get(r.code)??-Infinity)<=15000,'战况来源已离线，请稍后再试',409);
+      this.rooms.join(r.code,key,r.gameId);
+    } else if(body.action==='trade')this.rooms.trade(r.code,key,body);
+    else ensure(body.action==='view','操作无效');
+    const view=this.rooms.view(r.code,key);
+    return {room:this.watch(r),wallet:{name:this.rooms.displayName(key),balance:view.balance,positions:clonePublic(view.positions),payout:view.payout},me:this.me(user)};
+  }
   bind(user,code) {
     ensure(typeof code==='string'&&/^TP-[A-F0-9]{10}$/.test(code.trim().toUpperCase()),'请输入MOD中显示的绑定码');
     const hash=digest(code.trim().toUpperCase()),row=this.codes.get(hash);
     ensure(row&&row.expires>this.now(),'绑定码已过期或已使用');
     const account=this.rooms.state.accounts[row.key];ensure(account&&(!account.webOwner||account.webOwner===user.subject),'该马币账户已绑定其他身份',409);
-    this.rooms.commit(()=>{account.webOwner=user.subject;this.rooms.state.profiles??={};this.rooms.state.profiles[user.subject]??={name:user.name||account.name};});
+    const playAccount=this.owned(user).length?this.playKey(user):row.key;
+    this.rooms.commit(()=>{account.webOwner=user.subject;this.rooms.state.profiles??={};const profile=this.rooms.state.profiles[user.subject]??={name:user.name||account.name};profile.playAccount??=playAccount;});
     this.codes.delete(hash);return this.me(user);
   }
   rename(user,name) {
@@ -49,7 +100,7 @@ export class PredictionWeb {
     if(status.claimed)return {...this.me(user),checkInReceipt:{duplicate:true,amount:0}};
     this.rooms.commit(()=>{
       this.rooms.state.profiles??={};const profile=this.rooms.state.profiles[user.subject]??={name:user.name||'观众'};
-      const target=owned.find(([key])=>key===profile.rewardAccount)??owned.slice().sort(([a],[b])=>a.localeCompare(b))[0];
+      const target=owned.find(([key])=>key===profile.rewardAccount)??owned.find(([key])=>key===profile.playAccount)??owned.slice().sort(([a],[b])=>a.localeCompare(b))[0];
       const [key,account]=target;ensure(Number.isSafeInteger(account.balance)&&account.balance<=1e12-200,'马币余额已达上限');
       ensure(Number.isSafeInteger(account.checkInGranted??0),'签到累计记录无效',500);
       this.rooms.state.walletEvents??={};const id='daily:'+user.subject+':'+status.day;
@@ -78,7 +129,8 @@ export class PredictionWeb {
   }
   me(user) {
     const accounts=this.owned(user),row=this.aggregate(user.subject,accounts,this.totals());
-    return {...row,name:this.profile(user).name,linked:accounts.length>0,checkIn:this.checkInStatus(user)};
+    const play=accounts.length?this.rooms.state.accounts[this.playKey(user)]:null;
+    return {...row,name:this.profile(user).name,linked:accounts.length>0,playBalance:play?.balance??null,checkIn:this.checkInStatus(user)};
   }
   leaderboard(page=0) {
     ensure(Number.isSafeInteger(page)&&page>=0&&page<=500,'页码无效');

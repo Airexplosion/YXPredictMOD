@@ -1,12 +1,24 @@
 using System;
+using System.Collections.Generic;
 using Yx.Shared;
 
 namespace YxPrediction
 {
     public static class InterpreterProbe
     {
+        public sealed class PublicTableFixture { public List<int> usedCards = new List<int>(); }
+        static void PublicTableFlow()
+        {
+            var table = new PublicTableFixture(); table.usedCards.Add(1000011); table.usedCards.Add(0); table.usedCards.Add(1000021);
+            var field = typeof(PublicTableFixture).GetField("usedCards");
+            int[] cards = PublicCardSequence.Copy(field.GetValue(table));
+            if (cards == null || cards.Length != 3 || cards[0] != 1000011 || cards[1] != 0 || cards[2] != 1000021) throw new Exception("Public table reflection/CLR collection bridge failed");
+            cards[0] = 1; if (table.usedCards[0] != 1000011) throw new Exception("Public table copy mutated native collection");
+            if (PublicCardSequence.Copy(new object[] { "private" }) != null) throw new Exception("Invalid table accepted");
+        }
         public static string Run()
         {
+            PublicTableFlow();
             var ratings = new Rating[8];
             var players = new Player[8];
             for (int i = 0; i < 8; i++)

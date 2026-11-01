@@ -41,6 +41,7 @@ namespace YxPrediction
         public PlayerState[] States;
         public string FocusedUid;
         public int[] RemainingSwaps;
+        public PublicBattle[] PublicBattles;
 
         public bool IsEightPlayerMatch()
         {
@@ -53,6 +54,16 @@ namespace YxPrediction
             }
             return true;
         }
+    }
+
+    public sealed class PublicBattle
+    {
+        public int Round;
+        public string FirstUid, SecondUid, WinnerUid;
+        public int[] FirstCards, SecondCards;
+        public string[] FirstNames, SecondNames;
+        public int FirstLife, SecondLife;
+        public bool FirstMirror, SecondMirror;
     }
 
     public sealed class Ticket

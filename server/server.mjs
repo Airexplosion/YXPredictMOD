@@ -22,23 +22,25 @@ export function createHandler(rooms, options = {}) {
       if (buckets.size > 10000) for (const [k,v] of buckets) if (now - v.at > 60000) buckets.delete(k);
       let b = buckets.get(ip); if (!b || now - b.at > 60000) buckets.set(ip, b = {at: now, count: 0});
       if (++b.count > 600) throw new RoomError('请求过于频繁', 429);
-      if (req.method === 'GET' && ['/', '/app.js', '/styles.css'].includes(req.url)) {
+      if (req.method === 'GET' && ['/', '/app.js', '/styles.css','/spectate.js','/assets/xianfu-mountains.png'].includes(req.url)) {
         const file = req.url === '/' ? 'index.html' : req.url.slice(1);
-        res.setHeader('Content-Type', file.endsWith('.html') ? 'text/html; charset=utf-8' : file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+        res.setHeader('Content-Type', file.endsWith('.png')?'image/png':file.endsWith('.html') ? 'text/html; charset=utf-8' : file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
         res.setHeader('X-Content-Type-Options','nosniff');res.end(fs.readFileSync(new URL('./web/'+file,import.meta.url)));return;
       }
       const requestUrl = new URL(req.url,'http://localhost');
       if (req.method === 'GET' && requestUrl.pathname === '/web/leaderboard') { res.end(JSON.stringify({ok:true,data:web.leaderboard(Number(requestUrl.searchParams.get('page')??0))}));return; }
+      if(req.method==='GET'&&requestUrl.pathname==='/web/rooms'){res.end(JSON.stringify({ok:true,data:web.listRooms(Number(requestUrl.searchParams.get('page')??0))}));return;}
+      if(req.method==='GET'&&requestUrl.pathname==='/web/room'){res.end(JSON.stringify({ok:true,data:web.watch(web.publicRoom(requestUrl.searchParams.get('code')))}));return;}
       if (req.method === 'GET' && req.url === '/web/me') { res.end(JSON.stringify({ok:true,data:web.me(web.identity(req.headers['x-prediction-identity']))}));return; }
-      if (req.method !== 'POST' || !['/v1/room','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket'].includes(req.url)) throw new RoomError('接口不存在', 404);
+      if (req.method !== 'POST' || !['/v1/room','/web/play','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket'].includes(req.url)) throw new RoomError('接口不存在', 404);
       if((req.url.startsWith('/web/')||req.url.startsWith('/auth/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
       let size = 0, chunks = [];
       for await (const chunk of req) { size += chunk.length; if (size > 32768) throw new RoomError('请求过大', 413); chunks.push(chunk); }
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RoomError('JSON无效'); }
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
       if(req.url.startsWith('/auth/')){await relayAuth(req,res,body);return;}
-      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']); const data=req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
+      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']); const data=req.url==='/web/play'?web.play(user,body):req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
       const key = req.headers.authorization?.replace(/^Bearer /, '');
       if (body.action !== 'register' && body.identity !== undefined) rooms.identify(key, body.identity);
       let result;
