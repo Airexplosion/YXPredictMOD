@@ -56,7 +56,7 @@ def main():
     assert not any(p.exists() for p in (publisher,service,timer))
     changes[publisher]=(SOURCE/'publish_character_scores.py').read_bytes()
     changes[service]=(f"[Unit]\nDescription=Refresh public aggregate character scores\n[Service]\nType=oneshot\nExecStart=/usr/bin/python3 {publisher} {dest}\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths={dest}\nTimeoutStartSec=45\n").encode()
-    changes[timer]=(f"[Unit]\nDescription=Refresh Elo character board every two minutes\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=2min\nAccuracySec=3s\nUnit={UNIT}.service\n[Install]\nWantedBy=timers.target\n").encode()
+    changes[timer]=(f"[Unit]\nDescription=Refresh Elo character board every two minutes\n[Timer]\nOnActiveSec=2min\nOnUnitInactiveSec=2min\nAccuracySec=3s\nUnit={UNIT}.service\n[Install]\nWantedBy=timers.target\n").encode()
     originals={p:p.read_bytes() if p.exists() else None for p in changes}
     assert originals[hub]==original
     for p,old in originals.items():
@@ -74,7 +74,6 @@ def main():
             assert (p.read_bytes() if p.exists() else None)==originals[p],p
             atomic(p,content);written.append(p)
         subprocess.run(['systemctl','daemon-reload'],check=True)
-        subprocess.run(['systemctl','start',service.name],check=True,timeout=50)
         subprocess.run(['systemctl','enable','--now',timer.name],check=True)
     except BaseException:
         if timer in written:subprocess.run(['systemctl','disable','--now',timer.name],capture_output=True)
