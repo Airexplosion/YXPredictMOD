@@ -3,6 +3,16 @@ sys.path.insert(0,str(pathlib.Path(__file__).parent))
 from quotes import sources,titles,champion_rates
 
 class QuoteTests(unittest.TestCase):
+ def test_shuffled_titles_and_all_initial_base_odds_move_as_one_pair(self):
+  players=[{'uid':format(i+1,'024x'),'isAI':False}for i in range(8)]
+  ratings=[{'score':4400-i*100,'found':True}for i in range(8)]
+  states=[{'life':100,'wins':0,'losses':0,'rank':0}for _ in range(8)]
+  base=champion_rates(ratings,states,1);labels=['特等马','上等马']+['中等马']*5+['牛马']
+  for game in range(40):
+   identity='paired-swap-'+str(game);allocation=sources(identity,players)
+   quoted=champion_rates([ratings[i]for i in allocation],states,1);named=titles(identity,players,ratings)
+   for i,j in enumerate(allocation):
+    self.assertEqual(named[i],labels[j]);self.assertEqual(quoted[i*8:i*8+8],base[j*8:j*8+8])
  def test_all_native_mod_reference_vectors(self):
   rows=json.loads((pathlib.Path(__file__).parent/'fixtures/quotes.json').read_text(encoding='utf-8'))
   self.assertEqual(len(rows),24)

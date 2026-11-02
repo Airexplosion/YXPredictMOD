@@ -21,6 +21,10 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   const available=(view.battles??[]).filter(b=>b.round<=round&&(player===null||b.first===player||b.second===player));
   const battleRound=available.some(b=>b.round===round)?round:Math.max(0,...available.map(b=>b.round));
   const battles=available.filter(b=>b.round===battleRound);
+  const eligibleQuote=p=>!view.ended&&!view.settled&&!p.rank&&p.active!==false&&!(p.state&&p.state.life<=0)&&integer(p.quoteRate,1,575000);
+  const quoted=view.players.filter(eligibleQuote).map(p=>p.quoteRate);
+  const quoteRange=quoted.length?{minimumRate:Math.min(...quoted),maximumRate:Math.max(...quoted)}:null;
+  const closingWarning=view.round===9&&!view.tradingClosed&&!view.ended&&!view.settled?'提醒：下回合（第10回合）起封盘，这是最后一个可下注回合。':null;
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
     const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
     const battle=available.filter(b=>b.first===index&&!b.firstMirror||b.second===index&&!b.secondMirror).sort((a,z)=>z.round-a.round)[0],side=battle?.first===index?'first':'second';
@@ -29,10 +33,12 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
     const board=buildBoard&&(!battleBoard||buildBoard.round>battleBoard.round)?buildBoard:battleBoard;
     const eliminatedRound=p.state&&p.state.life<=0?p.state.wins+p.state.losses:0;
     return {index,name:p.name,horseTitle:p.horseTitle,rank:round===view.round?p.rank:after?.ranks?.[index]??frame?.ranks?.[index]??0,
-      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:round===view.round?p.quoteRate:0,build,board,showBoard:noticeType==='query'||!eliminatedRound||round<=eliminatedRound};
+      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:eligibleQuote(p)?p.quoteRate:0,build,board,showBoard:noticeType==='query'||!eliminatedRound||round<=eliminatedRound};
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
-  return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,settlement:finalReport?view.settlement??null:null,players,
+  return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,
+    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,
+    bettingState:view.availability?.state??(view.open?'open':view.tradingClosed?'closed':'waiting'),settlement:finalReport?view.settlement??null:null,players,
     battles:battles.map(b=>({...b,firstName:view.players[b.first].name,secondName:view.players[b.second].name,firstCharacterId:view.players[b.first].build?.characterId??0,secondCharacterId:view.players[b.second].build?.characterId??0,winnerName:b.winner===null?null:view.players[b.winner].name}))});
 }
 export function publicReportReady(report,expected=null){

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {Rooms} from './rooms.mjs';
 import {PredictionWeb} from './web.mjs';
 import {HourlyEvents,hourlySlot,eligibleLobby,publicSummary} from './hourly.mjs';
+import {publicPresentation} from './public-build.mjs';
 import {qqCommand,serviceAccess} from './qq.mjs';
 import http from 'node:http';
 import {createHmac,createHash} from 'node:crypto';
@@ -69,6 +70,38 @@ test('QQ and website use one wallet, duplicate group commands across room change
  x.time(x.now()+3600000);x.snapshot.id='next-game';x.snapshot.gameRoomId='next-native';x.info.roomId='next-native';x.snapshot.ended=false;x.snapshot.round=1;x.snapshot.ranks.fill(0);x.open();
  assert.deepEqual(qqCommand(x.web,x.hourly,user,command),first);assert.equal(x.web.me(user).playBalance,1360);
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'stale-message'}),/消息已过期/);
+});
+test('one QQ command buys multiple ordered legs including the same horse twice, and retries never debit again',()=>{
+ const x=fixture(),v=x.open(),body={text:'/下注 1 200 2 300 1 200',messageId:'batch-001',messageAt:x.now()};
+ const reply=qqCommand(x.web,x.hourly,user,body),key=x.web.playKey(user),r=x.rooms.state.rooms[v.code];
+ assert.equal(x.web.me(user).playBalance,300);assert.equal(r.positions[key][0].claim,1840);assert.equal(r.positions[key][1].claim,1380);
+ assert.equal(r.cashflows[key].invested,700);assert.equal(r.actionCounts[key][0],2);assert.equal(r.actionCounts[key][1],1);assert.equal(Object.keys(r.receipts).length,3);
+ assert(reply.lines[0].includes('3笔，共投入700'));const before=structuredClone(x.rooms.state);
+ assert.deepEqual(qqCommand(x.web,x.hourly,user,body),reply);assert.deepEqual(x.rooms.state,before);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{...body,text:'/下注 1 200 2 300 1 201'}),/内容不一致/);
+ const restored=new Rooms(structuredClone(x.rooms.state),undefined,x.now),web=new PredictionWeb(restored,{now:x.now}),hourly=new HourlyEvents(restored,web);
+ assert.deepEqual(qqCommand(web,hourly,user,body),reply);assert.equal(web.me(user).playBalance,300);
+});
+test('insufficient funds, malformed batches or a later eliminated horse roll back all legs and automatic wallet opening',()=>{
+ for(const text of ['/下注 1 700 2 400','/下注 1 200 2','/下注 1 200 2 NaN','/下注 '+Array(33).fill('1 1').join(' ')]){
+  const x=fixture();x.open();const before=structuredClone(x.rooms.state);
+  assert.throws(()=>qqCommand(x.web,x.hourly,user,{text,messageId:'bad-batch',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
+ }
+ const x=fixture(),v=x.open();x.snapshot.active[1]=false;x.hourly.sync(v.code,x.snapshot);const before=structuredClone(x.rooms.state);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 200 2 300',messageId:'inactive-batch',messageAt:x.now()}),/淘汰|退出/);assert.deepEqual(x.rooms.state,before);
+});
+test('batch save failures preserve every wallet, claim, cashflow and deduplication receipt',()=>{
+ let fail=false;const x=fixture(()=>{if(fail)throw Error('disk failure')});x.open();const before=structuredClone(x.rooms.state);fail=true;
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 200 2 300 1 200',messageId:'disk-batch',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
+});
+test('round nine warning leads the first sentence and multi-bets retain the round ten closure',()=>{
+ const x=fixture(),v=x.open();x.snapshot.round=9;x.hourly.sync(v.code,x.snapshot);
+ const view=x.web.watch(x.rooms.state.rooms[v.code]),presentation=publicPresentation(view,{round:8,noticeType:'round'});
+ assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起封盘'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
+ const reply=qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-nine-batch',messageAt:x.now()});
+ qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:reply.receiptId});x.snapshot.round=10;x.hourly.sync(v.code,x.snapshot);
+ assert.equal(publicPresentation(x.web.watch(x.rooms.state.rooms[v.code])).closingWarning,null);
+ const before=structuredClone(x.rooms.state);assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-ten-batch',messageAt:x.now()}),/封盘/);assert.deepEqual(x.rooms.state,before);
 });
 test('notifications are durable, leased, acknowledgement-gated and contain only public information',()=>{
  const x=fixture(),r=x.open();assert.equal(x.hourly.data().outbox.length,1);
@@ -149,5 +182,16 @@ test('real HTTP separates observer, bot and normal clients, and rejects expired 
   assert.equal(x.web.me(user).playBalance,900);
   assert.equal((await post('/bot/events',{action:'claim'},{authorization:'Bearer '+observerKey})).status,401);
   assert((await post('/bot/events',{action:'claim'},{authorization:'Bearer '+botKey})).data);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('concurrent HTTP retries of a multi-bet QQ message create one atomic receipt and one debit',async()=>{
+ const x=fixture();x.open();const botKey='b'.repeat(32),bridgeKey='a'.repeat(64),server=http.createServer(createHandler(x.rooms,{botKey,bridgeKey,now:x.now}));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const payload=Buffer.from(JSON.stringify({...user,expiresAt:x.now()+60000})).toString('base64url'),proof=payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');
+ const body={text:'/下注 1 200 2 300 1 200',messageId:'http-batch-once',messageAt:x.now()},url='http://127.0.0.1:'+server.address().port+'/bot/command';
+ try{
+  const responses=await Promise.all(Array.from({length:8},()=>fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+botKey,'x-prediction-identity':proof},body:JSON.stringify(body)})));
+  assert(responses.every(r=>r.status===200));const replies=await Promise.all(responses.map(r=>r.json()));assert(replies.every(r=>JSON.stringify(r.data)===JSON.stringify(replies[0].data)));
+  assert.equal(x.web.me(user).playBalance,300);assert.equal(Object.keys(x.rooms.state.qqReceipts).length,1);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
