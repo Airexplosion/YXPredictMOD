@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Rooms} from './rooms.mjs';
 import {PredictionWeb} from './web.mjs';
-import {publicBuild,buildLines,publicPresentation} from './public-build.mjs';
+import {publicBuild,buildLines,publicPresentation,publicReportReady} from './public-build.mjs';
 import {publicSummary} from './hourly.mjs';
 import {settlementReport} from './settlement.mjs';
 export const build=(i=0)=>({characterId:1000001+i,characterName:'青松'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:3,realmName:'金丹',talents:[{id:10001,name:'筑基 · 凝气'},{id:10002,name:'金丹 · 明心'}],baijia:[{id:1001,name:'百家·清风'}],fates:[{id:21,name:'天衍·静修'}],resonance:{id:4,name:'共鸣·生息'},selectionRound:1,selectionsKnown:true});
@@ -55,4 +55,24 @@ test('signed native life damage accepts either side, and canonical player swaps 
  x.rooms.sync(x.code,x.key,x.snapshot);let b=x.rooms.state.rooms[x.code].battles[0];assert.equal(b.lifeDamage,-8);
  const raw=x.snapshot.battles[0];[raw.first,raw.second]=[raw.second,raw.first];[raw.firstCards,raw.secondCards]=[raw.secondCards,raw.firstCards];[raw.firstNames,raw.secondNames]=[raw.secondNames,raw.firstNames];raw.lifeDamage=8;
  x.rooms.sync(x.code,x.key,x.snapshot);b=x.rooms.state.rooms[x.code].battles[0];assert.equal(b.lifeDamage,-8);assert.equal(b.winner,1);
+});
+test('newer authoritative public boards take precedence over older focused battles',()=>{
+ const x=setup(),r=x.rooms.state.rooms[x.code];r.builds[0]={...build(),selectionRound:2,cards:[301],cardNames:['末轮公开牌']};
+ r.battles=[{round:1,first:0,second:1,firstMirror:false,secondMirror:false,winner:1,firstCards:[201],firstNames:['上轮公开牌']}];
+ const p=publicPresentation(x.web.watch(r)).players[0];assert.equal(p.board.round,2);assert.deepEqual(p.board.cards,[301]);
+});
+test('players eliminated this round retain their cards; subsequent and historical reports use the actual elimination round',()=>{
+ const x=setup(),r=x.rooms.state.rooms[x.code];r.states[0]={life:-1,wins:1,losses:1};r.states[1]={life:0,wins:0,losses:1};
+ let p=publicPresentation(x.web.watch(r),{noticeType:'round'});assert.equal(p.players[0].showBoard,true);assert.equal(p.players[1].showBoard,false);
+ r.round=3;p=publicPresentation(x.web.watch(r),{noticeType:'round'});assert.equal(p.players[0].showBoard,false);assert.equal(p.players[2].showBoard,true);
+ assert.equal(publicPresentation(x.web.watch(r),{round:2,noticeType:'round'}).players[0].showBoard,true);
+ assert.equal(publicPresentation(x.web.watch(r),{player:0}).players[0].showBoard,true);
+});
+test('authoritative settlement can be announced independently of incomplete round pictures, without changing money',()=>{
+ const x=setup();x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.key,x.snapshot);
+ const before=structuredClone(x.rooms.state),view=x.web.watch(x.rooms.state.rooms[x.code]);
+ const final=publicPresentation(view,{noticeType:'settled'}),round=publicPresentation(view,{noticeType:'round'});
+ assert(publicReportReady(final,Array(8).fill(true)));assert(!publicReportReady(round,Array(8).fill(true)));
+ assert(!publicReportReady({...final,players:final.players.map(p=>({...p,rank:0}))}));assert(!publicReportReady({...final,settlement:null}));
+ assert.deepEqual(x.rooms.state,before);
 });

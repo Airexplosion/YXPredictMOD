@@ -79,7 +79,7 @@ export class HourlyEvents{
         this.enqueue('round',r,frame.round);
       }
       if(r.settled)this.enqueue('settled',r);
-      return {...this.web.watch(r),reportReady:r.settled?this.ready(r,'settled',r.round):false};
+      return {...this.web.watch(r),reportReady:r.settled?this.ready(r,'round',r.round):false};
     });
   }
   enqueue(kind,r,round=r.round){

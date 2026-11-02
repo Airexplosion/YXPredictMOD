@@ -100,6 +100,16 @@ test('observer liveness reports never refresh quotes; verification pauses immedi
  x.hourly.sync(v.code,x.snapshot);assert.equal(x.rooms.isOpen(r),false);assert.equal(x.rooms.availability(r).state,'closed');
  assert.throws(()=>x.hourly.source(v.code,'wrong-game','verifying',1));
 });
+test('settlement is forwarded once while incomplete final battle reports remain queued',()=>{
+ const x=fixture(),v=x.open();let event=x.hourly.claim();x.hourly.ack(event.id,event.lease);
+ Object.assign(x.snapshot,{round:2,closedThrough:2,ended:true,open:false,ranks:[1,2,3,4,5,6,7,8]});
+ const result=x.hourly.sync(v.code,x.snapshot);assert.equal(result.settled,true);assert.equal(result.reportReady,false);
+ const accounts=structuredClone(x.rooms.state.accounts),r=x.rooms.state.rooms[v.code],financial=structuredClone({positions:r.positions,payouts:r.payouts,cashflows:r.cashflows});
+ event=x.hourly.claim();assert.equal(event.kind,'settled');assert.equal(event.presentation.noticeType,'settled');assert(event.presentation.settlement.closing.includes('已结算'));
+ x.hourly.ack(event.id,event.lease);assert.equal(x.hourly.claim(),null);
+ assert(x.hourly.data().outbox.some(e=>e.kind==='round'&&!e.deliveredAt));
+ assert.deepEqual(x.rooms.state.accounts,accounts);assert.deepEqual({positions:r.positions,payouts:r.payouts,cashflows:r.cashflows},financial);
+});
 test('failed saving rolls back wallet, global QQ receipt, joining, account creation and event outbox together',()=>{
  let fail=false;const x=fixture(()=>{if(fail)throw new Error('disk unavailable')});const r=x.open(),before=structuredClone(x.rooms.state);fail=true;
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 100',messageId:'first-command',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
