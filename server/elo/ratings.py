@@ -31,7 +31,7 @@ def build(seed,source,copy_seed=True):
         fingerprint=json.dumps(game,sort_keys=True,separators=(',',':'))
         if gid in seen and seen[gid][0]!=fingerprint:raise ValueError('Conflicting duplicate game')
         seen[gid]=(fingerprint,game)
-    n=0
+    n=0; rated_through=seed['last']
     for _,game in sorted(seen.values(),key=lambda item:(item[1]['at'],item[1]['id'])):
         rows=sorted(game['players'],key=lambda p:p['place'])
         if not 2<=len(rows)<=8 or len({p['uid'] for p in rows})!=len(rows) or len({p['place'] for p in rows})!=len(rows):
@@ -52,15 +52,15 @@ def build(seed,source,copy_seed=True):
             p=players[row['uid']];p.update(mu=rating.mu,sigma=rating.sigma,last=game['at'],name=row.get('name') or p['name'])
             p['games']+=1;p['dx']+=int(row['mode']=='daoxin')
             if game.get('season') is not None:p['season']=game['season']
-        n+=1
+        n+=1; rated_through=max(rated_through,game['at'])
     output={}
     for uid,p in players.items():
         score=3000+SCALE*(p['mu']-MU);sigma=SCALE*p['sigma']
         if not math.isfinite(score) or not 0<=score<=10000 or not math.isfinite(sigma) or not 0<=sigma<=2000:
             raise ValueError('Rating outside MOD contract')
-        output[uid]={'rating':round(score,3),'sigma':round(sigma,3),'games':p['games'],'dx':p['dx'],'last':p['last'],'name':p['name'],
+        output[uid]={'rating':round(score,3),'sigma':round(sigma,3),'cons':score-2*sigma,'games':p['games'],'dx':p['dx'],'last':p['last'],'name':p['name'],
             'seasons':p.get('seasons',{}),'seedAt':seed['last']}
     revision=hashlib.sha256(json.dumps(source['games'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return {'players':output,'meta':{'schema':1,'seedAt':seed['last'],'seedPlayers':seed_players,'updatedGames':n,
-        'players':len(output),'sourceAt':source['generatedAt'],'sourceRevision':revision,'scope':source.get('scope'),
+        'players':len(output),'sourceAt':source['generatedAt'],'ratedThroughAt':rated_through,'sourceRevision':revision,'scope':source.get('scope'),
         'model':'OpenSkill Plackett-Luce','seasonReset':'Applied only when explicitly provided by the source','coverageComplete':False}}

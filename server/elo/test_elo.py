@@ -17,6 +17,13 @@ A='a'*24;B='b'*24;G='c'*24
 def seed():return {'last':1000,'players':{A:{'mu':25,'sigma':25/3,'games':10,'dx':2,'last':1000,'name':'甲','season':10,'seasons':{}}}}
 def source():return {'schema':1,'readOnly':True,'upstreamRequests':0,'generatedAt':3000,'games':[{'id':G,'code':1,'begin':1001,'at':2000,'players':[{'uid':A,'place':1,'mode':'ladder','name':'甲'},{'uid':B,'place':3,'mode':'daoxin','name':'乙'}]}]}
 class EloTests(unittest.TestCase):
+ def test_known_season_model_matches_original_reference_vectors(self):
+  vector=json.loads((pathlib.Path(__file__).parent/'fixtures/original-model-parity.json').read_text(encoding='utf-8'))
+  result=build(vector['seed'],vector['source'])
+  for uid,expected in vector['expected'].items():
+   for field in ['rating','sigma','games','dx']:self.assertEqual(result['players'][uid][field],expected[field])
+   self.assertAlmostEqual(result['players'][uid]['cons'],expected['cons'],places=9)
+  self.assertEqual(result['meta']['ratedThroughAt'],max(g['at'] for g in vector['source']['games']))
  def test_ranking_dedup_and_repeat_rebuild(self):
   s=seed();v=source();r=build(s,v);self.assertGreater(r['players'][A]['rating'],3000);self.assertLess(r['players'][B]['rating'],3000)
   self.assertEqual(r['players'][A]['games'],11);self.assertEqual(r['players'][B]['dx'],1);self.assertEqual(s,seed())

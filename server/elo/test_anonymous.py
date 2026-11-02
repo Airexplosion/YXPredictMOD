@@ -20,6 +20,13 @@ def old():return {'players':{pseudonym(A,KEY):row(4500,100),pseudonym(B,KEY):row
 
 
 class AnonymousTests(unittest.TestCase):
+ def test_original_conservative_order_keeps_displayed_technical_score(self):
+  with tempfile.TemporaryDirectory() as directory:
+   p=pathlib.Path(directory)/'new.json';data=primary()
+   data['players']={A:{**row(5000),'sigma':400,'cons':4200.25},B:{**row(4700),'sigma':50,'cons':4600.5},C:{**row(4800),'sigma':200,'cons':4400.25}}
+   p.write_text(json.dumps(data));self.assertEqual(AnonymousBoard(Snapshot(p)).page()['scores'],[4700,4800,5000])
+   for item in data['players'].values():item.pop('cons')
+   p.write_text(json.dumps(data));self.assertEqual(AnonymousBoard(Snapshot(p)).page()['scores'],[4700,4800,5000])
  def test_top_100_limit_is_enforced_before_page_slicing(self):
   with tempfile.TemporaryDirectory() as directory:
    p=pathlib.Path(directory)/'new.json';data={'players':{format(i,'024x'):row(5000-i) for i in range(150)},'meta':{'sourceAt':1000}}

@@ -16,11 +16,14 @@ class AnonymousBoard:
             primary=self.snapshot.get();old=None if self.legacy is None else self.legacy.data()
             generation=(self.snapshot.stamp,None if old is None else self.legacy.snapshot.stamp)
             if generation!=self.generation:
-                at=primary['meta']['sourceAt'];cutoff=at-ACTIVE_DAYS*86400000;scores=[];seen=set()
+                at=primary['meta'].get('ratedThroughAt',primary['meta']['sourceAt'])
+                if old is not None:at=max(at,old['meta']['dataAt'])
+                cutoff=at-ACTIVE_DAYS*86400000;scores=[];seen=set()
                 def append(row):
                     score=row.get('rating')
-                    if row.get('games',0)>=MIN_GAMES and row.get('last',0)>=cutoff and type(score) in (int,float) and math.isfinite(score):
-                        scores.append(int(round(score)))
+                    conservative=row.get('cons',score-2*row.get('sigma',0) if type(score) in (int,float) else None)
+                    if row.get('games',0)>=MIN_GAMES and row.get('last',0)>=cutoff and type(score) in (int,float) and math.isfinite(score) and type(conservative) in (int,float) and math.isfinite(conservative):
+                        scores.append((conservative,int(round(score))))
                 for uid,row in primary['players'].items():
                     if old is not None:
                         identity=pseudonym(uid,self.legacy.key);seen.add(identity);previous=old['players'].get(identity)
@@ -29,6 +32,6 @@ class AnonymousBoard:
                 if old is not None:
                     for identity,row in old['players'].items():
                         if identity not in seen:append(row)
-                self.scores=sorted(scores,reverse=True)[:MAX_SCORES];self.at=at;self.generation=generation
+                self.scores=[score for _,score in sorted(scores,key=lambda item:item[0],reverse=True)[:MAX_SCORES]];self.at=at;self.generation=generation
             return {'scores':self.scores[offset:offset+limit],'total':len(self.scores),'offset':offset,'limit':limit,
                 'updatedAt':self.at,'minGames':MIN_GAMES,'activeDays':ACTIVE_DAYS}
