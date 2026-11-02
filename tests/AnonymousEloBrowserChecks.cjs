@@ -11,13 +11,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   assert.equal(await page.locator('#view-elo input').count(),0);assert.equal(await page.locator('#view-elo .anon-subtitle,#view-elo .anon-badge,#view-elo .anon-note').count(),0);assert(!(await page.locator('#view-elo').innerText()).includes('不见姓名'));assert.equal(await page.locator('#view-elo tbody a').count(),0);
   assert(!await page.locator('#view-elo').evaluate(e=>e.textContent.includes('NeverReveal')));
   await page.screenshot({path:path.join(process.cwd(),'.cache/anonymous-elo-desktop.png'),fullPage:true});
-  await page.locator('.anon-pager button').last().click();await page.waitForFunction(()=>document.querySelector('.anon-place')?.textContent==='101');
-  await page.locator('.anon-pager button').first().click();await page.waitForFunction(()=>document.querySelector('.anon-place')?.textContent==='01');
+  assert.equal(await page.locator('.anon-pager').count(),0);assert.equal(await page.locator('.anon-place').last().innerText(),'100');
   await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow');
   await page.screenshot({path:path.join(process.cwd(),'.cache/anonymous-elo-mobile.png'),fullPage:true});
-  for(const data of payloads){assert.deepEqual(Object.keys(data).sort(),['scores','total','offset','limit','updatedAt','minGames','activeDays'].sort());assert(data.scores.every(Number.isFinite));assert(!JSON.stringify(data).includes('NeverReveal'))}
-  assert(payloads.length>=3);assert(!requests.some(u=>new URL(u).pathname.startsWith('/data/elo/')));assert(!requests.some(u=>new URL(u).pathname==='/api/v1/ratings'));
+  for(const data of payloads){assert.deepEqual(Object.keys(data).sort(),['scores','total','offset','limit','updatedAt','minGames','activeDays'].sort());assert(data.total<=100);assert(data.scores.length<=100);assert(data.scores.every(Number.isFinite));assert(!JSON.stringify(data).includes('NeverReveal'))}
+  assert(payloads.length>=1);assert(!requests.some(u=>new URL(u).pathname.startsWith('/data/elo/')));assert(!requests.some(u=>new URL(u).pathname==='/api/v1/ratings'));
+  assert.deepEqual((await (await page.request.get(origin+'/api/v1/leaderboard?offset=100&limit=100')).json()).scores,[]);
   assert.equal((await page.request.get(origin+'/data/elo/names.json')).status(),404);assert.equal((await page.request.get(origin+'/data/elo/top.json')).status(),404);
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({anonymousPayloads:payloads.length,onlyScores:true,noPlayerSearchOrLinks:true,noLegacyIdentityRequests:true,pagination:true,desktopMobile:true,scriptErrors:0}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({anonymousPayloads:payloads.length,onlyScores:true,noPlayerSearchOrLinks:true,noLegacyIdentityRequests:true,top100Only:true,noPagination:true,desktopMobile:true,scriptErrors:0}));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

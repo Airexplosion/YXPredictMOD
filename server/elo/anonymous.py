@@ -5,6 +5,7 @@ from legacy import pseudonym
 
 MIN_GAMES=30
 ACTIVE_DAYS=30
+MAX_SCORES=100
 
 
 class AnonymousBoard:
@@ -28,6 +29,6 @@ class AnonymousBoard:
                 if old is not None:
                     for identity,row in old['players'].items():
                         if identity not in seen:append(row)
-                self.scores=sorted(scores,reverse=True);self.at=at;self.generation=generation
+                self.scores=sorted(scores,reverse=True)[:MAX_SCORES];self.at=at;self.generation=generation
             return {'scores':self.scores[offset:offset+limit],'total':len(self.scores),'offset':offset,'limit':limit,
                 'updatedAt':self.at,'minGames':MIN_GAMES,'activeDays':ACTIVE_DAYS}
