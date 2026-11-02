@@ -1,5 +1,11 @@
 # Elo API 与匿名榜
 
+**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 提供两个独立视图。默认的10·29平衡窗口是截至北京时间2026年11月2日20:56的固定报告，含20,806局、14,540名玩家。[实时视图](https://elo.kaigua.vip/elo/characters/?source=live) 展示持续结算的角色评分。总体分等权合并3000–5999与6000及以上分段，可以按角色名和副职筛选。
+
+`web/characters/window.json` 仅含固定报告的公开汇总。生产 `yx-character-board-feed.timer` 约每两分钟调用 `publish_character_scores.py`，从现有角色榜读取匿名汇总并按字段白名单原子发布同域 `live.json`。失败时保留上一份有效数据。该页面的数据请求只访问这两个同域静态文件。
+
+首次部署脚本 `install_character_board.py` 将页面装入现有 Caddy 静态目录，并在数据站首页和匿名玩家榜添加入口。浏览器回归 `tests/CharacterEloBrowserChecks.cjs` 验证两个数据源、分段、副职、搜索、移动宽度、匿名字段以及前端请求范围。
+
 本目录是独立的只读数据适配器、OpenSkill 计算器与 API。它不登录游戏、不加入观战、不发送游戏请求，也不修改身份采集服务。部署在赌马同服务器，域名 `https://elo.kaigua.vip`；域名恢复原来的卡牌/流派数据站及匿名Elo榜；MOD查询继续使用独立API。
 
 ## 数据与边界

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="dark">
+<title>角色 Elo 强度榜 · 弈仙牌数据</title><link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css?v=1"><script src="board.js?v=1" defer></script></head>
+<body><main>
+<nav class="crumb" aria-label="站内导航"><a href="/">弈仙牌数据</a><span>/</span><a href="/elo/">匿名玩家榜</a><span>/</span><strong>角色强度</strong></nav>
+<header><div><p class="kicker">天梯 · 道心</p><h1>角色 Elo 强度榜</h1><p class="intro">综合使用者水平、角色专精和同桌对手，按实际名次逐局计分。</p></div>
+<div class="switch" aria-label="榜单来源"><button type="button" data-source="window">10·29 平衡窗口</button><button type="button" data-source="live">实时角色榜</button></div></header>
+<p id="status" role="status">正在读取评分…</p>
+<section id="board" hidden>
+<section class="brief" aria-label="样本范围"><div><span class="over" id="modeLabel"></span><h2 id="period"></h2><p id="coverage"></p></div>
+<dl><div><dt>计分对局</dt><dd id="games"></dd></div><div><dt>不同玩家</dt><dd id="players"></dd></div></dl></section>
+<div class="leads" id="leads" aria-label="各榜榜首"></div>
+<section class="ranking"><div class="sectionhead"><div><p class="kicker">角色排名</p><h2 id="tableTitle">总体排名</h2></div>
+<label class="search"><span>查找角色</span><input id="search" type="search" autocomplete="off" placeholder="输入角色名"></label></div>
+<div class="filters"><div class="bands" aria-label="积分分段"><button type="button" data-band="overall">总体</button><button type="button" data-band="mid">3000–5999</button><button type="button" data-band="high">6000及以上</button></div>
+<label class="career">副职 <select id="career"><option value="">全部副职</option></select></label></div>
+<p class="caption" id="caption"></p>
+<div class="tablewrap"><table><thead><tr><th scope="col">排名</th><th scope="col">角色</th><th scope="col" aria-sort="descending">Elo ↓</th><th scope="col" id="aux1">3000–5999</th><th scope="col" id="aux2">6000及以上</th><th scope="col">局数</th><th scope="col">玩家数</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="empty" hidden>没有找到这个角色。可以清空搜索再看。</p></section>
+<details><summary>计分口径与数据覆盖</summary><p>玩家和角色初始均为3000分。预期在开局时冻结，角色的成绩超过预期就涨分。随机成绩归实际抽到的角色；一人一局只结算一次，至少两名真人且身份、名次可核验才计分。</p><p>总体分等权合并两个分段。少于20人次或8个不同玩家标“初评”，首局就显示分数。组合分包含角色、副职及两者的共同影响。</p><p id="notes"></p><div id="sample"></div></details>
+</section>
+<footer><a href="/">数据首页</a><a href="/elo/">匿名玩家 Elo 榜</a><span>弈仙牌数据</span></footer></main></body></html>

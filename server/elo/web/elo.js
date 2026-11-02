@@ -7,7 +7,9 @@ const points=value=>value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximu
 async function render(){
  const root=host();if(!root)return;
  const mine=++ticket;root.replaceChildren();root.classList.add('anon-elo');
- const heading=el('div',undefined,'anon-heading'),copy=el('div');copy.append(el('h2','匿名 Elo 榜'));heading.append(copy);root.append(heading);
+ const heading=el('div',undefined,'anon-heading'),copy=el('div');copy.append(el('h2','匿名 Elo 榜'));
+ const characters=el('a','角色强度榜 →','anon-character-link');characters.href='/elo/characters/';
+ heading.append(copy,characters);root.append(heading);
  const state=el('p','正在读取榜单…','anon-state');state.setAttribute('role','status');root.append(state);
  try{
   const response=await fetch('/api/v1/leaderboard?offset=0&limit=100',{credentials:'omit',referrerPolicy:'no-referrer'});
