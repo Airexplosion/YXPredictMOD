@@ -45,6 +45,15 @@ test('6000 inclusive applies to new openings; an existing lower-score game conti
  assert.equal(x.rooms.state.rooms[r.code].positions[key][0].claim,claim);assert.equal(x.hourly.status().minimumRankScore,6000);assert.equal(x.hourly.status().active.code,r.code);
  assert.equal(x.hourly.open({...x.info,avgRankScore:3500},x.snapshot).code,r.code);
 });
+test('ordinary website rooms never prevent an hourly opening; their holdings and game access remain intact',()=>{
+ const x=fixture(),key=x.rooms.register('普通房主').token,ordinary=x.rooms.create(key,{...x.snapshot,id:'ordinary-game',gameRoomId:'native-ordinary'});
+ x.rooms.trade(ordinary.code,key,{kind:'buy',player:0,rank:1,stake:100,version:x.rooms.state.rooms[ordinary.code].version,operation:'ordinary-before-hourly-001'});
+ const before=structuredClone(x.rooms.state.rooms[ordinary.code]),balance=x.rooms.state.accounts[key].balance;
+ assert.equal(x.rooms.websiteRoom().code,ordinary.code);assert.equal(x.hourly.status().available,true);
+ const event=x.open();assert.equal(x.rooms.websiteRoom().code,event.code);assert.equal(x.web.listRooms().total,1);assert.equal(x.hourly.status().available,false);
+ assert.deepEqual(x.rooms.state.rooms[ordinary.code],before);assert.equal(x.rooms.state.accounts[key].balance,balance);
+ assert(x.rooms.list(key).rooms.some(r=>r.code===ordinary.code));assert.equal(x.rooms.view(ordinary.code,key).positions[0].claim,400);
+});
 test('QQ and website use one wallet, duplicate group commands across room changes cannot wager again; expiry does not cancel a locked payout',()=>{
  const x=fixture(),r=x.open();x.web.openAccount(user);const accounts=Object.keys(x.rooms.state.accounts).length;
  const command={text:'/下注 1 100',messageId:'one-message',messageAt:x.now()};

@@ -37,10 +37,10 @@ export class HourlyEvents{
   data(){return this.rooms.state.hourly??{slots:{},outbox:[]};}
   status(){
     const active=Object.values(this.rooms.state.rooms).find(r=>r.eventSlot&&!r.settled);
-    const featured=this.rooms.websiteRoom(),slot=hourlySlot(this.rooms.now());
+    const slot=hourlySlot(this.rooms.now());
     return {slot,bonusBps:EVENT_BONUS_BPS,minimumRankScore:6000,maximumStartRound:2,searchMinutes:5,
       active:active?{code:active.code,gameId:active.gameId,gameRoomId:active.gameRoomId,info:this.data().slots[active.eventSlot]?.info??null,model:this.data().slots[active.eventSlot]?.model??null}:null,
-      opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active&&(!featured||featured.ended||featured.settled)};
+      opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active};
   }
   source(code,gameId,state,round){
     const r=this.rooms.state.rooms[code];ensure(r?.eventSlot&&r.host===this.data().hostToken&&r.gameId===gameId,'观战来源与房间不一致',403);
