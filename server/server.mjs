@@ -35,7 +35,10 @@ export function createHandler(rooms, options = {}) {
       const requestUrl = new URL(req.url,'http://localhost');
       const art=/^\/art\/(cards|talents|baijia|fates|resonances|characters|frames)\/([a-zA-Z0-9_-]{1,40})\.png$/.exec(requestUrl.pathname);
       if(req.method==='GET'&&art){
-        const file=path.join(options.artDirectory??process.env.PREDICTION_ART_DIR??'/var/lib/yx-prediction/art',art[1],art[2]+'.png');
+        // Native skip choices use the NPC's small ID, not a strategy config row.
+        // They all resolve to the game's common Skip icon.
+        const name=art[1]==='baijia'&&/^[1-9][0-9]{0,2}$/.test(art[2])?'skip':art[2];
+        const file=path.join(options.artDirectory??process.env.PREDICTION_ART_DIR??'/var/lib/yx-prediction/art',art[1],name+'.png');
         if(!fs.existsSync(file))throw new RoomError('图像待同步',404);
         res.setHeader('Content-Type','image/png');res.setHeader('Cache-Control','public, max-age=86400');res.setHeader('X-Content-Type-Options','nosniff');res.end(fs.readFileSync(file));return;
       }

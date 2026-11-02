@@ -98,3 +98,16 @@ test('same-round terminal updates retain the previous public choices for pending
  const latest=publicPresentation(view,{round:3}).players[0];assert.equal(latest.build.selectionRound,3);assert.equal(latest.build.baijia[0].name,'第三轮仙命');
  assert(!JSON.stringify(view.buildHistory).includes('public-player-'));
 });
+
+test('all native baijia skip IDs use the common skip icon, while real missing strategy art still returns 404',async()=>{
+ const {mkdtempSync,mkdirSync,writeFileSync,rmSync,rmdirSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path'),http=await import('node:http'),{createHandler}=await import('./server.mjs');
+ const folder=mkdtempSync(join(tmpdir(),'yx-skip-art-'));mkdirSync(join(folder,'baijia'));mkdirSync(join(folder,'talents'));
+ const png=Buffer.from('89504e470d0a1a0a','hex');writeFileSync(join(folder,'baijia','skip.png'),png);
+ const server=http.createServer(createHandler(new Rooms(),{artDirectory:folder}));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
+ const request=path=>new Promise((resolve,reject)=>http.get(base+path,r=>{const chunks=[];r.on('data',chunk=>chunks.push(chunk));r.on('end',()=>resolve({status:r.statusCode,headers:r.headers,body:Buffer.concat(chunks)}));r.on('error',reject);}).on('error',reject));
+ try{
+  for(const id of [1,7,12,999]){const r=await request('/art/baijia/'+id+'.png');assert.equal(r.status,200);assert.equal(r.headers['content-type'],'image/png');assert.deepEqual(r.body,png);}
+  for(const path of ['/art/baijia/0.png','/art/baijia/1000.png','/art/baijia/1001.png','/art/talents/7.png'])assert.equal((await request(path)).status,404);
+  rmSync(join(folder,'baijia','skip.png'));assert.equal((await request('/art/baijia/7.png')).status,404);
+ }finally{await new Promise(resolve=>server.close(resolve));rmSync(join(folder,'baijia','skip.png'),{force:true});rmdirSync(join(folder,'baijia'));rmdirSync(join(folder,'talents'));rmdirSync(folder);}
+});

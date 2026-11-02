@@ -31,6 +31,12 @@ def select_sprite_index(index,configs):
     if missing:raise ValueError('Missing native override sprites: '+', '.join(sorted(missing)))
     return {name:value for name,value in index.items()if SPRITE_PATTERN.fullmatch(name)or name in override_paths}
 
+def export_skip_icon(images,out):
+    source=images.get('Icon_XianMoStrategy_Skip')
+    if source is None:raise ValueError('Missing native baijia skip sprite')
+    target=out/'baijia'/'skip.png';source.save(target)
+    return target
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--game',required=True);ap.add_argument('--out',required=True);args=ap.parse_args()
     warnings.filterwarnings('ignore');import UnityPy
@@ -79,6 +85,7 @@ def main():
     def save(kind,identifier,source):
         if source not in images:return False
         images[source].save(out/kind/(str(identifier)+'.png'));return True
+    export_skip_icon(images,out)
     for identifier,c in cards.items():
         n=int(identifier);basis=n-n//10000%100*10000;overrides=cards.get(str(basis),{}).get('overrides',[])
         if len(overrides)>=2 and all('Card_'+str(i)in images for i in overrides[:2]):
