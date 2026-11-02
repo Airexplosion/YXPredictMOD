@@ -26,7 +26,7 @@ def public_mode(reader):
 class Spectator:
     def __init__(self,reader,info,mode='delayed'):
         if mode not in ('delayed','ordinary'):raise ValueError('Invalid public spectator mode')
-        self.reader=reader;self.info=info;self.mode=mode;self.ws=None;self.next_ping=0;self.events=[]
+        self.reader=reader;self.info=info;self.mode=mode;self.ws=None;self.next_ping=0;self.events=[];self.match_rank_data=None
     def own_session(self,require_empty=True,bounded=False):
         _,uid=read_token(self.reader.token_cache)
         if bounded:
@@ -65,6 +65,13 @@ class Spectator:
         value=self._receive('DelayedSpectatingData' if self.mode=='delayed' else 'GameStatus',timeout)
         if value is None:raise SnapshotPending('Public spectator snapshot is not available yet')
         return value
+    def ranks(self,allowed,timeout=2):
+        from rank_info import match_ranks
+        value=self.match_rank_data
+        if value is None:
+            # Native SimpleClientPactType.MatchPlayerInfosReq: public read only.
+            self._send(101);value=self._receive('MatchPlayerInfosResp',timeout)
+        return None if value is None else match_ranks(value,allowed)
     def focus_public(self,uid,allowed,timeout=1.5):
         if self.mode!='ordinary':return None
         if uid not in allowed or not re.fullmatch('[a-zA-Z0-9_-]{1,128}',uid):raise LobbyError('Target is not in the verified public roster')
@@ -90,6 +97,7 @@ class Spectator:
             unpacker=msgpack.Unpacker(raw=False,strict_map_key=False,max_buffer_size=2097152);unpacker.feed(raw[1:]);values=list(unpacker)
             if len(values)!=2 or values[0]!='data' or not isinstance(values[1],dict):continue
             message=values[1];kind=message.get('type')
+            if kind=='MatchPlayerInfosResp':self.match_rank_data=message.get('data')
             if kind==expected:return message['data']
             if self.mode=='ordinary'and kind in ('BattleResult','AllBattleResults'):
                 if len(self.events)>=64:raise LobbyError('Public event buffer exceeded its budget')

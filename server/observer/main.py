@@ -6,6 +6,7 @@ from projection import PublicProjection
 from transport import Spectator,public_mode,SnapshotPending
 from quotes import champion_rates,sources,titles
 from build_catalog import BuildCatalog
+from rank_info import lobby_ranks
 
 LOG=logging.getLogger('duma-observer')
 STOP=False
@@ -185,6 +186,11 @@ def observe(config,backend,status):
         build_catalog=json.loads(pathlib.Path(config['buildCatalog']).read_text(encoding='utf8'))if config.get('buildCatalog')else {}
         builder=SnapshotBuilder(info,roster,model,card_names,build_catalog);projection=PublicProjection(roster)
         mode=public_mode(reader);spectator=Spectator(reader,info,mode);spectator.join()
+        if not active:
+            try:native_ranks=spectator.ranks({p['userInfo']['uid']for p in roster})
+            except ValueError:
+                native_ranks=None;LOG.warning('Native public match scores did not match the verified roster; using public lobby ladder scores')
+            info={**info,'nativeRanks':native_ranks if native_ranks is not None else lobby_ranks(roster)}
         code=active['code']if active else None;live_round=info['round'];last_meta=0;meta_ready=False;started=time.monotonic();last_status=started;settled_at=None
         LOG.info('Public spectator connected (%s; %s)',mode,'recovering'if code else'candidate')
         while not STOP:
