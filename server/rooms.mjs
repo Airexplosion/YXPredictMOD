@@ -1,4 +1,4 @@
-import { quoteRates, eventQuote, sale, returnFor } from './odds.mjs';
+import { quoteRates, eventQuote, wagerFactorBps, cashout, returnFor } from './odds.mjs';
 import { eliminationPlan, intervalReturn, championReturn } from './eliminations.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {publicBuild} from './public-build.mjs';
@@ -8,6 +8,21 @@ const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(mess
 const integer = (x, min, max) => Number.isSafeInteger(x) && x >= min && x <= max;
 const token = () => randomBytes(24).toString('hex');
 const clone = x => structuredClone(x);
+function frozenWagers(r,round) {
+  const totals=Array.from({length:8},()=>Array(8).fill(0)),contributions={};
+  for(const [key,ps] of Object.entries(r.positions))if(!r.forfeited?.[key]){
+    const rows=ps.map(p=>p&&!p.resolved?{rank:p.rank,stake:p.stake}:null);
+    if(rows.some(Boolean))contributions[key]=rows;
+    rows.forEach((p,i)=>{if(p)totals[i][p.rank-1]+=p.stake;});
+  }
+  return {round,totals,contributions};
+}
+function personalSaleRate(r,key,player,rank) {
+  const book=r.saleBook,own=book.contributions[key]??[];
+  const selected=book.totals[player][rank-1]-(own[player]?.rank===rank?own[player].stake:0);
+  const total=book.totals.reduce((sum,row)=>sum+row[0],0)-own.reduce((sum,p)=>sum+(p?.rank===1?p.stake:0),0);
+  return eventQuote(r.baseRates[player*8+rank-1],wagerFactorBps(selected,total),r.bonusBps??10000);
+}
 export class Rooms {
   constructor(state = { accounts: {}, rooms: {} }, save = () => {}, now = Date.now, { championOnly = true } = {}) {
     this.state = state; this.save = save; this.now = now; this.syncTimes = new Map();this.sourceHealth=new Map(); this.championOnly = championOnly; this.revision = 0;
@@ -160,9 +175,9 @@ export class Rooms {
     if(s.horseShuffle!==undefined){requireThat((r.horseShuffle??false)===s.horseShuffle,'本局换档规则已锁定，请在下一新局使用新规则');r.horseShuffle=s.horseShuffle;}
     if(r.rules>=2 && (r.quoteRound === undefined || s.round>r.round)){
       if(s.baseRates) r.baseRates=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
-      const totals=Array.from({length:8},()=>Array(8).fill(0));
-      for(const [key,ps] of Object.entries(r.positions)) if(!r.forfeited?.[key]) for(let i=0;i<8;i++) if(ps[i]&&!ps[i].resolved)totals[i][ps[i].rank-1]+=ps[i].stake;
-      const quotes=quoteRates(r.baseRates,totals,r.rules===3,r.bonusBps??10000);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
+      const book=frozenWagers(r,s.round);
+      const quotes=quoteRates(r.baseRates,book.totals,r.rules===3,r.bonusBps??10000);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
+      if(r.rules===3)r.saleBook=book;
     }
     if(r.rules>=2 && s.baseRates){
       const nextBase=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
@@ -170,6 +185,9 @@ export class Rooms {
         r.baseRates=nextBase;r.quoteRates=nextBase.map((base,at)=>eventQuote(base,r.factors[at],r.bonusBps??10000));r.version++;
       }
     }
+    // Old rooms lack the per-owner frozen book. Seed once without changing
+    // public quotes or any existing claims; subsequent rounds freeze together.
+    if(r.rules===3&&!r.saleBook)r.saleBook=frozenWagers(r,s.round);
     if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
@@ -309,6 +327,7 @@ export class Rooms {
     }
     return this.commit(() => {
       r = this.state.rooms[code]; const account = this.account(key);
+      if(r.rules===3&&!r.saleBook)r.saleBook=frozenWagers(r,r.quoteRound??r.round);
       const positions = r.positions[key] ??= Array(8).fill(null);
       const counts=r.actionCounts?.[key]??[],simple=counts.length>0&&counts.every((n,i)=>n===(positions[i]?1:0));
       const flow=(r.cashflows??={})[key]??={known:r.cashflowVersion===1||simple||!positions.some(Boolean)&&!counts.some(Boolean),invested:simple?positions.reduce((n,p)=>n+(p?.stake??0),0):0,sold:0};
@@ -320,9 +339,11 @@ export class Rooms {
         if(r.rules>=2){
           const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;
           requireThat(removed>0,'剩余权益不足减半，请使用清仓');
-          const returned=sale(p.claim,r.quoteRates[input.player*8+p.rank-1],input.kind==='half');
+          const exit=cashout(p,removed,r.quoteRates[input.player*8+p.rank-1],p.saleBasis?personalSaleRate(r,key,input.player,p.rank):0);
+          const returned=exit.returned;
           requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'马币余额已达上限');
           const released=Number(BigInt(p.stake)*BigInt(removed)/BigInt(p.claim));
+          if(exit.saleBasis)p.saleBasis=exit.saleBasis;
           p.claim-=removed;p.stake-=released;account.balance+=returned;flow.sold+=returned;
           if(!p.claim)positions[input.player]=p=null;
         }else{
@@ -338,8 +359,13 @@ export class Rooms {
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
         account.balance -= input.stake;
         flow.invested+=input.stake;
-        if (p) {p.stake += input.stake;if(r.rules>=2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
-        else {positions[input.player] = { rank: input.rank, stake: input.stake };if(r.rules>=2)positions[input.player].claim=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
+        if(!p)positions[input.player]=p={rank:input.rank,stake:0,...(r.rules>=2?{claim:0}:{})};
+        if(r.rules===3){
+          p.saleBasis??={legacyClaim:p.claim,units:0};
+          p.saleBasis.units+=Number(BigInt(input.stake)*BigInt(personalSaleRate(r,key,input.player,input.rank))/10000n);
+        }
+        p.stake+=input.stake;
+        if(r.rules>=2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);
       }
       if(r.rules>=2){const counts=(r.actionCounts??={})[key]??=Array(8).fill(0);counts[input.player]++;}
       requireThat(Object.keys(r.receipts).length < (r.rules>=2?131072:20000), '本房间操作次数已满');
