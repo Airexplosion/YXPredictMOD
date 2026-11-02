@@ -87,3 +87,14 @@ test('round notifications carry current round quotes and the real cross-horse ra
  assert.equal(closed.bettingOpen,false);assert.equal(closed.quoteRound,10);assert.equal(closed.players[0].quoteRate,575000);assert.deepEqual(closed.quoteRange,report.quoteRange);
  view.settled=true;const final=publicPresentation(view,{noticeType:'settled'});assert.equal(final.quoteRange,null);assert(final.players.every(p=>p.quoteRate===0));
 });
+
+
+test('same-round terminal updates retain the previous public choices for pending historical reports',()=>{
+ const x=setup();x.snapshot.round=3;x.snapshot.builds=x.snapshot.builds.map(b=>({...b,selectionRound:2,cards:[301],cardNames:['第2轮公开牌'],baijia:[{id:1002,name:'第二轮仙命'}]}));
+ x.rooms.sync(x.code,x.key,x.snapshot);
+ x.snapshot.builds=x.snapshot.builds.map(b=>({...b,selectionRound:3,cards:[401],cardNames:['第3轮公开牌'],baijia:[{id:1003,name:'第三轮仙命'}]}));x.rooms.sync(x.code,x.key,x.snapshot);
+ const restored=new Rooms(structuredClone(x.rooms.state)),view=new PredictionWeb(restored).watch(restored.state.rooms[x.code]);
+ const old=publicPresentation(view,{round:2}).players[0];assert.equal(old.build.selectionRound,2);assert.equal(old.build.baijia[0].name,'第二轮仙命');assert.deepEqual(old.board.cards,[301]);
+ const latest=publicPresentation(view,{round:3}).players[0];assert.equal(latest.build.selectionRound,3);assert.equal(latest.build.baijia[0].name,'第三轮仙命');
+ assert(!JSON.stringify(view.buildHistory).includes('public-player-'));
+});

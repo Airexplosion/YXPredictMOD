@@ -51,7 +51,7 @@ export function createHandler(rooms, options = {}) {
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
       if(req.url==='/ops/hourly'){
         serviceAccess(req.headers.authorization,options.observerKey??process.env.PREDICTION_OBSERVER_KEY);
-        const data=body.action==='status'?hourly.status():body.action==='open'?hourly.open(body.info,body.snapshot,body.model??null):body.action==='sync'?hourly.sync(body.code,body.snapshot):body.action==='report'?hourly.recoverReport(body.code,body.gameId,body.battles):body.action==='source'?hourly.source(body.code,body.gameId,body.state,body.round):null;
+        const data=body.action==='status'?hourly.status():body.action==='open'?hourly.open(body.info,body.snapshot,body.model??null):body.action==='sync'?hourly.sync(body.code,body.snapshot):body.action==='report'?hourly.recoverReport(body.code,body.gameId,body.battles,body.builds??null):body.action==='source'?hourly.source(body.code,body.gameId,body.state,body.round):null;
         if(!data)throw new RoomError('观战操作无效');res.end(JSON.stringify({ok:true,data}));return;
       }
       if(req.url.startsWith('/bot/')){

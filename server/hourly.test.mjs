@@ -202,8 +202,42 @@ test('final public report recovery changes battle annotations only and rejects c
  assert.equal(x.hourly.status().reports.length,1);
  const r=x.rooms.state.rooms[v.code],financial=structuredClone({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,open:r.open,settled:r.settled});
  const battles=Array.from({length:4},(_,i)=>({round:3,first:r.players[i*2].uid,second:r.players[i*2+1].uid,winner:r.players[i*2].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:80,secondLife:60,lifeDamage:20,resultComplete:true}));
- assert.equal(x.hourly.recoverReport(v.code,r.gameId,battles).reportReady,true);assert.equal(x.hourly.status().reports.length,0);
+ assert.equal(x.hourly.recoverReport(v.code,r.gameId,battles).reportReady,false);assert.deepEqual(x.hourly.status().reports[0].recoveryRounds,[1]);
  assert.deepEqual({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,open:r.open,settled:r.settled},financial);
  const before=structuredClone(x.rooms.state);assert.throws(()=>x.hourly.recoverReport(v.code,r.gameId,[{...battles[0],winner:battles[0].second}]),/战果冲突/);assert.deepEqual(x.rooms.state,before);
  assert.throws(()=>x.hourly.recoverReport(v.code,'wrong-game',battles),/已结算/);
+});
+
+
+test('archive recovery fills every earlier pending round without replaying accounting or delivered notices',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];
+ for(let round=2;round<=5;round++){
+  Object.assign(x.snapshot,{round,closedThrough:round-1,open:false,ended:round===5,ranks:round===5?[1,2,3,4,5,6,7,8]:Array(8).fill(0)});
+  x.snapshot.builds.forEach(b=>{b.selectionRound=round-1;b.cards=[1000010];b.cardNames=['云剑'];});x.hourly.sync(v.code,x.snapshot);
+ }
+ x.snapshot.builds.forEach(b=>{b.selectionRound=5;});x.hourly.sync(v.code,x.snapshot);
+ const financial=structuredClone({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,frames:r.frames,open:r.open,settled:r.settled});
+ const tables=round=>Array.from({length:4},(_,i)=>({round,first:r.players[i*2].uid,second:r.players[i*2+1].uid,winner:r.players[i*2].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:80,secondLife:60,lifeDamage:20,resultComplete:true}));
+ assert.equal(x.hourly.recoverReport(v.code,r.gameId,[...tables(4),...tables(5)]).reportReady,false);
+ assert.deepEqual(x.hourly.status().reports[0].recoveryRounds,[1,2,3]);
+ x.hourly.recoverReport(v.code,r.gameId,[...tables(1),...tables(2)]);
+ assert.deepEqual(x.hourly.status().reports[0].recoveryRounds,[3]);
+ assert.equal(x.hourly.recoverReport(v.code,r.gameId,tables(3)).reportReady,true);assert.equal(x.hourly.status().reports.length,0);
+ assert.deepEqual({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,frames:r.frames,open:r.open,settled:r.settled},financial);
+ const before=structuredClone(x.rooms.state);assert.throws(()=>x.hourly.recoverReport(v.code,r.gameId,tables(6)),/公开牌桌/);assert.deepEqual(x.rooms.state,before);
+ const event=x.hourly.claim();x.hourly.ack(event.id,event.lease);const delivered=structuredClone(x.hourly.data().outbox.find(e=>e.id===event.id));
+ x.hourly.recoverReport(v.code,r.gameId,tables(1));assert.deepEqual(x.hourly.data().outbox.find(e=>e.id===event.id),delivered);
+});
+
+
+test('historical public build recovery is annotation-only and validates all choices before committing',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];
+ x.snapshot.round=3;x.snapshot.closedThrough=3;x.snapshot.ended=true;x.snapshot.open=false;x.snapshot.ranks=[1,2,3,4,5,6,7,8];
+ x.snapshot.builds.forEach(b=>{b.selectionRound=3;b.cards=[1000010];b.cardNames=['终局公开牌'];});x.hourly.sync(v.code,x.snapshot);
+ const finance=structuredClone({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,states:r.states,frames:r.frames,builds:r.builds});
+ const old=x.snapshot.builds.map(b=>({...b,selectionRound:2,cards:[1000020],cardNames:['上轮公开牌']}));
+ const battles=[{round:2,first:r.players[0].uid,second:r.players[1].uid,winner:r.players[0].uid,firstMirror:false,secondMirror:false,firstCards:[1000020],secondCards:[1000020],firstLife:80,secondLife:60,lifeDamage:20,resultComplete:true}];
+ x.hourly.recoverReport(v.code,r.gameId,battles,old);assert.equal(publicPresentation(x.web.watch(r),{round:2}).players[0].build.selectionRound,2);
+ assert.deepEqual({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,states:r.states,frames:r.frames,builds:r.builds},finance);
+ const before=structuredClone(x.rooms.state);old[0].selectionRound=4;assert.throws(()=>x.hourly.recoverReport(v.code,r.gameId,battles,old),/公开角色/);assert.deepEqual(x.rooms.state,before);
 });

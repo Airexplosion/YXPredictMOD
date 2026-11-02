@@ -26,7 +26,7 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   const quoteRange=quoted.length?{minimumRate:Math.min(...quoted),maximumRate:Math.max(...quoted)}:null;
   const closingWarning=view.round===9&&!view.tradingClosed&&!view.ended&&!view.settled?'提醒：下回合（第10回合）起封盘，这是最后一个可下注回合。':null;
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
-    const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
+    const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build,...(view.buildHistory?.[index]??[])].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
     const battle=available.filter(b=>b.first===index&&!b.firstMirror||b.second===index&&!b.secondMirror).sort((a,z)=>z.round-a.round)[0],side=battle?.first===index?'first':'second';
     const battleBoard=battle&&battle[side+'Cards']?{round:battle.round,cards:battle[side+'Cards'],names:battle[side+'Names']??battle[side+'Cards'].map(id=>id?'未知牌':'空位')}:null;
     const buildBoard=build?.cards&&build.selectionRound>0&&build.selectionRound<=round?{round:build.selectionRound,cards:build.cards,names:build.cardNames}:null;
