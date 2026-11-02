@@ -32,7 +32,10 @@ def checked_file(root, relative):
     return target
 
 
-def verify(root, repository="Teraen/YXPredictMOD"):
+DEFAULT_REPOSITORY = "Airexplosion/YXPredictMOD"
+
+
+def verify(root, repository=DEFAULT_REPOSITORY):
     root = Path(root)
     meta = read_json(root / ".github/releases/latest.json")
     version = meta["version"]
@@ -87,7 +90,7 @@ def verify(root, repository="Teraen/YXPredictMOD"):
 
 
 if __name__ == "__main__":
-    data = verify(Path(__file__).resolve().parent.parent, os.environ.get("GITHUB_REPOSITORY", "Teraen/YXPredictMOD"))
+    data = verify(Path(__file__).resolve().parent.parent, os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPOSITORY))
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
             for key in ("version", "tag", "artifact", "notes", "sha256", "title", "name", "assetName"):

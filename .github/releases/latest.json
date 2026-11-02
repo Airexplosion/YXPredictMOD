@@ -1,7 +1,9 @@
 {
-  "version": "0.2.9",
-  "tag": "v0.2.9",
-  "artifact": "dist/local.yxp.predictionpoints-0.2.9.zip",
-  "sha256": "251d486c3a11ae2acbee18e9ca132f3f2049947e47c44decd7d0a47bddd00e36",
-  "notes": ".github/releases/v0.2.9.md"
+  "version": "0.8.0",
+  "tag": "v0.8.0",
+  "title": "v0.8.0 - 网页观战下注与旧新历史合并 Elo",
+  "artifact": "dist/天机赌马-0.8.0.zip",
+  "assetName": "tianji-duma-0.8.0.zip",
+  "sha256": "c8ed2fb9f3441daac3474e027af7ef707a8ff08b77dfb1381c45d2e21a6e4785",
+  "notes": ".github/releases/v0.8.0.md"
 }
