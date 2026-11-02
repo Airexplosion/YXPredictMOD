@@ -34,7 +34,11 @@ def profile(row):
         if type(row.get(field)) is not int or row[field]<0:raise ValueError('Invalid legacy statistics')
     if row['dx']>row['games'] or not isinstance(row.get('name'),str) or len(row['name'])>200:raise ValueError('Invalid legacy statistics')
     # Histories and arbitrary upstream fields never enter the live API cache.
-    return {field:row[field] for field in ['name','rating','sigma','games','dx','last']}
+    result={field:row[field] for field in ['name','rating','sigma','games','dx','last']}
+    conservative=row.get('cons',row['rating']-2*row['sigma'])
+    if type(conservative) not in (int,float) or not math.isfinite(conservative) or not -4000<=conservative<=10000:raise ValueError('Invalid legacy conservative rating')
+    result['cons']=conservative
+    return result
 
 
 def fetch(path):
@@ -51,7 +55,7 @@ def refresh(output,primary,key,download=fetch):
     revision=hashlib.sha256(json.dumps(before,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     previous=None
     if destination.exists():previous=json.loads(destination.read_text(encoding='utf-8'))
-    if previous and previous['meta'].get('revision')==revision:
+    if previous and previous['meta'].get('schema')==2 and previous['meta'].get('revision')==revision:
         players=previous['players']
     else:
         players={}
@@ -69,7 +73,7 @@ def refresh(output,primary,key,download=fetch):
     known=[uid for uid in primary['players'] if re.fullmatch('[0-9a-f]{24}',uid)]
     matched=sum(pseudonym(uid,key) in players for uid in known)
     if not known or matched<min(1000,len(known)):raise ValueError('Legacy key did not match known raw identities')
-    result={'players':players,'meta':{'schema':1,'source':'legacy-hmac','dataAt':generated,'fetchedAt':int(time.time()*1000),
+    result={'players':players,'meta':{'schema':2,'source':'legacy-hmac','dataAt':generated,'fetchedAt':int(time.time()*1000),
         'revision':revision,'players':len(players),'matchedKnownPlayers':matched}}
     destination.parent.mkdir(parents=True,exist_ok=True)
     name=None
