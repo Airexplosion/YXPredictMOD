@@ -59,6 +59,8 @@ Each successful grant increments the account's durable `reliefCount`; room views
 
 See [current rules and verification](../docs/champion-rooms-web.md) and [guide login adapter](../integration/README.md). New rooms accept champion predictions only, pay 100/25/10% of locked claims for first/second/third, close all trading at round 10, and reject exited players. Legacy holdings retain their promises and do not accept new buys. Public listing is independent of random matching; private creation disables both discovery methods.
 
+Current rule-3 purchases also record a separate liquidation basis excluding only the owner's wagers at both entry and exit. Other bettors' contributions remain effective. Public buy odds and locked final payout claims are unchanged. Existing holdings keep the old sale formula; adding new purchases records the two portions separately. See [self-impact cashout fix](../docs/2026-11-02-self-impact-cashout.md) for freezing, migration and rounding details. Deploy `rooms.mjs` and `odds.mjs` together; the existing MOD, website and QQ clients use the same server ledger.
+
 Deploy `web.mjs` and the entire `web/` folder alongside the room service. `YX_PREDICTION_BRIDGE_KEY` is a dedicated random 32-byte hex secret shared with the existing guide auth server; never commit it. The public board is accessible without login; account binding/profile changes use short guide identity proofs plus a one-time MOD possession code. See integration instructions before enabling it. The historical sections below describe previous room protocols, including the old pool calculation; they do not define the current champion rules.
 
 
