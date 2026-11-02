@@ -34,6 +34,11 @@ class PublicTests(unittest.TestCase):
         clock=[0.0];p=PublicProjection(ROSTER,lambda:clock[0]);data=delayed(commands=cmd(1,15000,'GameStatus',status(2)))
         p.accept(data);self.assertEqual(p.round,1);clock[0]=4;p.accept(data);self.assertEqual(p.round,1)
         clock[0]=5;p.tick();self.assertEqual(p.round,2);revision=p.revision;p.accept(data);self.assertEqual(p.revision,revision)
+    def test_delayed_transport_stays_on_current_snapshot_until_public_commands_are_due(self):
+        clock=[0.0];p=PublicProjection(ROSTER,lambda:clock[0]);self.assertEqual(p.request_round(),-1)
+        data=delayed(commands=cmd(1,15000,'GameStatus',status(2)));p.accept(data)
+        self.assertEqual(p.request_round(),1);clock[0]=4;self.assertEqual(p.request_round(),1)
+        clock[0]=5;self.assertEqual(p.request_round(),2);self.assertTrue(p.accept(data));self.assertEqual(p.round,2)
     def test_foreign_identity_roster_stale_snapshots_rejected(self):
         p=PublicProjection(ROSTER);p.accept(delayed(2,2));self.assertFalse(p.accept(delayed(2,1)))
         with self.assertRaises(ValueError):p.accept_ordinary(encoded(status(3).replace(UIDS[0].encode(),b'f'*24)))
