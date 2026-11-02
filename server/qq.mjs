@@ -9,7 +9,7 @@ export function serviceAccess(header,key){
   if(typeof header!=='string'||!timingSafeEqual(createHash('sha256').update(header).digest(),createHash('sha256').update('Bearer '+key).digest()))throw new RoomError('服务身份无效',401);
 }
 const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status)};
-const instructions='群内赌马：/赌马 查看本场 · /下注 1 100 · /选手 1（或昵称） · /马币 · /退半 1 · /清仓 1 · /赌马 查单。只猜冠军，第10回合封盘。';
+const instructions='群内赌马：/赌马 查看本场 · /下注 1 200 2 300（支持一条多笔，可重复选手） · /选手 1（或昵称） · /马币 · /退半 1 · /清仓 1 · /赌马 查单。只猜冠军，第10回合封盘。';
 export function isPredictionCommand(text){return typeof text==='string'&&/^\/(赌马|下注|选手|马币|退半|清仓)(\s|$)/.test(text.trim());}
 
 export function qqCommand(web,hourly,user,body){
@@ -46,14 +46,20 @@ export function qqCommand(web,hourly,user,body){
   const view=web.watch(room);
   if(command==='/赌马')return {lines:[instructions,...publicSummary(view)],presentation:publicPresentation(view),forward:true};
   ensure(args.length>=1,'请提供选手编号1～8或完整昵称');
-  let index;
-  if(/^[1-8]$/.test(args[0]))index=Number(args[0])-1;
-  else{const found=view.players.map((p,i)=>p.name===args[0]?i:-1).filter(i=>i>=0);ensure(found.length===1,found.length?'昵称重复，请使用选手编号':'没有找到这位选手，请使用编号1～8');index=found[0];}
+  const resolve=arg=>{
+    if(/^[1-8]$/.test(arg))return Number(arg)-1;
+    const found=view.players.map((p,i)=>p.name===arg?i:-1).filter(i=>i>=0);ensure(found.length===1,found.length?'昵称重复，请使用选手编号':'没有找到这位选手，请使用编号1～8');return found[0];
+  };
+  const index=resolve(args[0]);
   if(command==='/选手')return {lines:publicSummary(view,{player:index}),presentation:publicPresentation(view,{player:index}),forward:true};
   const kind=command==='/下注'?'buy':command==='/退半'?'half':'sell';
-  ensure(args.length===(kind==='buy'?2:1),kind==='buy'?'用法：/下注 选手编号 马币数':'用法：'+command+' 选手编号');
-  const stake=kind==='buy'&&/^[1-9][0-9]{0,4}$/.test(args[1])?Number(args[1]):0;
-  if(kind==='buy')ensure(stake>=1&&stake<=10000,'每次投入1～10000马币');
+  ensure(kind==='buy'?args.length>=2&&args.length%2===0:args.length===1,kind==='buy'?'用法：/下注 选手编号 马币数 [选手编号 马币数 …]':'用法：'+command+' 选手编号');
+  ensure(kind!=='buy'||args.length<=64,'一次最多下注32笔');
+  const orders=[];
+  if(kind==='buy')for(let at=0;at<args.length;at+=2){
+    const stake=/^[1-9][0-9]{0,4}$/.test(args[at+1])?Number(args[at+1]):0;
+    ensure(stake>=1&&stake<=10000,'每笔投入1～10000马币');orders.push({index:resolve(args[at]),stake});
+  }else orders.push({index,stake:0});
   // One QQ/guide subject has one shared wallet selection. All mutations use the
   // existing room transaction and receipt path, including retries and settlement.
   return web.rooms.commit(()=>{
@@ -61,9 +67,17 @@ export function qqCommand(web,hourly,user,body){
     else ensure(web.owned(user).length,'尚无马币账户或持仓');
     const key=web.playKey(user);
     if(!room.members.includes(key))web.play(user,{action:'join',code:room.code});
-    const result=web.play(user,{action:'trade',code:room.code,kind,player:index,rank:1,stake,version:room.version,operation});
-    const p=result.wallet.positions[index];
-    const reply={lines:[`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'清仓已确认'}${p?`，剩余冠军锁定返还${p.claim}马币`:''}。可用${result.wallet.balance}马币。`],forward:false,receiptId:operation};
+    const total=orders.reduce((sum,o)=>sum+o.stake,0);
+    if(kind==='buy')ensure(total<=web.rooms.state.accounts[key].balance,'马币不足，本条共需'+total+'马币');
+    const lines=[];let result;
+    for(let at=0;at<orders.length;at++){
+      const order=orders[at],previous=room.positions[key]?.[order.index]?.claim??0;
+      result=web.play(user,{action:'trade',code:room.code,kind,player:order.index,rank:1,stake:order.stake,version:room.version,operation:orders.length===1?operation:operation+'-'+(at+1)});
+      const p=result.wallet.positions[order.index];
+      lines.push(orders.length>1?`${order.index+1}号 ${view.players[order.index].name}：投入${order.stake}马币，本笔冠军锁定返还${p.claim-previous}马币。`:`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'清仓已确认'}${p?`，剩余冠军锁定返还${p.claim}马币`:''}。可用${result.wallet.balance}马币。`);
+    }
+    if(orders.length>1)lines.unshift(`批量下注已确认：${orders.length}笔，共投入${total}马币。可用${result.wallet.balance}马币。`);
+    const reply={lines,forward:false,receiptId:operation};
     const receipts=web.rooms.state.qqReceipts??={};
     for(const [id,r]of Object.entries(receipts))if(r.at<web.rooms.now()-90*86400000)delete receipts[id];
     ensure(Object.keys(receipts).length<100000,'群交易记录已达容量，请联系维护者',503);

@@ -76,3 +76,14 @@ test('authoritative settlement can be announced independently of incomplete roun
  assert(!publicReportReady({...final,players:final.players.map(p=>({...p,rank:0}))}));assert(!publicReportReady({...final,settlement:null}));
  assert.deepEqual(x.rooms.state,before);
 });
+test('round notifications carry current round quotes and the real cross-horse range instead of zeroing previous round prices',()=>{
+ const x=setup(),view=x.web.watch(x.rooms.state.rooms[x.code]);
+ view.players[0].quoteRate=575000;view.players[1].quoteRate=17000;view.players[2].state.life=-1;view.players[2].quoteRate=999999;
+ const report=publicPresentation(view,{round:1,noticeType:'round'});
+ assert.equal(report.round,1);assert.equal(report.quoteRound,2);assert.equal(report.players[0].quoteRate,575000);assert.equal(report.players[2].quoteRate,0);
+ assert.deepEqual(report.quoteRange,{minimumRate:17000,maximumRate:575000});assert.equal(report.bettingOpen,true);
+ const summary=publicSummary(view,{round:1}).join('\n');assert(summary.includes('第2回合冠军参考区间：1.70倍～57.50倍'));assert(summary.includes('第2回合冠军参考57.50倍'));
+ view.tradingClosed=true;view.round=10;const closed=publicPresentation(view,{round:9,noticeType:'round'});
+ assert.equal(closed.bettingOpen,false);assert.equal(closed.quoteRound,10);assert.equal(closed.players[0].quoteRate,575000);assert.deepEqual(closed.quoteRange,report.quoteRange);
+ view.settled=true;const final=publicPresentation(view,{noticeType:'settled'});assert.equal(final.quoteRange,null);assert(final.players.every(p=>p.quoteRate===0));
+});

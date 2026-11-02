@@ -17,11 +17,15 @@ const rate=n=>(n/10000).toFixed(2)+'倍';
 export function publicSummary(view,{round=view.round,player=null}={}){
   const frame=view.frames?.find(f=>f.round===round+1)??view.frames?.find(f=>f.round===round),players=player===null?view.players.map((_,i)=>i):[player];
   const lines=[`整点赌马 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 已封盘':''}`];
+  const reference=publicPresentation(view,{round,player});
+  if(reference.closingWarning)lines.unshift(reference.closingWarning);
+  if(reference.quoteRange)lines.push(`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?' · 已封盘，仅供参考':reference.bettingOpen?' · 修炼阶段可下注':' · 暂停下注，等待修炼'}；以下单确认为准。`);
   for(const i of players){
     const p=view.players[i],state=frame?.states?.[i]??(round===view.round?p.state:null),rank=round>=view.round-1?p.rank:frame?.ranks?.[i]??0;
     const active=frame?(state?state.life>0:rank===0):p.active;
     const build=view.frames?.find(f=>f.round===round)?.builds?.[i]??(round===view.round?p.build:null);
-    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${round===view.round&&p.quoteRate>0?` · 冠军${rate(p.quoteRate)}`:''}\n${buildLines(build).join('\n')}`);
+    const quote=reference.players.find(p=>p.index===i)?.quoteRate??0;
+    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${quote>0?` · 第${reference.quoteRound}回合冠军参考${rate(quote)}`:''}\n${buildLines(build).join('\n')}`);
   }
   for(const b of view.battles??[]){
     if(b.round!==round||player!==null&&b.first!==player&&b.second!==player)continue;
