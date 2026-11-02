@@ -41,6 +41,6 @@ API加 `--legacy-snapshot <legacy.json> --uid-key-file <private-key-file>` 开�
 
 匿名榜为`/elo/`，根页恢复原数据站入口，卡牌与流派继续使用原站静态素材。自有展示适配器只调用`GET /api/v1/leaderboard?offset=0&limit=100`，返回`scores`数值数组及total/offset/limit/updatedAt/minGames/activeDays；响应没有玩家名、UID、哈希、行标识或个人详情链接。前端不读取姓名索引、玩家资料分片、不登录、不发送凭据；旧`/data/elo/names.json`与`top.json`入口返回404。MOD的指定UID查询及兼容分片仍作为独立API保留，不被网页调用。
 
-榜单沿用原站至少30场、近30天活跃的口径，按分数降序排列；同一玩家的新旧资料按私有HMAC去重，旧源未知原始UID的记录仍只以分数参与排序。记录时间相同优先新模型。数值结果按快照代次缓存，避免每页重复计算；全榜不暴露稳定身份标识。API状态模式为anonymous-web-and-api。
+榜单沿用原站至少30场、近30天活跃的口径，仅展示分数最高的100名，移除翻页。服务端也在切页前截断前100名，offset≥100返回空数组，total最多100；同一玩家的新旧资料按私有HMAC去重，旧源未知原始UID的记录仍只以分数参与排序。记录时间相同优先新模型。数值结果按快照代次缓存，避免每页重复计算；全榜不暴露稳定身份标识。API状态模式为anonymous-web-and-api。
 
-`api.py`自带不依赖原站源码的匿名独立页面；部署原站时，以自有`web/elo.js`替换原Elo展示模块，启用入口，并覆盖旧身份索引路由。原站完整源码/素材未复制进本仓库。浏览器回归`tests/AnonymousEloBrowserChecks.cjs`检查响应字段白名单、无玩家搜索/详情、无旧身份数据请求、翻页及390px布局；用ELO_WEB_URL指定待验页面。
+`api.py`自带不依赖原站源码的匿名独立页面；部署原站时，以自有`web/elo.js`替换原Elo展示模块，启用入口，并覆盖旧身份索引路由。原站完整源码/素材未复制进本仓库。浏览器回归`tests/AnonymousEloBrowserChecks.cjs`检查响应字段白名单、无玩家搜索/详情、无旧身份数据请求、前100名上限、无翻页及390px布局；用ELO_WEB_URL指定待验页面。
