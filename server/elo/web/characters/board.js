@@ -3,9 +3,10 @@
 const $=id=>document.getElementById(id);
 const titles={overall:"总体",mid:"3000–5999",high:"6000及以上"};
 const params=new URLSearchParams(location.search);
-let source=params.get("source")==="live"?"live":"window";
-let band=Object.hasOwn(titles,params.get("band"))?params.get("band"):"overall";
-let career=band==="overall"?"":params.get("career")||"";
+const reference=document.body.dataset.reference==="true";
+let source=reference&&params.get("source")!=="window"||params.get("source")==="live"?"live":"window";
+let band=Object.hasOwn(titles,params.get("band"))?params.get("band"):reference?"mid":"overall";
+let career=band==="overall"?"":params.get("career")||(reference?"阵法师":"");
 let data=null,requestId=0,timer=0;
 const fmt=new Intl.NumberFormat("zh-CN");
 const points=x=>x.games?x.score.toFixed(1):"待首局";
@@ -19,7 +20,7 @@ function controls(){
  document.querySelectorAll("[data-source]").forEach(n=>n.setAttribute("aria-pressed",String(n.dataset.source===source)));
  document.querySelectorAll("[data-band]").forEach(n=>n.setAttribute("aria-pressed",String(n.dataset.band===band)));
  $("career").disabled=band==="overall";$("career").value=career;
- const q=new URLSearchParams();if(source!=="window")q.set("source",source);if(band!=="overall")q.set("band",band);if(career)q.set("career",career);
+ const q=new URLSearchParams();if(reference||source!=="window")q.set("source",source);if(band!=="overall")q.set("band",band);if(career)q.set("career",career);
  if(location.protocol!=="file:")history.replaceState(null,"",location.pathname+(q.size?"?"+q:""));
 }
 function chooseBand(b){band=b;if(b==="overall")career="";controls();if(data)renderRows()}

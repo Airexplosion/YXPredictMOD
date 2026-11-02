@@ -13,11 +13,26 @@ import tempfile
 import time
 import json
 from publish_character_scores import publish
+from season_scores import mirror
 
 BASE=pathlib.Path('/opt/yx-elo')
 SOURCE=pathlib.Path(__file__).resolve().parent
 UNIT='yx-character-board-feed'
-CARD='<a class="hub-card" href="elo/characters/"><h2>角色 Elo 强度榜</h2><div class="en">Character rankings</div><p>10·29 平衡窗口与实时榜，按积分分段和副职比较角色。</p><div class="path">/elo/characters</div></a>'
+CARD='<a class="hub-card" href="elo/characters/"><h2>角色 Elo 强度榜</h2><div class="en">Character rankings</div><p>换角校正 Elo，默认查看第三期，也可对照前两期的角色强度。</p><div class="path">/elo/characters</div></a>'
+
+def season_units(dest):
+    units=pathlib.Path('/etc/systemd/system')
+    prefix='yx-season-board-feed'
+    service=(
+        "[Unit]\nDescription=Mirror official season character Elo scores\n[Service]\nType=oneshot\n"
+        f"ExecStart=/usr/bin/python3 -B {BASE}/season_scores.py --mirror {dest}\n"
+        f"ProtectSystem=strict\nProtectHome=true\nReadWritePaths={dest}\nPrivateTmp=true\nNoNewPrivileges=true\nTimeoutStartSec=40\n"
+    )
+    timer=(
+        "[Unit]\nDescription=Check season character scores every five minutes\n[Timer]\n"
+        f"OnActiveSec=5min\nOnUnitInactiveSec=5min\nAccuracySec=5s\nUnit={prefix}.service\n[Install]\nWantedBy=timers.target\n"
+    )
+    return {units/(prefix+'.service'):service.encode(),units/(prefix+'.timer'):timer.encode()}
 
 def overlay():
     cfg=pathlib.Path('/etc/caddy/Caddyfile').read_text()
@@ -57,6 +72,11 @@ def main():
     changes[publisher]=(SOURCE/'publish_character_scores.py').read_bytes()
     changes[service]=(f"[Unit]\nDescription=Refresh public aggregate character scores\n[Service]\nType=oneshot\nExecStart=/usr/bin/python3 {publisher} {dest}\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths={dest}\nTimeoutStartSec=45\n").encode()
     changes[timer]=(f"[Unit]\nDescription=Refresh Elo character board every two minutes\n[Timer]\nOnActiveSec=2min\nOnUnitInactiveSec=2min\nAccuracySec=3s\nUnit={UNIT}.service\n[Install]\nWantedBy=timers.target\n").encode()
+    season=season_units(dest)
+    assert all(not p.exists() for p in [*season,BASE/'season_scores.py'])
+    changes.update(season)
+    changes[BASE/'season_scores.py']=(SOURCE/'season_scores.py').read_bytes()
+    season_timer=units/'yx-season-board-feed.timer'
     originals={p:p.read_bytes() if p.exists() else None for p in changes}
     assert originals[hub]==original
     for p,old in originals.items():
@@ -65,17 +85,20 @@ def main():
     moved=False;written=[]
     try:
         staged.chmod(0o755)
-        for name in ('index.html','board.js','board.css','window.json'):
+        for name in ('index.html','board.js','board.css','window.json','reference.html','season.js'):
             atomic(staged/name,(SOURCE/'web/characters'/name).read_bytes())
         publish(staged/'live.json',staged/'window.json')
+        mirror(staged)
         assert overlay()==webroot and not dest.exists()
         staged.rename(dest);moved=True
         for p,content in changes.items():
             assert (p.read_bytes() if p.exists() else None)==originals[p],p
             atomic(p,content);written.append(p)
         subprocess.run(['systemctl','daemon-reload'],check=True)
-        subprocess.run(['systemctl','enable','--now',timer.name],check=True)
+        subprocess.run(['systemctl','enable','--now',timer.name,season_timer.name],check=True)
     except BaseException:
+        if season_timer in written:subprocess.run(['systemctl','disable','--now',season_timer.name],capture_output=True)
+        if units/'yx-season-board-feed.service' in written:subprocess.run(['systemctl','stop','yx-season-board-feed.service'],capture_output=True)
         if timer in written:subprocess.run(['systemctl','disable','--now',timer.name],capture_output=True)
         if service in written:subprocess.run(['systemctl','stop',service.name],capture_output=True)
         for p in reversed(written):
