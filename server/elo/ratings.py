@@ -19,12 +19,15 @@ def build(seed,source,copy_seed=True):
     seed_players=len(players)
     if not copy_seed:
         for player in players.values():player.pop('h',None);player.pop('nameTs',None)
-    if any(not re.fullmatch('[0-9a-f]{24}',u) for u in players):
+    hashed=seed.get('identityMode')=='hmac16'
+    if source.get('identityMode','raw24')!=seed.get('identityMode','raw24'):raise ValueError('Model identity modes differ')
+    pattern='[0-9a-f]{16}' if hashed else '[0-9a-f]{24}'
+    if any(not re.fullmatch(pattern,u) for u in players):
         raise ValueError('Seed must use raw game-account UIDs')
     model=PlackettLuce(mu=MU,sigma=SIGMA,beta=25/6,tau=25/300)
-    seen={}
+    seen={};allowed_early=set(source.get('preCheckpointHistoricalIds',[])) if hashed else set()
     for game in source['games']:
-        if not isinstance(game.get('at'),int) or game['at']<=seed['last']:
+        if not isinstance(game.get('at'),int) or (game['at']<=seed['last'] and game.get('id') not in allowed_early):
             continue
         gid=game.get('id')
         if not isinstance(gid,str) or not re.fullmatch('[0-9a-f]{24}',gid):raise ValueError('Invalid game identity')
@@ -34,12 +37,12 @@ def build(seed,source,copy_seed=True):
     n=0; rated_through=seed['last']
     for _,game in sorted(seen.values(),key=lambda item:(item[1]['at'],item[1]['id'])):
         rows=sorted(game['players'],key=lambda p:p['place'])
-        if not 2<=len(rows)<=8 or len({p['uid'] for p in rows})!=len(rows) or len({p['place'] for p in rows})!=len(rows):
+        if not 2<=len(rows)<=8 or len({p['uid'] for p in rows})!=len(rows):
             raise ValueError('Invalid participant identities or placements')
         before=[]
         for row in rows:
             uid=row['uid'];place=row['place']
-            if not re.fullmatch('[0-9a-f]{24}',uid) or type(place) is not int or not 1<=place<=8 or row.get('mode') not in ('ladder','daoxin'):
+            if not re.fullmatch(pattern,uid) or type(place) is not int or not 1<=place<=8 or row.get('mode') not in ('ladder','daoxin'):
                 raise ValueError('Unverified participant')
             p=players.setdefault(uid,{'mu':MU,'sigma':SIGMA,'games':0,'dx':0,'last':game['at'],'name':'','season':None,'seasons':{}})
             variance=p['sigma']**2+0.15**2*max(0,(game['at']-p['last'])/DAY)
