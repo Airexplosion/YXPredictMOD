@@ -5,10 +5,10 @@ import {PredictionWeb} from './web.mjs';
 import {HourlyEvents,hourlySlot,eligibleLobby,publicSummary} from './hourly.mjs';
 import {qqCommand,serviceAccess} from './qq.mjs';
 import http from 'node:http';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash} from 'node:crypto';
 import {createHandler} from './server.mjs';
 
-const user={subject:'a'.repeat(64),name:'认证观众',scope:'qq-prediction',groupId:'599092307'};
+const user={subject:'a'.repeat(64),qqSubject:'c'.repeat(64),bindingDigest:createHash('sha256').update('[]').digest('hex'),gameUidRef:null,name:'认证观众',scope:'qq-prediction',groupId:'599092307'};
 function fixture(save){
  let now=Date.UTC(2026,10,1,0,0);const rooms=new Rooms(undefined,save,()=>now),web=new PredictionWeb(rooms,{now:()=>now});
  const hourly=new HourlyEvents(rooms,web),info={roomId:'native-hourly',round:1,isPrivate:false,avgRankScore:3001,playerCount:8};

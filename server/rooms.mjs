@@ -26,7 +26,7 @@ export class Rooms {
   }
   account(key) {
     requireThat(typeof key === 'string' && /^[a-f0-9]{48}$/.test(key) && this.state.accounts[key], '身份无效，请重新连接', 401);
-    if (integer(this.state.accounts[key].balance, 0, 9) && !this.hasPendingBets(key)) {
+    if (!this.state.accounts[key].walletRedirect && integer(this.state.accounts[key].balance, 0, 9) && !this.hasPendingBets(key)) {
       return this.commit(() => {
         const account = this.state.accounts[key];
         account.balance += 50;
