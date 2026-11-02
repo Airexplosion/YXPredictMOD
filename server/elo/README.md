@@ -5,7 +5,7 @@
 ## 数据与边界
 
 - 初始状态使用原项目公开的 [elo-state-seed](https://github.com/raymondwrw/yxp-card-stats/releases/tag/elo-state-seed)，2026-10-23 附件，SHA256 `6a180fdfc218565f85c9371eb3b71d05b8206d8cd11d3cc4e51f0dfcf5c80398`。115,567 个原始24位UID，包含完整 mu/sigma；不是从网页取整分数反推模型。
-- 旧项目当前16位标识是私密密钥 HMAC-SHA256 截断，不是普通 SHA256。未拿到原密钥前，不将其冒充原始UID，也不按昵称匹配。种子后的新数据来自已确认的 UID↔复盘匿名位置及本人积分证据。
+- 旧项目当前16位标识是私密密钥 HMAC-SHA256 截断，不是普通 SHA256。原作者提供的密钥已用72817个已知身份验证，使用密钥文本的UTF-8字节，不作hex解码。密钥只留服务器0600私有文件，不进入MOD、网页、Git或API响应。不按昵称匹配。种子后的新数据来自已确认的 UID↔复盘匿名位置及本人积分证据。
 - `export.py` 对身份库开启 `mode=ro`、`query_only` 和同一读事务。仅发布身份凭据与当前报告逐字段一致、无冲突、同局至少两名真人的记录。最终名次来自已确认的 `record-player-N` 位置，不从根 `battleRank`、命元或资料分猜测身份。
 - 合并普通天梯/道心到同一 OpenSkill Plackett-Luce 模型；每次从固定种子按对局结束时间重建，迟到、修正和撤回证据不会重复计分。机器人不进入模型；单真人局不更新，与原模型口径一致。
 - 这是已观测且可确认的记录，不代表全服、全历史或所有私密房覆盖。源暂未提供赛季ID，不推测新赛季，不凭日期添加赛季重置。API明确公开来源时间与覆盖不完整。
@@ -28,3 +28,11 @@
 `source-command` 是服务器私有配置，不接收网页参数。源库和采集程序不因本服务而启动、停止或更新。种子导入应先核对上述 SHA256，并使用禁止 `find_class` 的 data-only pickle 读取器；不要对未知文件直接执行 `pickle.load`。
 
 验证：`python -m unittest discover -s server/elo -p test_elo.py`。原模型与 API 参考：[原项目说明](https://github.com/raymondwrw/yxp-card-stats/tree/main/pipeline/elo)、[OpenSkill 官方文档](https://openskill.me/en/v6.1.3/manual.html)。计算适配器为本项目独立实现，未复制原项目Python代码。
+
+## 旧16位资料回查
+
+`legacy.py --output <legacy.json> --primary <snapshot.json> --uid-key-file <private-key-file>` 缓存原项目256个公开分片，剔除共享匿名槽位及历史大数组；整批校验完成后原子替换。前后导出代次必须相同，且密钥至少匹配1000个已知原始UID（小样本要求全部匹配）。失败保留上次缓存；同代次复用缓存，每15分钟独立刷新，不占用身份采集器。
+
+API加 `--legacy-snapshot <legacy.json> --uid-key-file <private-key-file>` 开启服务器端HMAC回查。查询仍只收原始24位UID，返回仍按原UID索引。旧资料仅在缺失或其last较新时采用；时间相同优先本服务新模型。响应以origin=legacy-hmac及sourceAt标明旧资料来源，状态公开legacyDataAt/legacyPlayers；旧源时间不会冒充新采集时间。旧回查不写入模型种子、不重复加算对局；完整mu/sigma仍只来自原始种子及已确认的新事实。旧缓存不可用时继续提供本服务新模型。
+
+同服务器旧MOD原始UID分片接口也采用相同择新规则；分片只能枚举已确认的原始UID，不能逆推未知哈希。八人批量接口可直接回查尚未出现在本地模型的新UID。服务器私有配置路径示例为`/var/lib/yx-elo/uid-hmac.key`，不要将密钥写进启动命令参数。密钥格式虽是64位hex文本，算法使用文本本身。
