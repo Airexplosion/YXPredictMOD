@@ -57,10 +57,36 @@ export function syncQqWallet(web,user){
         account.balance=0;primary[1].balance+=amount;synced+=amount;
         state.walletEvents[id]={kind:'qq-wallet-sync',owner,source:key,account:primary[0],amount,at:web.now()};
       }
+      for(const field of ['transferIn','transferOut'])if(account[field]){
+        ensure(Number.isSafeInteger(account[field])&&account[field]>0&&Number.isSafeInteger((primary[1][field]??0)+account[field]),'转账累计记录需要核对');
+        primary[1][field]=(primary[1][field]??0)+account[field];account[field]=0;
+      }
       account.walletRedirect=primary[0];
       if(profile.rewardAccount===key)profile.rewardAccount=primary[0];
     }
     bindings[qq]=owner;
     return {me:web.me(identity),created,linked,synced};
+  });
+}
+
+export function transferQqCoins(web,sender,recipient,amount,operation){
+  ensure(sender.scope==='qq-prediction','请先完成有效认证再转账',403);
+  ensure(recipient.groupId==='599092307'&&['qq-wallet','qq-prediction'].includes(recipient.scope)&&reference(recipient.qqSubject),'收款人身份无效',403);
+  ensure(Number.isSafeInteger(amount)&&amount>=1&&amount<=1e12,'转账金额须为1～1000000000000的整数',400);
+  ensure(sender.qqSubject!==recipient.qqSubject,'不能给自己转账',400);
+  return web.rooms.commit(()=>{
+    syncQqWallet(web,sender);
+    const identity=user=>({...user,subject:web.rooms.state.qqBindings?.[user.qqSubject]??user.subject});
+    const source=web.playKey(identity(sender)),from=web.rooms.state.accounts[source];
+    ensure(Number.isSafeInteger(from.balance)&&from.balance>=amount,'马币余额不足，转账未执行',400);
+    const opened=syncQqWallet(web,recipient),account=web.playKey(identity(recipient)),to=web.rooms.state.accounts[account];
+    ensure(source!==account&&identity(sender).subject!==identity(recipient).subject,'不能给同一账户转账',400);
+    ensure(Number.isSafeInteger(to.balance)&&to.balance>=0&&to.balance<=1e12-amount,'收款人马币余额已达上限',400);
+    for(const [wallet,field]of [[from,'transferOut'],[to,'transferIn']])ensure(Number.isSafeInteger(wallet[field]??0)&&(wallet[field]??0)>=0&&Number.isSafeInteger((wallet[field]??0)+amount),'转账累计记录无效',500);
+    const events=web.rooms.state.walletEvents??={};ensure(!events[operation],'转账记录需要核对，请查询上次回执',409);
+    from.balance-=amount;to.balance+=amount;
+    from.transferOut=(from.transferOut??0)+amount;to.transferIn=(to.transferIn??0)+amount;
+    events[operation]={kind:'qq-transfer',owner:identity(sender).subject,recipient:identity(recipient).subject,source,account,amount,sourceBalanceAfter:from.balance,balanceAfter:to.balance,at:web.now()};
+    return {amount,balance:from.balance,recipientCreated:opened.created};
   });
 }

@@ -241,3 +241,53 @@ test('historical public build recovery is annotation-only and validates all choi
  assert.deepEqual({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,states:r.states,frames:r.frames,builds:r.builds},finance);
  const before=structuredClone(x.rooms.state);old[0].selectionRound=4;assert.throws(()=>x.hourly.recoverReport(v.code,r.gameId,battles,old),/公开角色/);assert.deepEqual(x.rooms.state,before);
 });
+
+test('an already eliminated observer player receiving its last native result retains the accepted round and fixed rank',()=>{
+ const x=fixture(),v=x.open();x.snapshot.round=2;x.snapshot.closedThrough=1;x.snapshot.roundComplete=true;
+ x.snapshot.eliminationRounds=Array(8).fill(0);x.snapshot.eliminationRounds[2]=1;x.snapshot.ranks[2]=8;x.snapshot.states[2]={life:-1,wins:0,losses:1};x.hourly.sync(v.code,x.snapshot);
+ const r=x.rooms.state.rooms[v.code],payouts=structuredClone(r.payouts),accounts=structuredClone(x.rooms.state.accounts);
+ x.snapshot.round=6;x.snapshot.closedThrough=5;x.snapshot.eliminationRounds[2]=2;x.snapshot.states[2]={life:-8,wins:0,losses:2};x.hourly.sync(v.code,x.snapshot);
+ assert.equal(r.round,6);assert.equal(r.ranks[2],8);assert.equal(r.eliminationRounds[2],1);assert.equal(r.states[2].losses,2);assert.equal(x.snapshot.eliminationRounds[2],2);
+ assert.deepEqual(r.payouts,payouts);assert.deepEqual(x.rooms.state.accounts,accounts);
+ const before=structuredClone(x.rooms.state);x.snapshot.ranks[2]=7;assert.throws(()=>x.hourly.sync(v.code,x.snapshot),/冲突/);assert.deepEqual(x.rooms.state,before);
+});
+
+test('a recovered status jump still announces the preceding complete native tables without inventing missing rounds',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];
+ Object.assign(x.snapshot,{round:6,closedThrough:5,roundComplete:true});
+ x.snapshot.states.forEach(p=>{p.wins=3;p.losses=2;});x.snapshot.builds.forEach(b=>{b.selectionRound=5;b.cards=[1000010];b.cardNames=['云剑'];});
+ x.snapshot.battles=Array.from({length:4},(_,i)=>({round:5,first:r.players[i*2].uid,second:r.players[i*2+1].uid,winner:r.players[i*2].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:80,secondLife:60,lifeDamage:20,resultComplete:true}));
+ x.hourly.sync(v.code,x.snapshot);
+ assert(x.hourly.data().outbox.some(e=>e.code===v.code&&e.kind==='round'&&e.round===5));assert(x.hourly.ready(r,'round',5));
+ assert.deepEqual(x.hourly.data().slots[r.eventSlot].participants[5],Array(8).fill(true));assert(!x.hourly.data().outbox.some(e=>e.code===v.code&&e.kind==='round'&&[2,3,4].includes(e.round)));
+});
+
+test('quitting before the first battle never waits for a nonexistent table or changes rank when a late result arrives',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];Object.assign(x.snapshot,{sourcePhase:'preparation',roundComplete:true,eliminationRounds:Array(8).fill(0)});
+ x.snapshot.states[0]={life:0,wins:0,losses:0};x.snapshot.ranks[0]=8;x.hourly.sync(v.code,x.snapshot);
+ assert.equal(r.observerWithdrawals[0],0);assert.equal(x.hourly.data().slots[r.eventSlot].participants[1][0],false);assert.equal(r.ranks[0],8);assert.equal(publicPresentation(x.web.watch(r),{noticeType:'round'}).players[0].showBoard,false);
+ Object.assign(x.snapshot,{round:2,closedThrough:1});x.snapshot.states[0]={life:-5,wins:0,losses:1};x.snapshot.eliminationRounds[0]=1;x.hourly.sync(v.code,x.snapshot);
+ assert.equal(r.round,2);assert.equal(r.ranks[0],8);assert.equal(r.eliminationRounds[0],0);
+});
+
+test('sequential voluntary exits after the same nonlethal battle keep independent native ranks and do not block on late or temporarily omitted ranks',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];Object.assign(x.snapshot,{round:2,closedThrough:1,sourcePhase:'preparation',roundComplete:true,eliminationRounds:Array(8).fill(0)});
+ x.snapshot.battles=[{round:1,first:r.players[0].uid,second:r.players[1].uid,winner:r.players[1].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:100,secondLife:100,firstLifeBefore:100,secondLifeBefore:100,lifeDamage:-5,resultComplete:true}];
+ x.snapshot.states[0]={life:0,wins:0,losses:1};x.snapshot.ranks[0]=8;x.snapshot.eliminationRounds[0]=1;x.hourly.sync(v.code,x.snapshot);
+ x.snapshot.states[1]={life:0,wins:1,losses:0};x.snapshot.ranks[1]=7;x.snapshot.eliminationRounds[1]=1;x.hourly.sync(v.code,x.snapshot);
+ assert.deepEqual(r.ranks.slice(0,2),[8,7]);assert.deepEqual(r.rankMinimum.slice(0,2),[8,7]);assert.deepEqual(r.rankMaximum.slice(0,2),[8,7]);assert.deepEqual(r.observerWithdrawals.slice(0,2),[1,1]);
+ const accounts=structuredClone(x.rooms.state.accounts);Object.assign(x.snapshot,{round:3,closedThrough:2});x.snapshot.battles=[];
+ for(let i=0;i<2;i++){x.snapshot.states[i].life=-5;x.snapshot.states[i].losses++;x.snapshot.eliminationRounds[i]=2;x.snapshot.ranks[i]=0;}
+ x.hourly.sync(v.code,x.snapshot);assert.equal(r.round,3);assert.deepEqual(r.ranks.slice(0,2),[8,7]);assert.deepEqual(x.rooms.state.accounts,accounts);assert.equal(publicPresentation(x.web.watch(r),{round:2,noticeType:'round'}).players[0].showBoard,false);
+});
+
+test('real simultaneous lethal battles retain cohort payouts when later counters advance and native ordering changes inside the known interval',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code];Object.assign(x.snapshot,{round:2,closedThrough:1,sourcePhase:'preparation',roundComplete:true,eliminationRounds:Array(8).fill(0)});
+ x.snapshot.battles=[0,1].map(i=>({round:1,first:r.players[i].uid,second:r.players[i+2].uid,winner:r.players[i+2].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:5,secondLife:100,firstLifeBefore:5,secondLifeBefore:100,lifeDamage:-10,resultComplete:true}));
+ for(let i=0;i<2;i++){x.snapshot.states[i]={life:-5,wins:0,losses:1};x.snapshot.ranks[i]=7+i;x.snapshot.eliminationRounds[i]=1;}
+ x.hourly.sync(v.code,x.snapshot);assert.deepEqual(r.rankMinimum.slice(0,2),[7,7]);assert.deepEqual(r.rankMaximum.slice(0,2),[8,8]);assert.equal(r.observerWithdrawals,undefined);
+ const accounts=structuredClone(x.rooms.state.accounts);x.snapshot.round=3;x.snapshot.closedThrough=2;
+ for(let i=0;i<2;i++){x.snapshot.states[i].losses=2;x.snapshot.eliminationRounds[i]=2;x.snapshot.ranks[i]=8-i;}
+ x.snapshot.battles=[];x.hourly.sync(v.code,x.snapshot);assert.equal(r.round,3);assert.deepEqual(r.eliminationRounds.slice(0,2),[1,1]);assert.deepEqual(x.rooms.state.accounts,accounts);
+ const before=structuredClone(x.rooms.state);x.snapshot.ranks[0]=6;assert.throws(()=>x.hourly.sync(v.code,x.snapshot),/冲突/);assert.deepEqual(x.rooms.state,before);
+});

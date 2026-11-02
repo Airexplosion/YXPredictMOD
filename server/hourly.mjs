@@ -92,16 +92,61 @@ export class HourlyEvents{
   }
   sync(code,snapshot){
     const data=this.data(),r=this.rooms.state.rooms[code];ensure(r&&r.eventSlot&&r.host===data.hostToken,'不是本服务的整点房间',403);
+    const withdrawals=new Map();
+    if(Array.isArray(snapshot.eliminationRounds))snapshot={...snapshot,eliminationRounds:snapshot.eliminationRounds.map((round,i)=>{
+      const at=r.players.findIndex(p=>p.uid===snapshot.players?.[i]?.uid),known=r.eliminationRounds?.[at]??0;
+      const rank=snapshot.ranks?.[i],minimum=r.rankMinimum?.[at]||r.ranks[at],maximum=r.rankMaximum?.[at]||r.ranks[at];
+      const compatible=rank===0||Number.isSafeInteger(rank)&&rank>=minimum&&rank<=maximum;
+      if(at>=0&&snapshot.states?.[i]?.life<=0&&(rank>0||r.ranks[at]>0)&&(!r.ranks[at]||compatible)){
+        const exit=this.publicWithdrawalRound(r,snapshot,i,at);
+        if(exit!==null){withdrawals.set(at,exit);if(!r.ranks[at])return 0;}
+      }
+      // A quit player can receive one last native result after its fixed rank
+      // has already been accepted. Its win/loss sum is not a new elimination.
+      return at>=0&&known>0&&Number.isSafeInteger(round)&&round>known&&round<=snapshot.round&&r.ranks[at]>0&&compatible&&r.states?.[at]?.life<=0&&snapshot.states?.[i]?.life<=0?known:round;
+    })};
+    if(snapshot.eliminationRounds?.some((round,i)=>{const at=r.players.findIndex(p=>p.uid===snapshot.players?.[i]?.uid);return at>=0&&r.eliminationRounds?.[at]>0&&round>0&&r.eliminationRounds[at]!==round;})){
+      if(!this.lastConflictAt||this.rooms.now()-this.lastConflictAt>20000){this.lastConflictAt=this.rooms.now();console.warn('Public elimination conflict',JSON.stringify({round:snapshot.round,previous:r.eliminationRounds,incoming:snapshot.eliminationRounds,ranks:snapshot.ranks,states:snapshot.states}));}
+    }
     return this.rooms.commit(()=>{
       const slot=data.slots[r.eventSlot];slot.participants??={};slot.noticeWait??={};
       slot.participants[snapshot.round]??=r.players.map(p=>{const i=snapshot.players.findIndex(q=>q.uid===p.uid);return !snapshot.states?.[i]||snapshot.states[i].life>0;});
+      for(const [index,completed]of withdrawals){
+        r.observerWithdrawals??=Array(8).fill(null);r.observerWithdrawals[index]=completed;
+        for(const [round,participants]of Object.entries(slot.participants))if(Number(round)>completed)participants[index]=false;
+      }
       this.rooms.sync(code,data.hostToken,snapshot);
       for(const frame of r.frames??[])if(frame.round<=r.closedThrough&&(frame.round<snapshot.round||snapshot.roundComplete!==false)){
         this.enqueue('round',r,frame.round);
       }
+      // If an earlier status was rejected, a recovered frame may jump several
+      // rounds. Its actual public tables still provide the preceding report.
+      for(const round of new Set((snapshot.battles??[]).map(b=>b.round)))if(round<=r.closedThrough){
+        const after=r.frames?.find(f=>f.round===round+1)?.states??r.states;
+        slot.participants[round]??=r.players.map((_,i)=>after?.[i]?.life>0||(r.eliminationRounds?.[i]??0)>=round||(after?.[i]?.wins??0)+(after?.[i]?.losses??0)>=round);
+        this.enqueue('round',r,round);
+      }
       if(r.settled)this.enqueue('settled',r);
       return {...this.web.watch(r),reportReady:this.completeReport(r)};
     });
+  }
+  publicWithdrawalRound(r,snapshot,incoming,index){
+    if(r.observerWithdrawals?.[index]!==null&&r.observerWithdrawals?.[index]!==undefined)return r.observerWithdrawals[index];
+    const first=(r.frames??[]).find(f=>f.states?.[index]?.life<=0)?.states?.[index]??snapshot.states?.[incoming];
+    const completed=(first?.wins??0)+(first?.losses??0);
+    if(!Number.isSafeInteger(completed)||completed<0)return null;
+    if(completed===0&&snapshot.sourcePhase==='preparation')return 0;
+    const tables=[...(r.battles??[]),...(snapshot.battles??[]).map(b=>({...b,first:r.players.findIndex(p=>p.uid===b.first),second:r.players.findIndex(p=>p.uid===b.second),winner:b.winner?r.players.findIndex(p=>p.uid===b.winner):null}))];
+    for(const b of tables){
+      if(b.round!==completed||b.first===b.second||!b.resultComplete||b.winner===null||!Number.isSafeInteger(b.lifeDamage))continue;
+      const side=b.first===index&&!b.firstMirror?'first':b.second===index&&!b.secondMirror?'second':null;
+      if(!side)continue;
+      const before=b[side+'LifeBefore']??b[side+'Life'];
+      // Native BattleResult life is the starting life. Use its explicit damage,
+      // never the later win/loss count, to distinguish an out-of-battle exit.
+      if(Number.isSafeInteger(before)&&(before<=0||before-(b.winner===index?0:Math.abs(b.lifeDamage))>0))return completed;
+    }
+    return null;
   }
   enqueue(kind,r,round=r.round){
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;

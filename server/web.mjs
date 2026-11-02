@@ -53,7 +53,7 @@ export class PredictionWeb {
     return {code:r.code,hostName:this.rooms.observerName(r,r.host),round:r.round,version:r.version,rules:r.rules??1,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,availability:this.rooms.availability(r),open:this.rooms.isOpen(r),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
-          horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],state:r.states?.[i]??null,build:clonePublic(r.builds?.[i]??null),baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
+          horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],exitRound:r.observerWithdrawals?.[i]??(r.eliminationRounds?.[i]>0?r.eliminationRounds[i]:null),state:r.states?.[i]??null,build:clonePublic(r.builds?.[i]??null),baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
       horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),buildHistory:clonePublic(r.buildHistory??[]),battles:clonePublic(r.battles??[]),settlement:settlementReport(this.rooms,r)};
   }
   listRooms(page=0) {
@@ -126,7 +126,7 @@ export class PredictionWeb {
   }
   aggregate(owner,accounts,stats) {
     let balance=0,net=0,games=0,wins=0;
-    for(const [key,a]of accounts){const s=stats.get(key);balance+=a.balance;net+=a.balance+s.held-1000-50*(a.reliefCount??0)-(a.checkInGranted??0);games+=s.games;wins+=s.wins;}
+    for(const [key,a]of accounts){const s=stats.get(key);balance+=a.balance;net+=a.balance+s.held-1000-50*(a.reliefCount??0)-(a.checkInGranted??0)-(a.transferIn??0)+(a.transferOut??0);games+=s.games;wins+=s.wins;}
     return {id:digest(owner).slice(0,16),name:this.rooms.state.profiles?.[owner]?.name??accounts[0]?.[1].name??'观众',balance,net,games,wins,accounts:accounts.length};
   }
   me(user) {
