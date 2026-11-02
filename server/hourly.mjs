@@ -14,7 +14,7 @@ export function eligibleLobby(info){
     &&Number.isSafeInteger(info.avgRankScore)&&info.avgRankScore>=6000&&typeof info.roomId==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(info.roomId);
 }
 const rate=n=>(n/10000).toFixed(2)+'倍';
-export function publicSummary(view,{round=view.round,player=null}={}){
+export function publicSummary(view,{round=view.round,player=null,nativeRanks=null}={}){
   const frame=view.frames?.find(f=>f.round===round+1)??view.frames?.find(f=>f.round===round),players=player===null?view.players.map((_,i)=>i):[player];
   const lines=[`整点赌马 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 已封盘':''}`];
   const reference=publicPresentation(view,{round,player});
@@ -25,7 +25,8 @@ export function publicSummary(view,{round=view.round,player=null}={}){
     const active=frame?(state?state.life>0:rank===0):p.active;
     const build=view.frames?.find(f=>f.round===round)?.builds?.[i]??(round===view.round?p.build:null);
     const quote=reference.players.find(p=>p.index===i)?.quoteRate??0;
-    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${quote>0?` · 第${reference.quoteRound}回合冠军参考${rate(quote)}`:''}\n${buildLines(build).join('\n')}`);
+    const native=nativeRanks?.[i],nativeText=native?` · ${native.mode==='daoxin'?'道心':'天梯'}${native.score===null?'分未公开':` ${native.score}分`}`:'';
+    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}${nativeText}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${quote>0?` · 第${reference.quoteRound}回合冠军参考${rate(quote)}`:''}\n${buildLines(build).join('\n')}`);
   }
   for(const b of view.battles??[]){
     if(b.round!==round||player!==null&&b.first!==player&&b.second!==player)continue;
@@ -78,6 +79,7 @@ export class HourlyEvents{
     ensure(snapshot?.gameRoomId===info.roomId&&snapshot.round>=1&&snapshot.round<=2&&!snapshot.ended,'观战对局已不符合整点条件');
     ensure(Array.isArray(snapshot.baseRates)&&snapshot.baseRates.length===64&&snapshot.players?.every((_,i)=>snapshot.baseRates[i*8]>0),'等待八人冠军倍率就绪');
     ensure(model===null||(Array.isArray(model)&&model.length===8&&new Set(model.map(p=>p.uid)).size===8&&model.every(p=>snapshot.players.some(q=>q.uid===p.uid)&&typeof p.found==='boolean'&&typeof p.score==='number'&&Number.isFinite(p.score)&&p.score>=0&&p.score<=10000)),'观战报价模型格式无效');
+    ensure(info.nativeRanks===undefined||(Array.isArray(info.nativeRanks)&&info.nativeRanks.length===8&&new Set(info.nativeRanks.map(p=>p?.uid)).size===8&&info.nativeRanks.every(p=>p&&snapshot.players.some(q=>q.uid===p.uid)&&['ladder','daoxin'].includes(p.mode)&&(p.score===null||Number.isSafeInteger(p.score)&&p.score>=0&&p.score<=1000000))),'开局公开段位分格式无效');
     return this.rooms.commit(()=>{
       const data=this.rooms.state.hourly??={slots:{},outbox:[]};
       data.hostToken??=this.rooms.register('WHITE整点观战').token;
@@ -148,21 +150,30 @@ export class HourlyEvents{
     }
     return null;
   }
+  startRanks(r){
+    const rows=this.data().slots[r.eventSlot]?.info?.nativeRanks;
+    return r.players.map(p=>{const row=rows?.find(q=>q.uid===p.uid);return row?{mode:row.mode,score:row.score}:null;});
+  }
+  presentation(r,kind,round){
+    const report=publicPresentation(this.web.watch(r),{round,noticeType:kind});
+    if(kind==='start'){const ranks=this.startRanks(r);for(const p of report.players)if(ranks[p.index])p.nativeRank=ranks[p.index];}
+    return report;
+  }
   enqueue(kind,r,round=r.round){
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
     const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
-      ?[`整点赌马开盘 #${r.code} · 倍率额外×1.15\n只猜冠军，第10回合封盘；第二25%、第三10%。\n/下注 选手编号 马币数 · /赌马 · /选手 编号\nhttps://duma.kaigua.vip/`,...publicSummary(view)]
+      ?[`整点赌马开盘 #${r.code} · 倍率额外×1.15\n只猜冠军，第10回合封盘；第二25%、第三10%。\n/下注 选手编号 马币数 · /赌马 · /选手 编号\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
       :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
-    if(old){old.lines=lines;old.presentation=publicPresentation(view,{round,noticeType:kind});return;}
-    data.outbox.push({id,kind,code:r.code,round,lines,presentation:publicPresentation(view,{round,noticeType:kind}),createdAt:this.rooms.now(),deliveredAt:null});
+    if(old){old.lines=lines;old.presentation=this.presentation(r,kind,round);return;}
+    data.outbox.push({id,kind,code:r.code,round,lines,presentation:this.presentation(r,kind,round),createdAt:this.rooms.now(),deliveredAt:null});
     if(data.outbox.length>4000)data.outbox=data.outbox.filter(e=>!e.deliveredAt||e.deliveredAt>this.rooms.now()-7*86400000);
   }
   claim(){
     for(const row of this.data().outbox){
       if(row.deliveredAt||row.leaseUntil>this.rooms.now())continue;
       const r=this.rooms.state.rooms[row.code];if(!r||!this.ready(r,row.kind,row.round))continue;
-      return this.rooms.commit(()=>{row.presentation=publicPresentation(this.web.watch(r),{round:row.round,noticeType:row.kind});row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
+      return this.rooms.commit(()=>{row.presentation=this.presentation(r,row.kind,row.round);row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
     }
     return null;
   }

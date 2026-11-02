@@ -29,6 +29,28 @@ test('selection uses actual public eight-player round 1/2 and native rank score,
  for(const patch of [{isPrivate:true},{round:0},{round:3},{avgRankScore:5999},{avgRankScore:3001},{playerCount:7},{roomId:'../private'}])assert(!eligibleLobby({...x.info,...patch}));
  assert(!eligibleLobby({...x.info,avgRankScore:undefined,elo:9999}));
 });
+test('opening forwards native per-player ladder/Daoxin scores by UID without shuffling them or exposing Elo/UIDs',()=>{
+ const x=fixture();x.info.nativeRanks=x.snapshot.players.map((p,i)=>({uid:p.uid,score:7000+i*100,mode:i%2?'daoxin':'ladder'})).reverse();
+ const room=x.open(),event=x.hourly.claim();assert.equal(event.kind,'start');
+ for(let i=0;i<8;i++){
+  assert.deepEqual(event.presentation.players[i].nativeRank,{score:7000+i*100,mode:i%2?'daoxin':'ladder'});
+  assert(event.lines.some(s=>s.startsWith((i+1)+'号 ')&&s.includes((i%2?'道心':'天梯')+' '+(7000+i*100)+'分')));
+ }
+ assert(!JSON.stringify(event.presentation).includes('private-player-'));assert(!JSON.stringify(event.presentation).includes('elo'));
+ assert(!JSON.stringify(x.web.watch(x.rooms.state.rooms[room.code])).includes('nativeRank'));
+ x.info.nativeRanks[0].score=999999;
+ x.time(x.now()+60001);const saved=new Rooms(structuredClone(x.rooms.state),undefined,x.now),h=new HourlyEvents(saved,new PredictionWeb(saved,{now:x.now}));
+ assert.equal(h.claim().presentation.players[7].nativeRank.score,7700);
+ const r=saved.state.rooms[room.code];assert(h.presentation(r,'round',1).players.every(p=>!('nativeRank'in p)));assert(h.presentation(r,'settled',1).players.every(p=>!('nativeRank'in p)));
+});
+test('opening rejects mismatched or malformed native rank annotations before any room or wallet is written',()=>{
+ const rows=()=>Array.from({length:8},(_,i)=>({uid:'private-player-'+i,score:7000,mode:'ladder'}));
+ for(const patch of [r=>r.pop(),r=>r[0].uid='foreign',r=>r[0].uid=r[1].uid,r=>r[0].score=-1,r=>r[0].score=NaN,r=>r[0].mode='gameMode3']){
+  const x=fixture();x.info.nativeRanks=rows();patch(x.info.nativeRanks);const before=structuredClone(x.rooms.state);
+  assert.throws(x.open,/公开段位分/);assert.deepEqual(x.rooms.state,before);
+ }
+ const x=fixture();x.info.nativeRanks=rows();x.info.nativeRanks[0].score=null;x.open();assert(x.hourly.claim().lines.some(s=>s.includes('天梯分未公开')));
+});
 test('one authoritative hourly room, immutable 15% premium, restart deduplication and unchanged standard quotes',()=>{
  const x=fixture(),r=x.open(),code=r.code;assert.equal(r.players[0].quoteRate,46000);assert.equal(r.bonusBps,11500);
  assert.equal(x.open().code,code);assert.equal(Object.keys(x.rooms.state.rooms).length,1);
