@@ -45,10 +45,14 @@ namespace YxPrediction
         public RoomBrowser Browser { get; private set; }
         public string WebCode { get; private set; }
         float _webCodeUntil;
+        bool _webCodeRequested;
+        public bool WebCodeAvailable { get { return !string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil; } }
+        public bool WebCodePending { get { return _webCodeRequested || _afterRegister == "linkCode" || (_request != null && Json.GetString(_sent, "action", "") == "linkCode"); } }
         public void CreateWebCode()
         {
-            if (Busy) return;
-            if (!string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://duma.kaigua.vip 登录并绑定"; return; }
+            if (WebCodeAvailable) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://duma.kaigua.vip 登录并绑定"; return; }
+            if (Busy) { _webCodeRequested = true; Message = "当前请求完成后自动生成网页绑定码…"; return; }
+            _webCodeRequested = false; Message = "正在生成网页绑定码…";
             _afterRegister = "linkCode";
             if (string.IsNullOrEmpty(_token)) { var register=Body("register");register["name"]=_name.Value;Send(register); }
             else ConnectReady();
@@ -102,7 +106,7 @@ namespace YxPrediction
         public void SetMessage(string message) { Message = message; }
         void ReadIdentity()
         {
-            WebCode = null; _webCodeUntil = 0;
+            WebCode = null; _webCodeUntil = 0; _webCodeRequested = false;
             _endpoint = _url.Value.Trim().TrimEnd('/');
             _reliefSeen = 0;
             var saved = _ctx.Data.Get<Dictionary<string, object>>("room.identity.v1", null);
@@ -512,6 +516,7 @@ namespace YxPrediction
                 }
                 catch { Message = _pending != null ? "网络未确认：暂停新操作并用同一编号重试，避免重复扣分" : "房间连接失败，稍后自动重连"; }
                 DestroyRequest(); _next = Time.unscaledTime + 1.5f;
+                if (!connect && _afterRegister == "linkCode") _afterRegister = null;
                 if (selected != null)
                 {
                     string error;
@@ -529,6 +534,7 @@ namespace YxPrediction
                 }
                 if (connect) ConnectReady(); return;
             }
+            if (_webCodeRequested && !Busy) { CreateWebCode(); return; }
             if (Time.unscaledTime < _next) return;
             _next = Time.unscaledTime + 1.5f;
             if (_pending != null) { Send(_pending); return; }

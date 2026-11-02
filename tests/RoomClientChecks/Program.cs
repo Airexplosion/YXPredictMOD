@@ -261,6 +261,11 @@ internal static class Program
             }
             Require(confirm&&dismiss,"Popup confirmation is not wired to dismissal");
             var panel=module.GetType("YxPrediction.RoomPanel");foreach(var method in panel.Methods)if(method.Name=="Update")Require(Calls(method,"DisplayOrder")&&Calls(method,"SetSlot"),"Purchased-first order disconnected");
+            foreach(var method in panel.Methods)
+            {
+                if(method.Name=="Build")Require(Calls(method,"WebLink"),"Overview toolbar is missing direct web binding");
+                if(method.Name=="ShowConnectionMenu")Require(Calls(method,"BackChoices")&&!Calls(method,"ShowJoin"),"Room menu still hides binding behind the join form");
+            }
             foreach(var nested in panel.NestedTypes)if(nested.Name=="Row")foreach(var method in nested.Methods)if(method.Name=="Refresh")Require(Calls(method,"CanTrade"),"Overview does not enforce betting access");
         }
         Console.WriteLine("PASS production final-event capture, shared selection and purchased-first UI bindings");
@@ -361,6 +366,20 @@ internal static class Program
             Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-1234567890","Code not copied");int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;
             mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count,"Fresh code was needlessly regenerated");
             UnityEngine.Time.unscaledTime=301;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Expired code reused");
+            Require(mod.Client.WebCodePending&&!mod.Client.WebCodeAvailable,"Code request state missing");
+            Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"code\":\"TP-ABCDEF1234\"}}";mod.Client.Update();
+            mod.Client.FetchRooms(0);int busyCount=UnityEngine.Networking.UnityWebRequest.Sent.Count;UnityEngine.GUIUtility.systemCopyBuffer="";
+            mod.Client.CreateWebCode();Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-ABCDEF1234"&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount,"Valid code could not be copied during polling");
+            UnityEngine.Time.unscaledTime=601;mod.Client.CreateWebCode();Require(mod.Client.WebCodePending&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount,"Busy binding request was dropped or interrupted polling");
+            Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"page\":0,\"total\":0,\"rooms\":[]}}";mod.Client.Update();mod.Client.Update();
+            Require((string)Last.Body["action"]=="linkCode"&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount+1,"Queued binding did not run after polling");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Set(mod.Client,"_token",null);Set(mod.Client,"_code",null);mod.Client.CreateWebCode();
+            Require((string)Last.Body["action"]=="register"&&mod.Client.WebCodePending,"Binding registration did not start");
+            Complete(true);mod.Client.Update();Require(!mod.Client.WebCodePending,"Failed registration left binding stuck loading");
+            int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Binding registration could not retry");
         }
     }
     static void MigratedDeparture()
