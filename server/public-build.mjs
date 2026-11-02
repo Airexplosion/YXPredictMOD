@@ -24,9 +24,12 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
     const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
     const battle=available.filter(b=>b.first===index&&!b.firstMirror||b.second===index&&!b.secondMirror).sort((a,z)=>z.round-a.round)[0],side=battle?.first===index?'first':'second';
-    const board=battle&&battle[side+'Cards']?{round:battle.round,cards:battle[side+'Cards'],names:battle[side+'Names']??battle[side+'Cards'].map(id=>id?'未知牌':'空位')}:build?.cards&&build.selectionRound>0&&build.selectionRound<=round?{round:build.selectionRound,cards:build.cards,names:build.cardNames}:null;
+    const battleBoard=battle&&battle[side+'Cards']?{round:battle.round,cards:battle[side+'Cards'],names:battle[side+'Names']??battle[side+'Cards'].map(id=>id?'未知牌':'空位')}:null;
+    const buildBoard=build?.cards&&build.selectionRound>0&&build.selectionRound<=round?{round:build.selectionRound,cards:build.cards,names:build.cardNames}:null;
+    const board=buildBoard&&(!battleBoard||buildBoard.round>battleBoard.round)?buildBoard:battleBoard;
+    const eliminatedRound=p.state&&p.state.life<=0?p.state.wins+p.state.losses:0;
     return {index,name:p.name,horseTitle:p.horseTitle,rank:round===view.round?p.rank:after?.ranks?.[index]??frame?.ranks?.[index]??0,
-      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:round===view.round?p.quoteRate:0,build,board};
+      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:round===view.round?p.quoteRate:0,build,board,showBoard:noticeType==='query'||!eliminatedRound||round<=eliminatedRound};
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
   return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,settlement:finalReport?view.settlement??null:null,players,
@@ -35,6 +38,8 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
 export function publicReportReady(report,expected=null){
   const known=s=>typeof s==='string'&&s.length>0&&!/待同步|待识别|未知牌/.test(s),start=report.noticeType==='start';
   if(report.players.length!==8)return false;
+  // Final cash accounting is authoritative independently of the last battle pictures.
+  if(report.noticeType==='settled')return report.settled&&new Set(report.players.map(p=>p.rank)).size===8&&report.players.every(p=>integer(p.rank,1,8))&&!!report.settlement;
   for(const p of report.players){
     const b=p.build;if(!b||![p.name,p.horseTitle,b.characterName,b.sectName,b.realmName,b.careerName].every(known))return false;
     if([...b.talents,...b.baijia,...b.fates,...(b.resonance?[b.resonance]:[])].some(c=>!known(c.name)))return false;

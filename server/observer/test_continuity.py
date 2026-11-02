@@ -2,12 +2,22 @@ import pathlib,sys,unittest
 from unittest.mock import Mock
 import requests
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate
+from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,public_focus_targets
 from public_lobby import PublicLobby,LobbyError
 from projection import PublicProjection
 from test_projection import ROSTER,UIDS,status,player,number,blob,string_field,encoded
 
 class ContinuityTests(unittest.TestCase):
+    def test_eliminated_player_remains_a_focus_target_until_the_final_public_battle_arrives(self):
+        p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status(4)))
+        p.players[UIDS[0]].update(life=-3,wins=2,losses=2)
+        self.assertIn(UIDS[0],public_focus_targets(p))
+        battle={'round':4,'resultComplete':True,'first':{'uid':UIDS[0],'isMirror':True,'lastRound':{'usedCards':[1]}},'second':{'uid':UIDS[1],'isMirror':False}}
+        p.battles['mirror']=battle;self.assertIn(UIDS[0],public_focus_targets(p))
+        p.battles['actual']={**battle,'resultComplete':False,'first':{'uid':UIDS[0],'isMirror':False,'lastRound':{'usedCards':[1]}}}
+        self.assertIn(UIDS[0],public_focus_targets(p));p.battles['actual']['resultComplete']=True
+        self.assertNotIn(UIDS[0],public_focus_targets(p));self.assertIn(UIDS[1],public_focus_targets(p))
+
     def test_selection_is_highest_native_rank_among_recent_starts_then_newest_with_no_randomness(self):
         def room(code,score,created,round=1):return {'roomId':code,'avgRankScore':score,'createdTs':created,'round':round,'name':'game_room','status':2,'isPrivate':False,'playerCount':8}
         data=[room('newer-low',6500,900),room('older-high',8000,100,2),room('newest-high',8000,500),room('ineligible',9999,999,3)]

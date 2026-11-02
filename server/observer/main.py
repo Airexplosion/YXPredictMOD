@@ -135,6 +135,16 @@ def refresh_info(reader,info):
     if row.get('isPrivate')is not False or row.get('playerCount')!=8 or row.get('name')!='game_room':raise LobbyError('Room is no longer a public eight-player game')
     return row
 
+def public_focus_targets(projection):
+    targets=[]
+    for entry in projection.roster:
+        uid=entry['userInfo']['uid'];player=projection.players[uid]
+        completed=player['wins']+player['losses']
+        observed=max((b['round']for b in projection.battles.values()if b.get('resultComplete',bool(b.get('winner')))and any(b[side]['uid']==uid and not b[side]['isMirror']and(b[side].get('lastRound')or{}).get('usedCards')is not None for side in ('first','second'))),default=0)
+        # A newly eliminated player still owns a final public battle to collect.
+        if player['life']>0 or completed>observed:targets.append(uid)
+    return targets
+
 def observe(config,backend,status):
     import fcntl
     reader=PublicLobby(config['tokenCache'],gap=1.4,timeout=12);spectator=None;lock=None
@@ -198,7 +208,7 @@ def observe(config,backend,status):
                     if time.monotonic()-settled_at>120:finished=True;LOG.warning('Wallet settled; incomplete public report remains queued');return
             # Upload the authoritative frame before optional portrait/board reads.
             if mode=='ordinary'and ready:
-                visible=[p['userInfo']['uid']for p in roster if projection.players[p['userInfo']['uid']]['life']>0]
+                visible=public_focus_targets(projection)
                 if visible:
                     target=visible[focus_index%len(visible)];focus_index+=1
                     result=spectator.focus_public(target,projection.expected,timeout=.6)
