@@ -31,9 +31,9 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
     const battleBoard=battle&&battle[side+'Cards']?{round:battle.round,cards:battle[side+'Cards'],names:battle[side+'Names']??battle[side+'Cards'].map(id=>id?'未知牌':'空位')}:null;
     const buildBoard=build?.cards&&build.selectionRound>0&&build.selectionRound<=round?{round:build.selectionRound,cards:build.cards,names:build.cardNames}:null;
     const board=buildBoard&&(!battleBoard||buildBoard.round>battleBoard.round)?buildBoard:battleBoard;
-    const eliminatedRound=p.state&&p.state.life<=0?p.state.wins+p.state.losses:0;
+    const eliminatedRound=integer(p.exitRound,0,100000)?p.exitRound:p.state&&p.state.life<=0?p.state.wins+p.state.losses:null;
     return {index,name:p.name,horseTitle:p.horseTitle,rank:round===view.round?p.rank:after?.ranks?.[index]??frame?.ranks?.[index]??0,
-      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:eligibleQuote(p)?p.quoteRate:0,build,board,showBoard:noticeType==='query'||!eliminatedRound||round<=eliminatedRound};
+      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:eligibleQuote(p)?p.quoteRate:0,build,board,showBoard:noticeType==='query'||eliminatedRound===null||round<=eliminatedRound};
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
   return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,
