@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const url=process.env.ELO_WEB_URL||'http://127.0.0.1:8138/',origin=new URL(url).origin;
+ const browser=await chromium.launch({headless:true,executablePath:process.env.WEB_TEST_BROWSER||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}),requests=[],errors=[],payloads=[];
+  page.on('request',r=>requests.push(r.url()));page.on('pageerror',e=>errors.push(e.message));
+  page.on('response',async r=>{if(new URL(r.url()).pathname==='/api/v1/leaderboard')payloads.push(await r.json())});
+  assert.equal((await page.goto(url)).status(),200);await page.waitForSelector('.anon-score');assert.equal(await page.locator('.anon-score').count(),100);
+  assert.equal(await page.locator('#view-elo input').count(),0);assert.equal(await page.locator('#view-elo .anon-subtitle,#view-elo .anon-badge,#view-elo .anon-note').count(),0);assert(!(await page.locator('#view-elo').innerText()).includes('不见姓名'));assert.equal(await page.locator('#view-elo tbody a').count(),0);
+  assert(!await page.locator('#view-elo').evaluate(e=>e.textContent.includes('NeverReveal')));
+  await page.screenshot({path:path.join(process.cwd(),'.cache/anonymous-elo-desktop.png'),fullPage:true});
+  await page.locator('.anon-pager button').last().click();await page.waitForFunction(()=>document.querySelector('.anon-place')?.textContent==='101');
+  await page.locator('.anon-pager button').first().click();await page.waitForFunction(()=>document.querySelector('.anon-place')?.textContent==='01');
+  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow');
+  await page.screenshot({path:path.join(process.cwd(),'.cache/anonymous-elo-mobile.png'),fullPage:true});
+  for(const data of payloads){assert.deepEqual(Object.keys(data).sort(),['scores','total','offset','limit','updatedAt','minGames','activeDays'].sort());assert(data.scores.every(Number.isFinite));assert(!JSON.stringify(data).includes('NeverReveal'))}
+  assert(payloads.length>=3);assert(!requests.some(u=>new URL(u).pathname.startsWith('/data/elo/')));assert(!requests.some(u=>new URL(u).pathname==='/api/v1/ratings'));
+  assert.equal((await page.request.get(origin+'/data/elo/names.json')).status(),404);assert.equal((await page.request.get(origin+'/data/elo/top.json')).status(),404);
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({anonymousPayloads:payloads.length,onlyScores:true,noPlayerSearchOrLinks:true,noLegacyIdentityRequests:true,pagination:true,desktopMobile:true,scriptErrors:0}));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exit(1)});

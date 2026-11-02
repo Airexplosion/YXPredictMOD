@@ -1,6 +1,6 @@
-# 原始 UID Elo API
+# Elo API 与匿名榜
 
-本目录是独立的只读数据适配器、OpenSkill 计算器与 API。它不登录游戏、不加入观战、不发送游戏请求，也不修改身份采集服务。部署在赌马同服务器，域名 `https://elo.kaigua.vip`；根路径返回 JSON，无 Elo 网页。
+本目录是独立的只读数据适配器、OpenSkill 计算器与 API。它不登录游戏、不加入观战、不发送游戏请求，也不修改身份采集服务。部署在赌马同服务器，域名 `https://elo.kaigua.vip`；域名恢复原来的卡牌/流派数据站及匿名Elo榜；MOD查询继续使用独立API。
 
 ## 数据与边界
 
@@ -36,3 +36,11 @@
 API加 `--legacy-snapshot <legacy.json> --uid-key-file <private-key-file>` 开启服务器端HMAC回查。查询仍只收原始24位UID，返回仍按原UID索引。旧资料仅在缺失或其last较新时采用；时间相同优先本服务新模型。响应以origin=legacy-hmac及sourceAt标明旧资料来源，状态公开legacyDataAt/legacyPlayers；旧源时间不会冒充新采集时间。旧回查不写入模型种子、不重复加算对局；完整mu/sigma仍只来自原始种子及已确认的新事实。旧缓存不可用时继续提供本服务新模型。
 
 同服务器旧MOD原始UID分片接口也采用相同择新规则；分片只能枚举已确认的原始UID，不能逆推未知哈希。八人批量接口可直接回查尚未出现在本地模型的新UID。服务器私有配置路径示例为`/var/lib/yx-elo/uid-hmac.key`，不要将密钥写进启动命令参数。密钥格式虽是64位hex文本，算法使用文本本身。
+
+## 匿名网页
+
+匿名榜为`/elo/`，根页恢复原数据站入口，卡牌与流派继续使用原站静态素材。自有展示适配器只调用`GET /api/v1/leaderboard?offset=0&limit=100`，返回`scores`数值数组及total/offset/limit/updatedAt/minGames/activeDays；响应没有玩家名、UID、哈希、行标识或个人详情链接。前端不读取姓名索引、玩家资料分片、不登录、不发送凭据；旧`/data/elo/names.json`与`top.json`入口返回404。MOD的指定UID查询及兼容分片仍作为独立API保留，不被网页调用。
+
+榜单沿用原站至少30场、近30天活跃的口径，按分数降序排列；同一玩家的新旧资料按私有HMAC去重，旧源未知原始UID的记录仍只以分数参与排序。记录时间相同优先新模型。数值结果按快照代次缓存，避免每页重复计算；全榜不暴露稳定身份标识。API状态模式为anonymous-web-and-api。
+
+`api.py`自带不依赖原站源码的匿名独立页面；部署原站时，以自有`web/elo.js`替换原Elo展示模块，启用入口，并覆盖旧身份索引路由。原站完整源码/素材未复制进本仓库。浏览器回归`tests/AnonymousEloBrowserChecks.cjs`检查响应字段白名单、无玩家搜索/详情、无旧身份数据请求、翻页及390px布局；用ELO_WEB_URL指定待验页面。
