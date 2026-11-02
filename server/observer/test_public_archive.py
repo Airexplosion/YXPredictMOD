@@ -16,17 +16,29 @@ def sample():
 
 class ArchiveTests(unittest.TestCase):
     def test_record_fetching_is_bounded_and_resumes_from_filtered_local_cache(self):
-        target,records,names=sample();bridge=Mock();bridge.upstream.return_value=records[0]
-        with tempfile.TemporaryDirectory()as temp,patch('public_archive.importlib.import_module',return_value=bridge),patch.dict(os.environ):
+        target,records,names=sample();bridge=Mock(return_value=Mock(returncode=0,stdout=json.dumps(records[0])))
+        with tempfile.TemporaryDirectory()as temp,patch('public_archive.subprocess.run',bridge),patch.dict(os.environ):
             config={'archiveCache':temp,'archiveBridge':temp};self.addCleanup(lambda:sys.path.remove(temp)if temp in sys.path else None)
-            self.assertRaises(ArchivePending,records_for,config,target);self.assertEqual(bridge.upstream.call_count,4)
+            self.assertRaises(ArchivePending,records_for,config,target);self.assertEqual(bridge.call_count,4)
             self.assertEqual(len(list(pathlib.Path(temp).glob('*.json'))),4)
-            self.assertEqual(len(records_for(config,target)),8);self.assertEqual(bridge.upstream.call_count,8)
-            self.assertEqual(len(records_for(config,target)),8);self.assertEqual(bridge.upstream.call_count,8)
-            self.assertEqual(os.environ['YX_IDENTITY_CAPTURE_REPLAYS'],'0')
+            self.assertEqual(len(records_for(config,target)),8);self.assertEqual(bridge.call_count,8)
+            self.assertEqual(len(records_for(config,target)),8);self.assertEqual(bridge.call_count,8)
+            self.assertEqual(bridge.call_args.kwargs['env']['YX_IDENTITY_CAPTURE_REPLAYS'],'0');self.assertIn('archive_bridge.py',bridge.call_args.args[0][1])
+    def test_bridge_imports_are_isolated_from_observer_modules_and_only_public_output_is_cached(self):
+        target,records,names=sample();raw=copy.deepcopy(records[0]);raw['privateData']={'hand':['DO-NOT-CACHE']}
+        with tempfile.TemporaryDirectory()as temp:
+            path=pathlib.Path(temp);bridge=path/'bridge';bridge.mkdir()
+            (bridge/'public_lobby_wire.py').write_text('def classify_player():return True',encoding='utf8')
+            (bridge/'replay_service.py').write_text("import json,os,pathlib\nfrom public_lobby_wire import classify_player\ndef upstream(*args,**kwargs):\n assert classify_player() and os.environ['YX_IDENTITY_CAPTURE_REPLAYS']=='0'\n return json.loads(pathlib.Path(__file__).with_name('record.json').read_text())",encoding='utf8')
+            (bridge/'record.json').write_text(json.dumps(raw),encoding='utf8')
+            config={'archiveCache':str(path/'cache'),'archiveBridge':str(bridge)}
+            self.assertRaises(ArchivePending,records_for,config,target)
+            self.assertEqual(len(records_for(config,target)),8)
+            self.assertTrue(all('DO-NOT-CACHE'not in f.read_text()for f in (path/'cache').glob('*.json')))
+
     def test_successful_fetch_is_saved_before_a_later_network_failure(self):
-        target,records,names=sample();bridge=Mock();bridge.upstream.side_effect=[records[0],RuntimeError('network')]
-        with tempfile.TemporaryDirectory()as temp,patch('public_archive.importlib.import_module',return_value=bridge),patch.dict(os.environ):
+        target,records,names=sample();bridge=Mock(side_effect=[Mock(returncode=0,stdout=json.dumps(records[0])),RuntimeError('network')])
+        with tempfile.TemporaryDirectory()as temp,patch('public_archive.subprocess.run',bridge),patch.dict(os.environ):
             self.addCleanup(lambda:sys.path.remove(temp)if temp in sys.path else None)
             self.assertRaises(RuntimeError,records_for,{'archiveCache':temp,'archiveBridge':temp},target)
             self.assertEqual(len(list(pathlib.Path(temp).glob('*.json'))),1)
@@ -34,6 +46,13 @@ class ArchiveTests(unittest.TestCase):
         target,records,names=sample();self.assertNotIn('PRIVATE',json.dumps(records))
         battles=recover_battles(target,records,names);self.assertEqual(len(battles),8)
         self.assertEqual(battles[-1]['first'],'human-6');self.assertEqual(battles[-1]['winner'],'human-6')
+    def test_recovery_can_fill_earlier_missing_rounds_in_a_bounded_batch(self):
+        target,records,names=sample();target['recoveryRounds']=[1]
+        battles=recover_battles(target,records,names)
+        self.assertEqual(len(battles),4);self.assertEqual({b['round']for b in battles},{1})
+        for rounds in ([],[0],[4],[1,2,3],[True]):
+            target['recoveryRounds']=rounds;self.assertRaises(ArchivePending,recover_battles,target,records,names)
+
     def test_same_round_elimination_interval_uses_unique_board_evidence_instead_of_rank_guessing(self):
         target,records,names=sample()
         for p in target['players'][:2]:p['minimum']=1;p['maximum']=2

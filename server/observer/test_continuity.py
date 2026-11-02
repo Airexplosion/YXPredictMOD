@@ -2,21 +2,31 @@ import pathlib,sys,unittest
 from unittest.mock import Mock
 import requests
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,public_focus_targets
+from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,public_focus_targets,collect_public_battles
 from public_lobby import PublicLobby,LobbyError
 from projection import PublicProjection
 from test_projection import ROSTER,UIDS,status,player,number,blob,string_field,encoded
 
 class ContinuityTests(unittest.TestCase):
-    def test_eliminated_player_remains_a_focus_target_until_the_final_public_battle_arrives(self):
+    def test_only_live_portraits_are_polled_and_completed_tables_do_not_consume_sweep_slots(self):
         p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status(4)))
         p.players[UIDS[0]].update(life=-3,wins=2,losses=2)
-        self.assertIn(UIDS[0],public_focus_targets(p))
-        battle={'round':4,'resultComplete':True,'first':{'uid':UIDS[0],'isMirror':True,'lastRound':{'usedCards':[1]}},'second':{'uid':UIDS[1],'isMirror':False}}
-        p.battles['mirror']=battle;self.assertIn(UIDS[0],public_focus_targets(p))
-        p.battles['actual']={**battle,'resultComplete':False,'first':{'uid':UIDS[0],'isMirror':False,'lastRound':{'usedCards':[1]}}}
-        self.assertIn(UIDS[0],public_focus_targets(p));p.battles['actual']['resultComplete']=True
-        self.assertNotIn(UIDS[0],public_focus_targets(p));self.assertIn(UIDS[1],public_focus_targets(p))
+        self.assertNotIn(UIDS[0],public_focus_targets(p))
+        b={'round':3,'resultComplete':True,'first':{'uid':UIDS[1],'isMirror':False,'lastRound':{'usedCards':[1]}},'second':{'uid':UIDS[2],'isMirror':False,'lastRound':{'usedCards':[2]}}}
+        p.battles['complete']=b
+        self.assertNotIn(UIDS[1],public_focus_targets(p));self.assertNotIn(UIDS[2],public_focus_targets(p))
+        p.battles['complete']['second']['isMirror']=True
+        self.assertIn(UIDS[2],public_focus_targets(p))
+
+    def test_sweep_collects_multiple_missing_live_tables_without_repeated_status_sleep_cycles(self):
+        p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status(4)));spectator=Mock();spectator.events=[]
+        def focus(uid,allowed,timeout):
+            i=UIDS.index(uid);j=i+1
+            return encoded(blob(1,blob(1,player(i)))+blob(2,blob(1,player(j)))+number(7,3)+string_field(9,UIDS[i]))
+        spectator.focus_public.side_effect=focus;collect_public_battles(spectator,p)
+        self.assertEqual(len(p.battles),4);self.assertEqual(spectator.focus_public.call_count,4)
+        p.players[UIDS[5]]['life']=2
+        self.assertEqual(public_focus_targets(p),[UIDS[5]])
 
     def test_selection_is_highest_native_rank_among_recent_starts_then_newest_with_no_randomness(self):
         def room(code,score,created,round=1):return {'roomId':code,'avgRankScore':score,'createdTs':created,'round':round,'name':'game_room','status':2,'isPrivate':False,'playerCount':8}

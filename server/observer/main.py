@@ -136,14 +136,29 @@ def refresh_info(reader,info):
     return row
 
 def public_focus_targets(projection):
-    targets=[]
+    # Ordinary native portraits cannot switch to an eliminated player. Stay on
+    # the lowest-life live player once the previous public tables are covered,
+    # so its next pushed result is captured even if that battle eliminates it.
+    alive=[];missing=[]
     for entry in projection.roster:
         uid=entry['userInfo']['uid'];player=projection.players[uid]
-        completed=player['wins']+player['losses']
+        if player['life']<=0:continue
+        alive.append(uid);completed=player['wins']+player['losses']
         observed=max((b['round']for b in projection.battles.values()if b.get('resultComplete',bool(b.get('winner')))and any(b[side]['uid']==uid and not b[side]['isMirror']and(b[side].get('lastRound')or{}).get('usedCards')is not None for side in ('first','second'))),default=0)
-        # A newly eliminated player still owns a final public battle to collect.
-        if player['life']>0 or completed>observed:targets.append(uid)
-    return targets
+        if completed>observed:missing.append(uid)
+    return missing or sorted(alive,key=lambda uid:projection.players[uid]['life'])[:1]
+
+def collect_public_battles(spectator,projection):
+    # Sweep missing live portraits together, rather than waiting for an entire
+    # status/upload/sleep cycle between each of up to eight players.
+    for target in public_focus_targets(projection):
+        if STOP:break
+        if target not in public_focus_targets(projection):continue
+        result=spectator.focus_public(target,projection.expected,timeout=.6)
+        if result:projection.ordinary_event({'type':'BattleResult','data':result})
+        for event in spectator.events:projection.ordinary_event(event)
+        spectator.events.clear()
+
 
 def observe(config,backend,status):
     import fcntl
@@ -170,7 +185,7 @@ def observe(config,backend,status):
         build_catalog=json.loads(pathlib.Path(config['buildCatalog']).read_text(encoding='utf8'))if config.get('buildCatalog')else {}
         builder=SnapshotBuilder(info,roster,model,card_names,build_catalog);projection=PublicProjection(roster)
         mode=public_mode(reader);spectator=Spectator(reader,info,mode);spectator.join()
-        code=active['code']if active else None;live_round=info['round'];last_meta=0;focus_index=0;meta_ready=False;started=time.monotonic();last_status=started;settled_at=None
+        code=active['code']if active else None;live_round=info['round'];last_meta=0;meta_ready=False;started=time.monotonic();last_status=started;settled_at=None
         LOG.info('Public spectator connected (%s; %s)',mode,'recovering'if code else'candidate')
         while not STOP:
             if time.monotonic()-last_meta>=4:
@@ -208,11 +223,7 @@ def observe(config,backend,status):
                     if time.monotonic()-settled_at>120:finished=True;LOG.warning('Wallet settled; incomplete public report remains queued');return
             # Upload the authoritative frame before optional portrait/board reads.
             if mode=='ordinary'and ready:
-                visible=public_focus_targets(projection)
-                if visible:
-                    target=visible[focus_index%len(visible)];focus_index+=1
-                    result=spectator.focus_public(target,projection.expected,timeout=.6)
-                    if result:projection.ordinary_event({'type':'BattleResult','data':result})
+                collect_public_battles(spectator,projection)
             if time.monotonic()-started>3*3600:raise LobbyError('Public match watch budget exceeded; positions retained')
             time.sleep(2)
     finally:

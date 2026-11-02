@@ -1,5 +1,5 @@
 """Recover public battle annotations from confirmed game records, never accounting."""
-import contextlib,importlib,json,os,pathlib,re,sqlite3,sys,zlib
+import contextlib,json,os,pathlib,re,sqlite3,subprocess,sys,zlib
 
 class ArchivePending(ValueError):pass
 
@@ -38,20 +38,22 @@ def records_for(config,target):
                 records[index]=public_record(json.loads(raw),code)
     for index,record in records.items():save(index,record)
     if len(records)<8 and config.get('archiveBridge'):
-        if config['archiveBridge']not in sys.path:sys.path.insert(0,config['archiveBridge'])
-        # Reuse the existing API transport, token and shared HTTP throttle only.
-        os.environ['YX_IDENTITY_CAPTURE_REPLAYS']='0'
-        bridge=importlib.import_module('replay_service')
+        # The existing replay application has modules with the same names as
+        # this observer. Import it in a fresh process, never in our module table.
         for index in [i for i in range(8)if i not in records][:4]:
-            n=code*1000+index;plain=''
-            while n:n,r=divmod(n,36);plain='0123456789abcdefghijklmnopqrstuvwxyz'[r]+plain
-            raw=bridge.upstream('/gameStat/fetchPlayerBattleInfo',{'code':plain},allow_missing=True)
+            response=subprocess.run([sys.executable,str(pathlib.Path(__file__).with_name('archive_bridge.py'))],
+                input=json.dumps({'bridge':config['archiveBridge'],'code':code,'index':index}),capture_output=True,text=True,timeout=35,
+                env={**os.environ,'YX_IDENTITY_CAPTURE_REPLAYS':'0'})
+            if response.returncode or len(response.stdout)>4*1024*1024:raise ArchivePending('Public record bridge unavailable')
+            raw=json.loads(response.stdout)
             if raw is not None:records[index]=public_record(raw,code);save(index,records[index])
     if len(records)!=8:raise ArchivePending('Waiting for complete public records')
     return list(records.values())
 
 def recover_battles(target,records,names):
     if not re.fullmatch(r'code:[0-9]{1,18}',target['gameId']):raise ArchivePending('Unknown game identity')
+    wanted=target.get('recoveryRounds',list(range(max(1,target['round']-1),target['round']+1)))
+    if not isinstance(wanted,list)or not 1<=len(wanted)<=2 or any(type(r)is not int or not 1<=r<=target['round']for r in wanted):raise ArchivePending('Invalid recovery rounds')
     code=int(target['gameId'][5:]);players=target['players'];expected={p['uid']for p in players}
     if len(players)!=8 or len(expected)!=8 or len(records)!=8:raise ArchivePending('Eight-player evidence required')
     if any(r['codeId']!=code for r in records)or len({(r['gameId'],r['beginTs'])for r in records})!=1:raise ArchivePending('Conflicting game records')
@@ -90,7 +92,7 @@ def recover_battles(target,records,names):
     mapping=solutions[0];indices={p['uid']:i for i,p in enumerate(players)};battles={}
     for record in records:
         for raw in record['roundStats']:
-            if raw['round']<max(1,target['round']-1):continue
+            if raw['round']not in wanted:continue
             a,z=raw['p1']['publicData'],raw['p2']['publicData'];winner=raw['winerId']
             if a['uid']not in mapping or z['uid']not in mapping or winner not in ('',a['uid'],z['uid']):raise ArchivePending('Unknown public winner')
             b={'round':raw['round'],'first':mapping[a['uid']],'second':mapping[z['uid']],'firstMirror':a['isMirror'],'secondMirror':z['isMirror'],'winner':mapping[winner]if winner else'','lifeDamage':raw['lifeDamage'],'resultComplete':True}

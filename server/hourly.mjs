@@ -1,6 +1,6 @@
 import {RoomError} from './rooms.mjs';
 import {randomBytes} from 'node:crypto';
-import {buildLines,publicPresentation,publicReportReady} from './public-build.mjs';
+import {buildLines,publicPresentation,publicReportReady,publicBuild} from './public-build.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -47,17 +47,20 @@ export class HourlyEvents{
       opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active};
   }
   pendingReports(){
-    return Object.values(this.rooms.state.rooms).filter(r=>r.eventSlot&&r.settled&&this.data().outbox.some(e=>e.code===r.code&&e.kind==='round'&&!e.deliveredAt&&e.round>=r.round-1&&!this.ready(r,'round',e.round))).sort((a,b)=>b.eventSlot.localeCompare(a.eventSlot)).slice(0,3).map(r=>({
-      code:r.code,gameId:r.gameId,gameRoomId:r.gameRoomId,round:r.round,players:r.players.map((p,i)=>({uid:p.uid,minimum:r.rankMinimum?.[i]??r.ranks[i],maximum:r.rankMaximum?.[i]??r.ranks[i],
+    return Object.values(this.rooms.state.rooms).filter(r=>r.eventSlot&&r.settled&&this.data().outbox.some(e=>e.code===r.code&&e.kind==='round'&&!e.deliveredAt&&!this.ready(r,'round',e.round))).sort((a,b)=>b.eventSlot.localeCompare(a.eventSlot)).slice(0,3).map(r=>({
+      code:r.code,gameId:r.gameId,gameRoomId:r.gameRoomId,round:r.round,recoveryRounds:this.data().outbox.filter(e=>e.code===r.code&&e.kind==='round'&&!e.deliveredAt&&!this.ready(r,'round',e.round)).map(e=>e.round),players:r.players.map((p,i)=>({uid:p.uid,minimum:r.rankMinimum?.[i]??r.ranks[i],maximum:r.rankMaximum?.[i]??r.ranks[i],
         history:(r.battles??[]).flatMap(b=>b.first===i&&!b.firstMirror&&b.firstCards?[{round:b.round,characterId:r.builds?.[i]?.characterId??0,cards:b.firstCards}]:b.second===i&&!b.secondMirror&&b.secondCards?[{round:b.round,characterId:r.builds?.[i]?.characterId??0,cards:b.secondCards}]:[])}))}));
   }
-  recoverReport(code,gameId,battles){
+  recoverReport(code,gameId,battles,builds=null){
     const r=this.rooms.state.rooms[code];ensure(r?.eventSlot&&r.host===this.data().hostToken&&r.gameId===gameId&&r.settled,'只允许补全本服务已结算对局的公开战况',403);
-    this.rooms.snapshot({id:r.gameId,gameRoomId:r.gameRoomId,round:r.round,closedThrough:r.closedThrough,open:false,ended:true,players:r.players,ranks:r.ranks,battles});
+    ensure(Array.isArray(battles)&&battles.length>0&&battles.length<=16&&battles.every(b=>b&&Number.isSafeInteger(b.round)&&b.round>=1&&b.round<=r.round),'公开牌桌或战果格式无效',400);
+    for(const round of new Set(battles.map(b=>b.round)))this.rooms.snapshot({id:r.gameId,gameRoomId:r.gameRoomId,round,closedThrough:round,open:false,ended:true,players:r.players,ranks:r.ranks,battles:battles.filter(b=>b.round===round)});
+    if(builds!==null)this.rooms.snapshot({id:r.gameId,gameRoomId:r.gameRoomId,round:r.round,closedThrough:r.closedThrough,open:false,ended:true,players:r.players,ranks:r.ranks,builds});
     return this.rooms.commit(()=>{
       this.rooms.applyBattles(r,battles);
-      for(const row of this.data().outbox)if(row.code===code&&row.kind==='round'&&!row.deliveredAt&&row.round>=r.round-1)this.enqueue('round',r,row.round);
-      return {reportReady:this.ready(r,'round',r.round)};
+      if(builds!==null)this.rooms.rememberBuilds(r,builds.map(b=>b===null?null:publicBuild(b,r.round)));
+      for(const row of this.data().outbox)if(row.code===code&&row.kind==='round'&&!row.deliveredAt)this.enqueue('round',r,row.round);
+      return {reportReady:this.completeReport(r)};
     });
   }
   source(code,gameId,state,round){
@@ -97,7 +100,7 @@ export class HourlyEvents{
         this.enqueue('round',r,frame.round);
       }
       if(r.settled)this.enqueue('settled',r);
-      return {...this.web.watch(r),reportReady:r.settled?this.ready(r,'round',r.round):false};
+      return {...this.web.watch(r),reportReady:this.completeReport(r)};
     });
   }
   enqueue(kind,r,round=r.round){
@@ -117,6 +120,9 @@ export class HourlyEvents{
       return this.rooms.commit(()=>{row.presentation=publicPresentation(this.web.watch(r),{round:row.round,noticeType:row.kind});row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
     }
     return null;
+  }
+  completeReport(r){
+    return r.settled&&this.ready(r,'round',r.round)&&!this.data().outbox.some(e=>e.code===r.code&&e.kind==='round'&&!e.deliveredAt&&!this.ready(r,'round',e.round));
   }
   ready(r,kind,round){
     const slot=this.data().slots[r.eventSlot],expected=(slot?.participants?.[round]??r.players.map(()=>false)).map((active,i)=>active||(r.eliminationRounds?.[i]??0)>=round);

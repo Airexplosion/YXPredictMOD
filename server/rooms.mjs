@@ -176,7 +176,11 @@ export class Rooms {
     if(s.sourcePhase)r.sourcePhase=s.sourcePhase;
     r.tradingClosed ||= r.round >= 10 || r.liveRound >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
-    if(s.builds)r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
+    if(s.builds){
+      this.rememberBuilds(r,r.builds);
+      r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
+      this.rememberBuilds(r,r.builds);
+    }
     if (s.states) {
       r.states = r.players.map(p => clone(s.states[s.players.findIndex(q => q.uid === p.uid)]));
       r.frames ??= [];
@@ -205,6 +209,16 @@ export class Rooms {
     if(r.rules>=2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
     if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active])) r.version++;
+  }
+  rememberBuilds(r,builds){
+    if(!builds)return;
+    r.buildHistory??=r.players.map(()=>[]);
+    builds.forEach((build,i)=>{
+      if(!build)return;
+      const history=r.buildHistory[i],row=clone(build),at=history.findIndex(b=>b.selectionRound===row.selectionRound);
+      if(at>=0)history[at]=row;else history.push(row);
+      history.sort((a,b)=>a.selectionRound-b.selectionRound);if(history.length>100)history.splice(0,history.length-100);
+    });
   }
   applyBattles(r,battles){
       r.battles??=[];
