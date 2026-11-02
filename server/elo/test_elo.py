@@ -37,9 +37,9 @@ class EloTests(unittest.TestCase):
    try:
     def get(path):return json.load(urllib.request.urlopen(base+path))
     self.assertEqual(set(get('/api/v1/ratings?uid='+A+'&uid='+'d'*24)),{A})
-    self.assertIn(A,get('/data/elo/p/aa.json'));self.assertEqual(get('/')['mode'],'api-only')
+    self.assertIn(A,get('/data/elo/p/aa.json'));self.assertEqual(get('/api/v1/status')['mode'],'anonymous-web-and-api')
     self.assertRaises(urllib.error.HTTPError,get,'/api/v1/ratings?uid='+'f'*16)
-    self.assertRaises(urllib.error.HTTPError,get,'/index.html')
+    self.assertIn(b'<!doctype html>',urllib.request.urlopen(base+'/index.html').read())
     v=source();v['games']=[];p.write_text(json.dumps(build(seed(),v)),encoding='utf-8');self.assertEqual(get('/api/v1/ratings?uid='+A)[A]['games'],10)
    finally:server.shutdown();server.server_close();t.join()
  def test_export_uses_readonly_consistent_saved_proofs_and_rejects_conflicts(self):
