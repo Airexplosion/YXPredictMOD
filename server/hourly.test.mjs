@@ -195,3 +195,15 @@ test('concurrent HTTP retries of a multi-bet QQ message create one atomic receip
   assert.equal(x.web.me(user).playBalance,300);assert.equal(Object.keys(x.rooms.state.qqReceipts).length,1);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+test('final public report recovery changes battle annotations only and rejects conflicts atomically',()=>{
+ const x=fixture(),v=x.open();assert.throws(()=>x.hourly.recoverReport(v.code,x.snapshot.id,[]),/已结算/);
+ Object.assign(x.snapshot,{round:3,closedThrough:3,ended:true,open:false,ranks:[1,2,3,4,5,6,7,8]});
+ x.snapshot.builds.forEach(b=>{b.selectionRound=3;b.cards=[1000010];b.cardNames=['云剑'];});x.hourly.sync(v.code,x.snapshot);
+ assert.equal(x.hourly.status().reports.length,1);
+ const r=x.rooms.state.rooms[v.code],financial=structuredClone({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,open:r.open,settled:r.settled});
+ const battles=Array.from({length:4},(_,i)=>({round:3,first:r.players[i*2].uid,second:r.players[i*2+1].uid,winner:r.players[i*2].uid,firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000010],firstNames:['云剑'],secondNames:['云剑'],firstLife:80,secondLife:60,lifeDamage:20,resultComplete:true}));
+ assert.equal(x.hourly.recoverReport(v.code,r.gameId,battles).reportReady,true);assert.equal(x.hourly.status().reports.length,0);
+ assert.deepEqual({accounts:x.rooms.state.accounts,positions:r.positions,payouts:r.payouts,cashflows:r.cashflows,ranks:r.ranks,states:r.states,open:r.open,settled:r.settled},financial);
+ const before=structuredClone(x.rooms.state);assert.throws(()=>x.hourly.recoverReport(v.code,r.gameId,[{...battles[0],winner:battles[0].second}]),/战果冲突/);assert.deepEqual(x.rooms.state,before);
+ assert.throws(()=>x.hourly.recoverReport(v.code,'wrong-game',battles),/已结算/);
+});

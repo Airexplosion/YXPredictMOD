@@ -184,29 +184,7 @@ export class Rooms {
       if(r.frames.at(-1)?.round===r.round)r.frames[r.frames.length-1]=frame;
       else {r.frames.push(frame);if(r.frames.length>100)r.frames.shift();}
     }
-    if(s.battles){
-      r.battles??=[];
-      for(const battle of s.battles){
-        let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
-        let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
-        let firstLifeBefore=battle.firstLifeBefore??null,secondLifeBefore=battle.secondLifeBefore??null,lifeDamage=battle.lifeDamage??null;
-        let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
-        if(first>second||(first===second&&firstMirror&&!secondMirror)){
-          [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
-          [firstLifeBefore,secondLifeBefore]=[secondLifeBefore,firstLifeBefore];
-          if(lifeDamage!==null)lifeDamage=-lifeDamage;
-        }
-        const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
-        const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
-          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror,lifeDamage,resultComplete:battle.resultComplete??!!battle.winner,firstLifeBefore,secondLifeBefore};
-        const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
-        requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
-        for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
-        if(old){for(const field of ['winner','firstCards','secondCards','lifeDamage','firstLifeBefore','secondLifeBefore'])if(row[field]===null)row[field]=old[field]??null;r.battles[at]=row;}
-        else r.battles.push(row);
-      }
-      r.battles.sort((a,b)=>a.round-b.round||a.id.localeCompare(b.id));if(r.battles.length>800)r.battles.splice(0,r.battles.length-800);
-    }
+    if(s.battles)this.applyBattles(r,s.battles);
     if(r.rules>=2 && (s.eliminationRounds || r.eliminationRounds)) {
       if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks,r.active]))r.version++;return; }
       const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
@@ -227,6 +205,29 @@ export class Rooms {
     if(r.rules>=2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
     if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active])) r.version++;
+  }
+  applyBattles(r,battles){
+      r.battles??=[];
+      for(const battle of battles){
+        let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
+        let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
+        let firstLifeBefore=battle.firstLifeBefore??null,secondLifeBefore=battle.secondLifeBefore??null,lifeDamage=battle.lifeDamage??null;
+        let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
+        if(first>second||(first===second&&firstMirror&&!secondMirror)){
+          [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
+          [firstLifeBefore,secondLifeBefore]=[secondLifeBefore,firstLifeBefore];
+          if(lifeDamage!==null)lifeDamage=-lifeDamage;
+        }
+        const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
+        const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
+          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror,lifeDamage,resultComplete:battle.resultComplete??!!battle.winner,firstLifeBefore,secondLifeBefore};
+        const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
+        requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
+        for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
+        if(old){for(const field of ['winner','firstCards','secondCards','lifeDamage','firstLifeBefore','secondLifeBefore'])if(row[field]===null)row[field]=old[field]??null;r.battles[at]=row;}
+        else r.battles.push(row);
+      }
+      r.battles.sort((a,b)=>a.round-b.round||a.id.localeCompare(b.id));if(r.battles.length>800)r.battles.splice(0,r.battles.length-800);
   }
   sync(code, key, snapshot) {
     const r = this.room(code, key); requireThat(r.host === key, '只有房主可以同步战果', 403);

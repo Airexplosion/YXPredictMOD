@@ -42,9 +42,23 @@ export class HourlyEvents{
   status(){
     const active=Object.values(this.rooms.state.rooms).find(r=>r.eventSlot&&!r.settled);
     const slot=hourlySlot(this.rooms.now());
-    return {slot,bonusBps:EVENT_BONUS_BPS,minimumRankScore:6000,maximumStartRound:2,searchMinutes:5,
+    return {slot,bonusBps:EVENT_BONUS_BPS,minimumRankScore:6000,maximumStartRound:2,searchMinutes:5,reports:this.pendingReports(),
       active:active?{code:active.code,gameId:active.gameId,gameRoomId:active.gameRoomId,info:this.data().slots[active.eventSlot]?.info??null,model:this.data().slots[active.eventSlot]?.model??null}:null,
       opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active};
+  }
+  pendingReports(){
+    return Object.values(this.rooms.state.rooms).filter(r=>r.eventSlot&&r.settled&&this.data().outbox.some(e=>e.code===r.code&&e.kind==='round'&&!e.deliveredAt&&e.round>=r.round-1&&!this.ready(r,'round',e.round))).sort((a,b)=>b.eventSlot.localeCompare(a.eventSlot)).slice(0,3).map(r=>({
+      code:r.code,gameId:r.gameId,gameRoomId:r.gameRoomId,round:r.round,players:r.players.map((p,i)=>({uid:p.uid,minimum:r.rankMinimum?.[i]??r.ranks[i],maximum:r.rankMaximum?.[i]??r.ranks[i],
+        history:(r.battles??[]).flatMap(b=>b.first===i&&!b.firstMirror&&b.firstCards?[{round:b.round,characterId:r.builds?.[i]?.characterId??0,cards:b.firstCards}]:b.second===i&&!b.secondMirror&&b.secondCards?[{round:b.round,characterId:r.builds?.[i]?.characterId??0,cards:b.secondCards}]:[])}))}));
+  }
+  recoverReport(code,gameId,battles){
+    const r=this.rooms.state.rooms[code];ensure(r?.eventSlot&&r.host===this.data().hostToken&&r.gameId===gameId&&r.settled,'只允许补全本服务已结算对局的公开战况',403);
+    this.rooms.snapshot({id:r.gameId,gameRoomId:r.gameRoomId,round:r.round,closedThrough:r.closedThrough,open:false,ended:true,players:r.players,ranks:r.ranks,battles});
+    return this.rooms.commit(()=>{
+      this.rooms.applyBattles(r,battles);
+      for(const row of this.data().outbox)if(row.code===code&&row.kind==='round'&&!row.deliveredAt&&row.round>=r.round-1)this.enqueue('round',r,row.round);
+      return {reportReady:this.ready(r,'round',r.round)};
+    });
   }
   source(code,gameId,state,round){
     const r=this.rooms.state.rooms[code];ensure(r?.eventSlot&&r.host===this.data().hostToken&&r.gameId===gameId,'观战来源与房间不一致',403);
