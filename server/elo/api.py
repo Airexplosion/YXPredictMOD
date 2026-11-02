@@ -8,6 +8,7 @@ import time
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from urllib.parse import urlparse,parse_qs
 from anonymous import AnonymousBoard
+from merge import current_profile
 
 
 class Snapshot:
@@ -42,7 +43,8 @@ def handler(snapshot,legacy=None):
                 data=snapshot.get()
                 if url.path in ('/healthz','/api/v1/status'):
                     result={'ok':True,'mode':'anonymous-web-and-api','webAnonymous':True,**data['meta'],'stale':int(time.time()*1000)-data['meta']['sourceAt']>3600000}
-                    if legacy is not None:result.update(legacy.status())
+                    if data['meta'].get('historyMerged'):result.update(legacyLookupEnabled=False,uidLookupEnabled=legacy is not None)
+                    elif legacy is not None:result.update(legacy.status())
                 elif url.path=='/api/v1/leaderboard':
                     if any(k not in ('offset','limit') or len(v)!=1 or not re.fullmatch('[0-9]{1,7}',v[0]) for k,v in args.items()):raise ValueError('Invalid page')
                     offset=int(args.get('offset',['0'])[0]);limit=int(args.get('limit',['100'])[0])
@@ -52,14 +54,15 @@ def handler(snapshot,legacy=None):
                     uids=args.get('uid',[])
                     if not 1<=len(uids)<=8 or any(not re.fullmatch('[0-9a-f]{24}',u) for u in uids):raise ValueError('Provide 1 to 8 raw 24-character UIDs')
                     result={}
-                    old=None if legacy is None else legacy.data()
+                    merged=data['meta'].get('historyMerged',False)
+                    old=None if legacy is None or merged else legacy.data()
                     for uid in dict.fromkeys(uids):
-                        row=data['players'].get(uid)
-                        if legacy is not None:row=legacy.resolve(uid,row,old)
+                        row=current_profile(data,uid,None if legacy is None else legacy.key)
+                        if legacy is not None and not merged:row=legacy.resolve(uid,row,old)
                         if row is not None:result[uid]=row
                 elif re.fullmatch('/data/elo/p/[0-9a-f]{2}.json',url.path):
                     suffix=url.path[-7:-5];result={u:p for u,p in data['players'].items() if u.endswith(suffix)}
-                    if legacy is not None:
+                    if legacy is not None and not data['meta'].get('historyMerged'):
                         old=legacy.data();result={u:legacy.resolve(u,p,old) for u,p in result.items()}
                 else:status=404;result={'error':'API route not found'}
             except ValueError as e:status=400;result={'error':str(e)}

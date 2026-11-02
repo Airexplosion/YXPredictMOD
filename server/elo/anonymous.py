@@ -13,7 +13,8 @@ class AnonymousBoard:
         self.snapshot=snapshot;self.legacy=legacy;self.lock=threading.Lock();self.generation=None;self.rows=[];self.at=0
     def page(self,offset=0,limit=100):
         with self.lock:
-            primary=self.snapshot.get();old=None if self.legacy is None else self.legacy.data()
+            primary=self.snapshot.get();merged=primary['meta'].get('historyMerged',False)
+            old=None if self.legacy is None or merged else self.legacy.data()
             generation=(self.snapshot.stamp,None if old is None else self.legacy.snapshot.stamp)
             if generation!=self.generation:
                 at=primary['meta'].get('ratedThroughAt',primary['meta']['sourceAt'])
@@ -34,6 +35,8 @@ class AnonymousBoard:
                 if old is not None:
                     for identity,row in old['players'].items():
                         if identity not in seen:append(row)
+                if merged:
+                    for row in primary.get('hashedPlayers',{}).values():append(row)
                 self.rows=sorted(scores,key=lambda item:item['conservative'],reverse=True)[:MAX_SCORES];self.at=at;self.generation=generation
             rows=self.rows[offset:offset+limit]
             return {'rows':rows,'scores':[int(round(row['technical'])) for row in rows],'total':len(self.rows),'offset':offset,'limit':limit,
