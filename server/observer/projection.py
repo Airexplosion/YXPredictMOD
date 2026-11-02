@@ -37,7 +37,7 @@ class PublicProjection:
         if self.game_id is not None and (self.game_id!=identity or self.begin!=decoded['beginTs']):raise ValueError('Spectator game identity changed')
         if not decoded['publicRosterComplete']:return False
         self.validate_players(snapshot['players'])
-        if snapshot['round']<self.round:return False
+        if snapshot['round']<self.round and (self.index is None or (snapshot['round'],snapshot['index'])!=self.index):return False
         if self.index and snapshot['round']==self.index[0] and snapshot['index']<self.index[1]:return False
         self.game_id=identity;self.begin=decoded['beginTs']
         index=(snapshot['round'],snapshot['index'])
@@ -82,6 +82,13 @@ class PublicProjection:
                 self.round_complete=self.ended or self.timer>0 and self.closed_through<self.round or self.round in self.complete_rounds
             self.revision+=1
     def remaining_timer(self):return max(0,self.timer-(self.clock()-self.timer_at))
+    def request_round(self):
+        self.tick()
+        if self.index is None:return -1
+        source_round=self.index[0]
+        if self.pending:return source_round
+        if self.round>source_round:return self.round
+        return source_round+1 if self.remaining_timer()<=0 and self.closed_through>=source_round else source_round
     def public_state(self):
         self.tick();result=[]
         final_ready=self.ended and sorted(p['rank']+1 for p in self.players.values())==list(range(1,9))

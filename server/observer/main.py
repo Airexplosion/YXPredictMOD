@@ -119,7 +119,7 @@ def observe(config,backend,status):
                 meta_ready=meta is not None
                 if meta:live_round=max(live_round,meta['round'])
                 elif not code:raise LobbyError('Candidate is no longer listed')
-            raw=spectator.read(timeout=10)
+            raw=spectator.read(projection.request_round()if mode=='delayed'else -1,timeout=10)
             ready=projection.accept(raw)if mode=='delayed'else projection.accept_ordinary(raw)
             if mode=='ordinary'and ready:
                 visible=[p['userInfo']['uid']for p in roster if projection.players[p['userInfo']['uid']]['life']>0]
@@ -129,7 +129,7 @@ def observe(config,backend,status):
                     if result:projection.ordinary_event({'type':'BattleResult','data':result})
             for event in spectator.events:projection.ordinary_event(event)
             spectator.events.clear();projection.tick()
-            if not ready:
+            if not ready and not projection.game_id:
                 if time.monotonic()-started>90:raise LobbyError('Waiting for public spectator data exceeded budget')
                 time.sleep(2);continue
             snapshot=builder.build(projection,live_round)
