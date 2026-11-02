@@ -1,5 +1,6 @@
 import {createHash,createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
+import {settlementReport} from './settlement.mjs';
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const clonePublic=value=>JSON.parse(JSON.stringify(value));
 const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status);};
@@ -52,8 +53,8 @@ export class PredictionWeb {
     return {code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,version:r.version,rules:r.rules??1,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,open:this.rooms.isOpen(r),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
-        horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],state:r.states?.[i]??null,baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
-      horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),battles:clonePublic(r.battles??[])};
+          horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],state:r.states?.[i]??null,build:clonePublic(r.builds?.[i]??null),baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
+      horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),battles:clonePublic(r.battles??[]),settlement:settlementReport(this.rooms,r)};
   }
   listRooms(page=0) {
     ensure(Number.isSafeInteger(page)&&page>=0&&page<=166,'房间页码无效');

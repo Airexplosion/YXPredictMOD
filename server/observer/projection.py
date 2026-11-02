@@ -7,10 +7,14 @@ class PublicProjection:
         self.roster=roster;self.clock=clock;self.expected={p['userInfo']['uid'] for p in roster};self.game_id=None;self.begin=0
         self.round=0;self.timer=0;self.timer_at=clock();self.ended=False;self.players={};self.closed_through=0;self.round_complete=False;self.complete_rounds=set()
         self.anchor=None;self.anchor_at=0;self.index=None;self.pending={};self.seen={};self.applied=set();self.battles={};self.revision=0
-    def validate_players(self,players):
-        if len(players)!=8 or {p['uid'] for p in players}!=self.expected or any(p.get('isMirror') for p in players):raise ValueError('Public roster disagrees with observed native room')
+    def validate_players(self,players,allow_mirrors=False):
+        observed={p['uid']for p in players};mirrors=sum(bool(p.get('isMirror'))for p in players)
+        if len(players)!=8 or observed!=self.expected or mirrors and not allow_mirrors:raise ValueError('Public roster mismatch (players=%d, missing=%d, foreign=%d, mirrors=%d)'%(len(players),len(self.expected-observed),len(observed-self.expected),mirrors))
     def accept_ordinary(self,encoded):
-        status=public_status(encoded);self.validate_players(status['players'])
+        # Ordinary GameStatus retains all original UIDs even when a player is
+        # marked as this round's mirror opponent. Battle-result mirror copies
+        # remain excluded from overwriting the original player's state below.
+        status=public_status(encoded);self.validate_players(status['players'],allow_mirrors=True)
         if status['round']<1 or status['codeId']<=0 or status['beginTs']<=0:return False
         identity='code:'+str(status['codeId'])
         if self.game_id is not None and (self.game_id!=identity or self.begin!=status['beginTs']):raise ValueError('Public game identity changed')

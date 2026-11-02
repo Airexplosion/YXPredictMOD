@@ -1,6 +1,7 @@
 import { quoteRates, eventQuote, sale, returnFor } from './odds.mjs';
 import { eliminationPlan, intervalReturn, championReturn } from './eliminations.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
+import {publicBuild} from './public-build.mjs';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -72,12 +73,14 @@ export class Rooms {
     requireThat(s.horseShuffle===undefined||typeof s.horseShuffle==='boolean','换档规则格式无效');
     requireThat(s.horseTitles===undefined||(Array.isArray(s.horseTitles)&&s.horseTitles.length===8&&s.horseTitles.every(title=>typeof title==='string'&&title.length<=40&&!/[0-9\x00-\x1f\x7f]/.test(title))),'马匹称号格式无效');
     requireThat(s.states === undefined || (Array.isArray(s.states) && s.states.length === 8 && s.states.every(p => p === null || (p && integer(p.life,-1000000,1000000) && integer(p.wins,0,100000) && integer(p.losses,0,100000)))),'公开战况格式无效');
+    if(s.builds!==undefined){requireThat(Array.isArray(s.builds)&&s.builds.length===8,'需要完整八人角色资料');for(const build of s.builds)publicBuild(build,s.round);}
     const cards=value=>value===null||(Array.isArray(value)&&value.length<=8&&value.every(id=>integer(id,0,2147483647)));
     const names=(value,ids)=>value===undefined||value===null||(Array.isArray(value)&&Array.isArray(ids)&&value.length===ids.length&&value.every(name=>typeof name==='string'&&name.length<=80&&!/[\x00-\x1f\x7f]/.test(name)));
     requireThat(s.battles===undefined||(Array.isArray(s.battles)&&s.battles.length<=16&&s.battles.every(b=>b&&integer(b.round,Math.max(1,s.round-1),s.round)
       && s.players.some(p=>p.uid===b.first)&&s.players.some(p=>p.uid===b.second)&&typeof b.winner==='string'&&['',b.first,b.second].includes(b.winner)
       &&typeof b.firstMirror==='boolean'&&typeof b.secondMirror==='boolean'&&cards(b.firstCards)&&cards(b.secondCards)&&names(b.firstNames,b.firstCards)&&names(b.secondNames,b.secondCards)
-      &&integer(b.firstLife,-1000000,1000000)&&integer(b.secondLife,-1000000,1000000))),'公开牌桌或战果格式无效');
+      &&integer(b.firstLife,-1000000,1000000)&&integer(b.secondLife,-1000000,1000000)
+      &&(b.lifeDamage===undefined||integer(b.lifeDamage,0,1000000))&&['firstLifeBefore','secondLifeBefore'].every(k=>b[k]===undefined||b[k]===null||integer(b[k],-1000000,1000000)))),'公开牌桌或战果格式无效');
     requireThat(s.eliminationRounds === undefined || (Array.isArray(s.eliminationRounds) && s.eliminationRounds.length === 8 && s.eliminationRounds.every(round => integer(round,0,s.round)) && typeof s.roundComplete === 'boolean'), '出局轮次格式无效');
     return s;
   }
@@ -106,7 +109,7 @@ export class Rooms {
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
-        closedThrough: 0, open: false, ended: false, settled: false, horseShuffle:s.horseShuffle??false, eventSlot:event?.slot??null, bonusBps:event?.bonusBps??10000, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+        closedThrough: 0, open: false, ended: false, settled: false, cashflowVersion:1,cashflows:{},horseShuffle:s.horseShuffle??false, eventSlot:event?.slot??null, bonusBps:event?.bonusBps??10000, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       const featured=this.websiteRoom();
       if(isPublic&&(!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
@@ -170,10 +173,11 @@ export class Rooms {
     r.liveRound=Math.max(r.liveRound??r.round,s.liveRound??s.round);
     r.tradingClosed ||= r.round >= 10 || r.liveRound >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
+    if(s.builds)r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
     if (s.states) {
       r.states = r.players.map(p => clone(s.states[s.players.findIndex(q => q.uid === p.uid)]));
       r.frames ??= [];
-      const frame={round:r.round,states:clone(r.states),ranks:[...r.ranks]};
+      const frame={round:r.round,states:clone(r.states),ranks:[...r.ranks],builds:clone(r.builds??Array(8).fill(null))};
       if(r.frames.at(-1)?.round===r.round)r.frames[r.frames.length-1]=frame;
       else {r.frames.push(frame);if(r.frames.length>100)r.frames.shift();}
     }
@@ -182,17 +186,19 @@ export class Rooms {
       for(const battle of s.battles){
         let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
         let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
+        let firstLifeBefore=battle.firstLifeBefore??null,secondLifeBefore=battle.secondLifeBefore??null;
         let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
         if(first>second||(first===second&&firstMirror&&!secondMirror)){
           [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
+          [firstLifeBefore,secondLifeBefore]=[secondLifeBefore,firstLifeBefore];
         }
         const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
         const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
-          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror};
+          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror,lifeDamage:battle.lifeDamage??null,firstLifeBefore,secondLifeBefore};
         const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
         requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
         for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
-        if(old){for(const field of ['winner','firstCards','secondCards'])if(row[field]===null)row[field]=old[field];r.battles[at]=row;}
+        if(old){for(const field of ['winner','firstCards','secondCards','lifeDamage','firstLifeBefore','secondLifeBefore'])if(row[field]===null)row[field]=old[field]??null;r.battles[at]=row;}
         else r.battles.push(row);
       }
       r.battles.sort((a,b)=>a.round-b.round||a.id.localeCompare(b.id));if(r.battles.length>800)r.battles.splice(0,r.battles.length-800);
@@ -272,6 +278,8 @@ export class Rooms {
     return this.commit(() => {
       r = this.state.rooms[code]; const account = this.account(key);
       const positions = r.positions[key] ??= Array(8).fill(null);
+      const counts=r.actionCounts?.[key]??[],simple=counts.length>0&&counts.every((n,i)=>n===(positions[i]?1:0));
+      const flow=(r.cashflows??={})[key]??={known:r.cashflowVersion===1||simple||!positions.some(Boolean)&&!counts.some(Boolean),invested:simple?positions.reduce((n,p)=>n+(p?.stake??0),0):0,sold:0};
       let p = positions[input.player];
       const sell = input.kind === 'sell' || input.kind === 'half' || input.kind === 'switch';
       if (sell) {
@@ -283,11 +291,11 @@ export class Rooms {
           const returned=sale(p.claim,r.quoteRates[input.player*8+p.rank-1],input.kind==='half');
           requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'马币余额已达上限');
           const released=Number(BigInt(p.stake)*BigInt(removed)/BigInt(p.claim));
-          p.claim-=removed;p.stake-=released;account.balance+=returned;
+          p.claim-=removed;p.stake-=released;account.balance+=returned;flow.sold+=returned;
           if(!p.claim)positions[input.player]=p=null;
         }else{
           const amount = input.kind === 'half' ? Math.ceil(p.stake / 2) : p.stake;
-          account.balance += Math.floor(amount * 97 / 100); p.stake -= amount;
+          const returned=Math.floor(amount*97/100);account.balance+=returned;flow.sold+=returned;p.stake-=amount;
           if (!p.stake) positions[input.player] = p = null;
         }
       }
@@ -297,6 +305,7 @@ export class Rooms {
         requireThat(integer(input.stake, 1, 10000) && account.balance >= input.stake, '马币不足或投入须为1至10000整数');
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
         account.balance -= input.stake;
+        flow.invested+=input.stake;
         if (p) {p.stake += input.stake;if(r.rules>=2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
         else {positions[input.player] = { rank: input.rank, stake: input.stake };if(r.rules>=2)positions[input.player].claim=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);}
       }

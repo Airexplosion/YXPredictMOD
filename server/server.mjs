@@ -33,14 +33,20 @@ export function createHandler(rooms, options = {}) {
         res.setHeader('X-Content-Type-Options','nosniff');res.end(fs.readFileSync(new URL('./web/'+file,import.meta.url)));return;
       }
       const requestUrl = new URL(req.url,'http://localhost');
+      const art=/^\/art\/(cards|talents|baijia|fates|resonances|characters|frames)\/([a-zA-Z0-9_-]{1,40})\.png$/.exec(requestUrl.pathname);
+      if(req.method==='GET'&&art){
+        const file=path.join(options.artDirectory??process.env.PREDICTION_ART_DIR??'/var/lib/yx-prediction/art',art[1],art[2]+'.png');
+        if(!fs.existsSync(file))throw new RoomError('图像待同步',404);
+        res.setHeader('Content-Type','image/png');res.setHeader('Cache-Control','public, max-age=86400');res.setHeader('X-Content-Type-Options','nosniff');res.end(fs.readFileSync(file));return;
+      }
       if (req.method === 'GET' && requestUrl.pathname === '/web/leaderboard') { res.end(JSON.stringify({ok:true,data:web.leaderboard(Number(requestUrl.searchParams.get('page')??0))}));return; }
       if(req.method==='GET'&&requestUrl.pathname==='/web/rooms'){res.end(JSON.stringify({ok:true,data:web.listRooms(Number(requestUrl.searchParams.get('page')??0))}));return;}
       if(req.method==='GET'&&requestUrl.pathname==='/web/room'){res.end(JSON.stringify({ok:true,data:web.watch(web.publicRoom(requestUrl.searchParams.get('code')))}));return;}
       if (req.method === 'GET' && req.url === '/web/me') { const user=web.identity(req.headers['x-prediction-identity']);if(user.scope==='qq-wallet')throw new RoomError('请先完成游戏认证',403);res.end(JSON.stringify({ok:true,data:web.me(user)}));return; }
       if (req.method !== 'POST' || !['/v1/room','/web/play','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket','/ops/hourly','/bot/command','/bot/events','/bot/accounts'].includes(req.url)) throw new RoomError('接口不存在', 404);
       if((req.url.startsWith('/web/')||req.url.startsWith('/auth/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
-      let size = 0, chunks = [];
-      for await (const chunk of req) { size += chunk.length; if (size > 32768) throw new RoomError('请求过大', 413); chunks.push(chunk); }
+      let size = 0, chunks = [];const bodyLimit=req.url==='/ops/hourly'?131072:32768;
+      for await (const chunk of req) { size += chunk.length; if (size > bodyLimit) throw new RoomError('请求过大', 413); chunks.push(chunk); }
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RoomError('JSON无效'); }
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
       if(req.url==='/ops/hourly'){

@@ -14,10 +14,31 @@ def _unique(seen, number):
         raise ValueError('duplicate identity field')
     seen.add(number)
 
+def _append_ids(target,kind,value,limit=32):
+    if kind==0:items=[signed32(value)]
+    elif kind==2:
+        items=[];offset=0
+        while offset<len(value):
+            item,offset=read_varint(value,offset);items.append(signed32(item))
+            if len(items)>limit:raise ValueError('Oversized public selection list')
+    else:raise ValueError('Invalid public selection list')
+    if any(i<=0 for i in items)or len(target)+len(items)>limit:raise ValueError('Invalid public selection IDs')
+    target.extend(items)
+
+def _resonance_selected(data):
+    selected=0
+    for number,kind,value in fields(data):
+        if number==1 and kind==2:
+            for n,k,v in fields(value):
+                if n==3 and k==0:selected=signed32(v)
+                # Pending candidates and refresh data are not retained.
+    if selected<0:raise ValueError('Invalid public resonance selection')
+    return selected
+
 
 def _board(data):
     # Only the previous round's played board is retained, never hands or offers.
-    result = dict(life=0, extraMaxHp=0, exp=0, level=0, unlockGrids=0, usedCards=[])
+    result = dict(life=0, extraMaxHp=0, exp=0, level=0, unlockGrids=0, usedCards=[],talents=[],baijia=[],fates=[],resonanceId=0)
     scalar = {1: 'life', 2: 'extraMaxHp', 3: 'exp', 4: 'level', 10: 'unlockGrids'}
     seen = set()
     for number, kind, value in fields(data):
@@ -26,6 +47,12 @@ def _board(data):
             if kind != 0:
                 raise ValueError('invalid board scalar')
             result[scalar[number]] = signed32(value)
+        elif number in (5,16,17):
+            _append_ids(result[{5:'talents',16:'fates',17:'baijia'}[number]],kind,value)
+        elif number==13:
+            _unique(seen,number)
+            if kind!=2:raise ValueError('Invalid public resonance data')
+            result['resonanceId']=_resonance_selected(value)
         elif number == 6:
             if kind != 2:
                 raise ValueError('invalid packed board')
@@ -39,13 +66,15 @@ def _board(data):
 
 
 def _player(data):
-    result = dict(uid='', name='', life=0, characterId=0, career=0, rank=0,wins=0,losses=0,
+    result = dict(uid='', name='', life=0, characterId=0, career=0,sect=0,level=0,talents=[], rank=0,wins=0,losses=0,
                   isAI=False, isMirror=False, settled=False, lastRound=None)
     text = {1: 'uid', 2: 'name'}
-    scalar = {3: 'life', 8: 'career', 12: 'characterId', 15: 'rank',19:'wins',20:'losses'}
+    scalar = {3: 'life',6:'level',7:'sect',8: 'career', 12: 'characterId', 15: 'rank',19:'wins',20:'losses'}
     flags = {11: 'isMirror', 16: 'isAI', 1001: 'settled'}
     seen = set()
     for number, kind, value in fields(data):
+        if number==13:
+            _append_ids(result['talents'],kind,value);continue
         if number not in text and number not in scalar and number not in flags and number != 200:
             continue
         _unique(seen, number)
@@ -116,10 +145,11 @@ def _public_player_data(data):
 
 
 def _battle(data):
-    result={'round':0,'winner':'','first':None,'second':None}
+    result={'round':0,'winner':'','first':None,'second':None,'lifeDamage':0}
     for number,kind,value in fields(data):
         if number in (1,2) and kind==2:result['first' if number==1 else 'second']=_public_player_data(value)
         elif number==7 and kind==0:result['round']=signed32(value)
+        elif number==6 and kind==0:result['lifeDamage']=signed32(value)
         elif number==9 and kind==2:result['winner']=value.decode('utf-8')
     if not result['first'] or not result['second'] or result['round']<1:raise ValueError('Incomplete public battle')
     if result['winner'] not in ('',result['first']['uid'],result['second']['uid']):raise ValueError('Foreign public winner')
