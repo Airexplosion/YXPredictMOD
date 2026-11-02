@@ -1,6 +1,7 @@
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
 import {publicSummary} from './hourly.mjs';
+import {syncQqWallet} from './qq-wallet.mjs';
 
 export function serviceAccess(header,key){
   if(typeof key!=='string'||key.length<32)throw new RoomError('此服务入口尚未启用',503);
@@ -11,8 +12,9 @@ const instructions='群内赌马：/赌马 查看本场 · /下注 1 100 · /选
 export function isPredictionCommand(text){return typeof text==='string'&&/^\/(赌马|下注|选手|马币|退半|清仓)(\s|$)/.test(text.trim());}
 
 export function qqCommand(web,hourly,user,body){
-  ensure(user.scope==='qq-prediction'&&user.groupId==='599092307','请在工具群通过WHITE参与',403);
+  ensure(user.groupId==='599092307'&&(user.scope==='qq-prediction'||user.scope==='qq-wallet'&&typeof body.text==='string'&&body.text.trim()==='/马币'),'未认证账号只能开通和查询马币；下注请先完成有效认证',403);
   if(body.action==='ack'){
+    ensure(user.scope==='qq-prediction','未认证账号只能开通和查询马币',403);
     const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt?.owner===user.subject,'操作回执不属于当前账号',403);
     return web.rooms.commit(()=>{receipt.acknowledged=true;return {acknowledged:true};});
   }
@@ -35,7 +37,9 @@ export function qqCommand(web,hourly,user,body){
   }
   if(command==='/赌马'&&args[0]==='帮助')return {lines:[instructions],forward:false};
   if(command==='/马币'){
-    const me=web.me(user);return {lines:[me.linked?`${me.name}：可用${me.playBalance}马币，累计净收益${me.net}马币。`:'尚未开通马币账户。首次下注会开通同一网页登录身份的马币账户；已有MOD账户可在网页绑定。'],forward:false};
+    ensure(args.length===0,'用法：/马币');
+    const result=syncQqWallet(web,user),me=result.me;
+    return {lines:[`${result.created?'已自动开通马币账户。':result.linked||result.synced?'已自动同步游戏马币账户。':''}${me.name}：可用${me.playBalance}马币${me.accounts>1&&me.balance!==me.playBalance?`，名下合计${me.balance}马币`:''}，累计净收益${me.net}马币。${user.scope==='qq-wallet'?(user.boundAccount?'认证已到期，续期后可参与下注。':'尚未绑定游戏账号，暂不能下注；完成认证后再次发送 /马币 即可自动同步。'):''}`],forward:false};
   }
   const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点赌马专场',404);
   const view=web.watch(room);
@@ -52,7 +56,8 @@ export function qqCommand(web,hourly,user,body){
   // One QQ/guide subject has one shared wallet selection. All mutations use the
   // existing room transaction and receipt path, including retries and settlement.
   return web.rooms.commit(()=>{
-    if(!web.owned(user).length){ensure(kind==='buy','尚无马币账户或持仓');web.openAccount(user);}
+    if(kind==='buy')syncQqWallet(web,user);
+    else ensure(web.owned(user).length,'尚无马币账户或持仓');
     const key=web.playKey(user);
     if(!room.members.includes(key))web.play(user,{action:'join',code:room.code});
     const result=web.play(user,{action:'trade',code:room.code,kind,player:index,rank:1,stake,version:room.version,operation});
