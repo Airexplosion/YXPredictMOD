@@ -24,7 +24,8 @@ class AnonymousTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as directory:
    p=pathlib.Path(directory)/'new.json';data=primary()
    data['players']={A:{**row(5000),'sigma':400,'cons':4200.25},B:{**row(4700),'sigma':50,'cons':4600.5},C:{**row(4800),'sigma':200,'cons':4400.25}}
-   p.write_text(json.dumps(data));self.assertEqual(AnonymousBoard(Snapshot(p)).page()['scores'],[4700,4800,5000])
+   p.write_text(json.dumps(data));result=AnonymousBoard(Snapshot(p)).page();self.assertEqual(result['scores'],[4700,4800,5000])
+   self.assertEqual(result['rows'],[{'conservative':4600.5,'uncertainty':50,'technical':4700},{'conservative':4400.25,'uncertainty':200,'technical':4800},{'conservative':4200.25,'uncertainty':400,'technical':5000}])
    for item in data['players'].values():item.pop('cons')
    p.write_text(json.dumps(data));self.assertEqual(AnonymousBoard(Snapshot(p)).page()['scores'],[4700,4800,5000])
  def test_top_100_limit_is_enforced_before_page_slicing(self):
@@ -34,6 +35,7 @@ class AnonymousTests(unittest.TestCase):
    self.assertEqual(board.page()['scores'],list(range(5000,4900,-1)));self.assertEqual(board.page()['total'],100)
    self.assertEqual(board.page(99,100)['scores'],[4901]);self.assertEqual(board.page(100,100)['scores'],[])
    self.assertEqual(board.page(120,100)['scores'],[])
+   self.assertEqual(board.page(100,100)['rows'],[])
  def test_dedup_newest_scores_only_and_stable_pagination(self):
   with tempfile.TemporaryDirectory() as directory:
    p=pathlib.Path(directory)/'new.json';p.write_text(json.dumps(primary()))
@@ -41,7 +43,8 @@ class AnonymousTests(unittest.TestCase):
    board=AnonymousBoard(Snapshot(p),Lookup(Snapshot(legacy),KEY))
    first=board.page(0,2);second=board.page(2,2)
    self.assertEqual(first['scores'],[4700,4600]);self.assertEqual(second['scores'],[4100,4000]);self.assertEqual(first['total'],4)
-   self.assertEqual(set(first),{'scores','offset','limit','total','updatedAt','minGames','activeDays'})
+   self.assertEqual(set(first),{'rows','scores','offset','limit','total','updatedAt','minGames','activeDays'})
+   self.assertEqual(first['rows'][0],{'conservative':4300,'uncertainty':200,'technical':4700})
    public=json.dumps([first,second]);self.assertNotIn(A,public);self.assertNotIn('MustNeverReachBrowser',public);self.assertNotIn(pseudonym(A,KEY),public)
    original=copy.deepcopy(primary());self.assertEqual(json.loads(p.read_text()),original)
    newer=primary();newer['players'][A]['rating']=4900;p.write_text(json.dumps(newer));self.assertEqual(board.page()['scores'][0],4900)
@@ -59,6 +62,7 @@ class AnonymousTests(unittest.TestCase):
     with get('/api/v1/leaderboard') as response:
      raw=response.read().decode();result=json.loads(raw)
      self.assertNotIn('MustNeverReachBrowser',raw);self.assertNotIn(A,raw);self.assertEqual(result['scores'],[4100,4000])
+     self.assertTrue(all(set(row)=={'conservative','uncertainty','technical'} for row in result['rows']))
     for path in ['/data/elo/names.json','/data/elo/top.json','/api/v1/leaderboard?uid='+A,'/api/v1/leaderboard?limit=101','/api/v1/leaderboard?offset=-1']:
      self.assertRaises(urllib.error.HTTPError,get,path)
     for path in ['/','/index.html','/elo.js','/elo.css']:
