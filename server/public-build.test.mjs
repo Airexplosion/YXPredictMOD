@@ -50,3 +50,9 @@ test('final player returns and net profit account for partial sales, repeat buys
  assert(!JSON.stringify(report).includes(x.key));assert(publicSummary(x.web.watch(x.rooms.state.rooms[x.code])).join(' ').includes('净收益+448'));
  const old=x.rooms.state.rooms[x.code];delete old.cashflows;delete old.cashflowVersion;assert.equal(settlementReport(x.rooms,old).rows[0].net,null);
 });
+test('signed native life damage accepts either side, and canonical player swaps reverse its direction',()=>{
+ const x=setup();x.snapshot.battles=[{round:2,first:x.snapshot.players[0].uid,second:x.snapshot.players[1].uid,winner:x.snapshot.players[1].uid,firstMirror:false,secondMirror:false,firstCards:[101],secondCards:[201],firstNames:['剑'],secondNames:['符'],firstLife:89,secondLife:98,firstLifeBefore:97,secondLifeBefore:98,lifeDamage:-8,resultComplete:true}];
+ x.rooms.sync(x.code,x.key,x.snapshot);let b=x.rooms.state.rooms[x.code].battles[0];assert.equal(b.lifeDamage,-8);
+ const raw=x.snapshot.battles[0];[raw.first,raw.second]=[raw.second,raw.first];[raw.firstCards,raw.secondCards]=[raw.secondCards,raw.firstCards];[raw.firstNames,raw.secondNames]=[raw.secondNames,raw.firstNames];raw.lifeDamage=8;
+ x.rooms.sync(x.code,x.key,x.snapshot);b=x.rooms.state.rooms[x.code].battles[0];assert.equal(b.lifeDamage,-8);assert.equal(b.winner,1);
+});

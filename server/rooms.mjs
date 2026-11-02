@@ -10,7 +10,7 @@ const token = () => randomBytes(24).toString('hex');
 const clone = x => structuredClone(x);
 export class Rooms {
   constructor(state = { accounts: {}, rooms: {} }, save = () => {}, now = Date.now, { championOnly = true } = {}) {
-    this.state = state; this.save = save; this.now = now; this.syncTimes = new Map(); this.championOnly = championOnly; this.revision = 0;
+    this.state = state; this.save = save; this.now = now; this.syncTimes = new Map();this.sourceHealth=new Map(); this.championOnly = championOnly; this.revision = 0;
   }
   commit(fn) {
     if (this.committing) return fn();
@@ -63,6 +63,7 @@ export class Rooms {
     requireThat(s && typeof s.id === 'string' && s.id.length > 0 && s.id.length <= 1024 && integer(s.round, 1, 100000)
       && integer(s.closedThrough, 0, 100000) && typeof s.open === 'boolean' && typeof s.ended === 'boolean', '对局状态无效');
     requireThat(s.liveRound===undefined||integer(s.liveRound,s.round,100000),'公开观战实际回合无效');
+    requireThat(s.sourcePhase===undefined||['preparation','battle','verifying','waiting-lobby','ended'].includes(s.sourcePhase),'观战阶段无效');
     requireThat(Array.isArray(s.players) && s.players.length === 8 && new Set(s.players.map(x => x?.uid)).size === 8
       && s.players.every(x => x && typeof x.uid === 'string' && x.uid.length > 0 && x.uid.length <= 128
       && typeof x.name === 'string' && x.name.length <= 128), '需要完整八人名单');
@@ -80,7 +81,8 @@ export class Rooms {
       && s.players.some(p=>p.uid===b.first)&&s.players.some(p=>p.uid===b.second)&&typeof b.winner==='string'&&['',b.first,b.second].includes(b.winner)
       &&typeof b.firstMirror==='boolean'&&typeof b.secondMirror==='boolean'&&cards(b.firstCards)&&cards(b.secondCards)&&names(b.firstNames,b.firstCards)&&names(b.secondNames,b.secondCards)
       &&integer(b.firstLife,-1000000,1000000)&&integer(b.secondLife,-1000000,1000000)
-      &&(b.lifeDamage===undefined||integer(b.lifeDamage,0,1000000))&&['firstLifeBefore','secondLifeBefore'].every(k=>b[k]===undefined||b[k]===null||integer(b[k],-1000000,1000000)))),'公开牌桌或战果格式无效');
+      &&(b.resultComplete===undefined||typeof b.resultComplete==='boolean')
+      &&(b.lifeDamage===undefined||integer(b.lifeDamage,-1000000,1000000))&&['firstLifeBefore','secondLifeBefore'].every(k=>b[k]===undefined||b[k]===null||integer(b[k],-1000000,1000000)))),'公开牌桌或战果格式无效');
     requireThat(s.eliminationRounds === undefined || (Array.isArray(s.eliminationRounds) && s.eliminationRounds.length === 8 && s.eliminationRounds.every(round => integer(round,0,s.round)) && typeof s.roundComplete === 'boolean'), '出局轮次格式无效');
     return s;
   }
@@ -171,6 +173,7 @@ export class Rooms {
     // Any ended message locks permanently, including incomplete final ranks.
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough,...(s.battles??[]).map(b=>b.round)); r.ended ||= s.ended;
     r.liveRound=Math.max(r.liveRound??r.round,s.liveRound??s.round);
+    if(s.sourcePhase)r.sourcePhase=s.sourcePhase;
     r.tradingClosed ||= r.round >= 10 || r.liveRound >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
     if(s.builds)r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
@@ -186,15 +189,16 @@ export class Rooms {
       for(const battle of s.battles){
         let first=r.players.findIndex(p=>p.uid===battle.first),second=r.players.findIndex(p=>p.uid===battle.second);
         let {firstCards,secondCards,firstLife,secondLife,firstMirror,secondMirror}=battle;
-        let firstLifeBefore=battle.firstLifeBefore??null,secondLifeBefore=battle.secondLifeBefore??null;
+        let firstLifeBefore=battle.firstLifeBefore??null,secondLifeBefore=battle.secondLifeBefore??null,lifeDamage=battle.lifeDamage??null;
         let firstNames=battle.firstNames??null,secondNames=battle.secondNames??null;
         if(first>second||(first===second&&firstMirror&&!secondMirror)){
           [first,second]=[second,first];[firstCards,secondCards]=[secondCards,firstCards];[firstNames,secondNames]=[secondNames,firstNames];[firstLife,secondLife]=[secondLife,firstLife];[firstMirror,secondMirror]=[secondMirror,firstMirror];
           [firstLifeBefore,secondLifeBefore]=[secondLifeBefore,firstLifeBefore];
+          if(lifeDamage!==null)lifeDamage=-lifeDamage;
         }
         const id=[battle.round,first,second,firstMirror,secondMirror].join(':');
         const row={id,round:battle.round,first,second,winner:battle.winner&&first!==second?r.players.findIndex(p=>p.uid===battle.winner):null,
-          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror,lifeDamage:battle.lifeDamage??null,firstLifeBefore,secondLifeBefore};
+          firstCards:clone(firstCards),secondCards:clone(secondCards),firstNames:clone(firstNames),secondNames:clone(secondNames),firstLife,secondLife,firstMirror,secondMirror,lifeDamage,resultComplete:battle.resultComplete??!!battle.winner,firstLifeBefore,secondLifeBefore};
         const at=r.battles.findIndex(b=>b.id===id),old=r.battles[at];
         requireThat(!old||old.winner===null||row.winner===null||old.winner===row.winner,'同轮公开战果冲突');
         for(const field of ['firstCards','secondCards'])requireThat(!old||old[field]===null||row[field]===null||JSON.stringify(old[field])===JSON.stringify(row[field]),'同轮公开牌桌冲突');
@@ -228,9 +232,20 @@ export class Rooms {
     const r = this.room(code, key); requireThat(r.host === key, '只有房主可以同步战果', 403);
     const s = this.snapshot(snapshot);
     const result = this.commit(() => { this.apply(r, s); return this.view(code, key); });
-    this.syncTimes.set(code, this.now()); return { ...result, open: r.open && !r.settled && !r.forfeited?.[key] };
+    this.syncTimes.set(code, this.now());if(r.eventSlot)this.sourceHealth.set(code,{state:'live',at:this.now(),round:Math.max(this.sourceHealth.get(code)?.round??0,r.liveRound??r.round)});return {...result,open:this.isOpen(r)&&!r.forfeited?.[key]};
   }
-  isOpen(r) { return r.open && !r.ended && !r.tradingClosed && r.round < 10 && r.closedThrough < 10 && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
+  isOpen(r) { const monitor=r.eventSlot?this.sourceHealth.get(r.code):null;return (!monitor||monitor.state==='live')&&(!monitor||monitor.round<10)&&r.open && !r.ended && !r.tradingClosed && r.round < 10 && r.closedThrough < 10 && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
+  availability(r){
+    const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,fresh=this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000,alive=monitor&&this.now()-monitor.at<=30000;
+    if(r.settled)return {state:'settled',message:'本局已结算，马币已到账'};
+    if(r.ended)return {state:'ended',message:'本局已结束，正在核对最终战果'};
+    if(r.tradingClosed||r.round>=10||r.closedThrough>=10||monitor?.round>=10)return {state:'closed',message:'第10回合起已封盘，等待本局结算'};
+    if(alive&&monitor.state==='verifying')return {state:'verifying',message:'机器人持续观战中，正在核对新战况，交易暂时暂停'};
+    if(alive&&['connecting','reconnecting'].includes(monitor.state))return {state:'reconnecting',message:'机器人观战连接正在恢复，交易暂时暂停'};
+    if(!fresh)return {state:'offline',message:r.eventSlot?'机器人战况同步暂时中断，正在自动恢复':'房主战况暂未更新，已暂停交易'};
+    if(this.isOpen(r))return {state:'open',message:'修炼阶段，可以下注'};
+    return {state:'waiting',message:r.eventSlot?(r.sourcePhase==='verifying'?'机器人正在核对本轮战况，交易暂时暂停':r.sourcePhase==='waiting-lobby'?'正在确认公开对局进度，交易暂时暂停':'本轮正在战斗或结算，下一轮修炼阶段恢复下注'):'等待下一轮修炼阶段开放交易'};
+  }
   abandon(code, key, gameId, operation) {
     const r = this.room(code, key);
     requireThat(r.gameId === gameId, '离场投注与当前房间对局不一致');
@@ -265,7 +280,7 @@ export class Rooms {
     const receiptKey = key + ':' + input.operation;
     if (r.receipts[receiptKey]) return { ...this.view(code, key), duplicate: true };
     requireThat(!r.forfeited?.[key], '离场已放弃本局未结算投注，不能重新下注');
-    requireThat(this.isOpen(r), r.tradingClosed || r.round >= 10 || r.closedThrough >= 10 ? '第10回合起已封盘' : '交易暂停：等待房主同步下一轮修炼状态');
+    requireThat(this.isOpen(r),this.availability(r).message);
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
     requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止交易');
     requireThat(!r.active || r.active[input.player] !== false, '该选手已淘汰或退出，停止交易');

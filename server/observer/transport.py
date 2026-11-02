@@ -3,6 +3,8 @@ import base64,time,re,urllib.parse
 import msgpack,websocket
 from public_lobby import read_token,LobbyError
 
+class SnapshotPending(LobbyError):pass
+
 def delayed_request(round_number=-1):
     from public_lobby_wire import varint
     if type(round_number)is not int or round_number<-1 or round_number>100000:raise ValueError('Invalid public round')
@@ -61,7 +63,7 @@ class Spectator:
         if self.ws is None:raise LobbyError('No public spectator connection')
         self._send(43,round_number)if self.mode=='delayed'else self._send(3)
         value=self._receive('DelayedSpectatingData' if self.mode=='delayed' else 'GameStatus',timeout)
-        if value is None:raise LobbyError('Public spectator snapshot is not available yet')
+        if value is None:raise SnapshotPending('Public spectator snapshot is not available yet')
         return value
     def focus_public(self,uid,allowed,timeout=1.5):
         if self.mode!='ordinary':return None

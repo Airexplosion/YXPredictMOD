@@ -86,14 +86,15 @@ class PublicLobby:
         return headers
 
     def _http(self, method, url, **options):
-        for attempt in range(3):
+        attempts=options.pop('_attempts',3);timeout=options.pop('_timeout',self.timeout)
+        for attempt in range(attempts):
             self._rate()
             self.stats['httpRequests'] += 1
             try:
-                response = self.http.request(method, url, timeout=self.timeout, **options)
+                response = self.http.request(method, url, timeout=timeout, **options)
                 if response.status_code in (401, 403):
                     raise LobbyError('server rejected existing authorization')
-                if response.status_code in (429, 502, 503, 504) and attempt < 2:
+                if response.status_code in (429, 502, 503, 504) and attempt+1<attempts:
                     try:
                         delay = min(60, max(self.gap, float(response.headers.get('Retry-After', 2 ** (attempt + 1)))))
                     except (ValueError, TypeError):
@@ -109,7 +110,7 @@ class PublicLobby:
             except LobbyError:
                 raise
             except (requests.Timeout, requests.ConnectionError):
-                if attempt < 2:
+                if attempt+1<attempts:
                     time.sleep(2 ** (attempt + 1))
                     options['headers'] = self._headers(presence=url.endswith('/connect'))
                     continue

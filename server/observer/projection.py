@@ -28,10 +28,12 @@ class PublicProjection:
         for battle in battles:
             a,z=battle['first'],battle['second']
             if a['uid']not in self.expected or z['uid']not in self.expected:raise ValueError('Foreign ordinary public battle')
-            self.battles[(battle['round'],a['uid'],z['uid'],a['isMirror'],z['isMirror'])]=copy.deepcopy(battle)
+            key=(battle['round'],a['uid'],z['uid'],a['isMirror'],z['isMirror']);value=copy.deepcopy(battle);value['resultComplete']=message['type']=='AllBattleResults'or bool(battle['winner'])
+            if not self.battles.get(key,{}).get('resultComplete')or value['resultComplete']:self.battles[key]=value
             self.closed_through=max(self.closed_through,battle['round'])
-            for p in (a,z):
-                if not p['isMirror']and battle['round']>=self.round:self.players[p['uid']]=copy.deepcopy(p)
+            # GameStatus is the authoritative eight-player state. A focused
+            # BattleResult may still contain pre-settlement player/rank data;
+            # mixing it into that state creates inconsistent elimination rounds.
         if message['type']=='AllBattleResults':self.complete_rounds.update(b['round']for b in battles)
         self.round_complete=self.ended or self.timer>0 and self.closed_through<self.round or self.round in self.complete_rounds;self.revision+=1
     def accept(self,encoded):

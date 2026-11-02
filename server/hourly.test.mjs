@@ -15,6 +15,7 @@ function fixture(save){
  const snapshot={id:'code:1234567',gameRoomId:info.roomId,round:1,closedThrough:0,open:true,ended:false,
   players:Array.from({length:8},(_,i)=>({uid:'private-player-'+i,name:'选手'+(i+1)})),ranks:Array(8).fill(0),active:Array(8).fill(true),
   baseRates:Array(64).fill(40000),horseTitles:Array(8).fill('上等马'),states:Array.from({length:8},()=>({life:100,wins:0,losses:0}))};
+ snapshot.builds=Array.from({length:8},(_,i)=>({characterId:1000001+i,characterName:'角色'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:1,realmName:'炼气',talents:[{id:10001,name:'凝气'}],baijia:[],fates:[],resonance:null,selectionRound:0,selectionsKnown:false,cards:null,cardNames:null}));
  return {rooms,web,hourly,info,snapshot,now:()=>now,time:t=>now=t,open:()=>hourly.open(info,snapshot)};
 }
 test('Beijing hourly window excludes 02 through 06 inclusive, stops searching after five minutes and has stable day keys',()=>{
@@ -63,12 +64,12 @@ test('QQ and website use one wallet, duplicate group commands across room change
 test('notifications are durable, leased, acknowledgement-gated and contain only public information',()=>{
  const x=fixture(),r=x.open();assert.equal(x.hourly.data().outbox.length,1);
  let item=x.hourly.claim();assert(item);assert.equal(x.hourly.claim(),null);assert.throws(()=>x.hourly.ack(item.id,'wrong'));
- x.hourly.ack(item.id,item.lease);assert.equal(x.hourly.claim(),null);
- x.snapshot.closedThrough=1;x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,0);
+ x.time(x.now()+60001);const reclaimed=x.hourly.claim();assert.equal(reclaimed.id,item.id);x.hourly.ack(reclaimed.id,reclaimed.lease);assert.equal(x.hourly.claim(),null);
+ x.snapshot.closedThrough=1;x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,1);
  x.time(x.now()+45000);x.hourly.sync(r.code,x.snapshot);x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,1);
  const view=x.web.watch(x.rooms.state.rooms[r.code]);Object.assign(view.players[0],{elo:9999,uid:'private-user',hand:['private-hand']});
  const summary=publicSummary(view).join('\n');assert(!/private-user|private-hand|9999|elo/i.test(summary));assert(summary.includes('上等马'));
- item=x.hourly.claim();x.time(x.now()+60001);assert.equal(x.hourly.claim().id,item.id);
+ assert.equal(x.hourly.claim(),null);
 });
 test('actual native round ten permanently closes earlier delayed public rounds, and frozen models survive restart',()=>{
  const x=fixture(),model=x.snapshot.players.map(p=>({uid:p.uid,score:3400,found:true}));
@@ -80,13 +81,24 @@ test('actual native round ten permanently closes earlier delayed public rounds, 
  x.snapshot.roundComplete=true;x.hourly.sync(view.code,x.snapshot);x.time(x.now()+45000);x.hourly.sync(view.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,1);
 });
 test('round announcement waits for public battle coverage and reports the next preparation state as that round result',()=>{
- const x=fixture(),r=x.open();x.snapshot.round=2;x.snapshot.closedThrough=1;x.snapshot.states=x.snapshot.states.map(()=>({life:80,wins:1,losses:0}));
- x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,0);
+ const x=fixture(),r=x.open();const start=x.hourly.claim();x.hourly.ack(start.id,start.lease);x.snapshot.round=2;x.snapshot.closedThrough=1;x.snapshot.states=x.snapshot.states.map(()=>({life:80,wins:1,losses:0}));
+ x.snapshot.builds.forEach(b=>{b.selectionRound=1;b.selectionsKnown=true;});
+ x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.claim(),null);x.time(x.now()+60000);assert.equal(x.hourly.claim(),null);
  x.snapshot.battles=Array.from({length:4},(_,i)=>({round:1,first:x.snapshot.players[i*2].uid,second:x.snapshot.players[i*2+1].uid,winner:x.snapshot.players[i*2].uid,
-  firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000012],firstNames:['云剑'],secondNames:['防御'],firstLife:80,secondLife:80}));
+  firstMirror:false,secondMirror:false,firstCards:[1000010],secondCards:[1000012],firstNames:['云剑'],secondNames:['防御'],firstLife:80,secondLife:80,lifeDamage:20}));
+ x.snapshot.builds[3].characterName='角色待识别';x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.claim(),null);x.snapshot.builds[3].characterName='角色3';
  x.hourly.sync(r.code,x.snapshot);const event=x.hourly.data().outbox.find(e=>e.kind==='round');assert(event);assert.equal(event.round,1);
  assert(event.lines.some(line=>line.includes('命元80')));assert(!event.lines.some(line=>line.includes('命元100')));assert.equal(event.lines.filter(line=>line.includes(' 对 ')).length,4);
+ assert.equal(x.hourly.claim().round,1);
  x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,1);
+});
+test('observer liveness reports never refresh quotes; verification pauses immediately and round ten cannot reopen',()=>{
+ const x=fixture(),v=x.open(),r=x.rooms.state.rooms[v.code],before=structuredClone(x.rooms.state),at=x.rooms.syncTimes.get(v.code);
+ x.hourly.source(v.code,r.gameId,'verifying',1);assert.deepEqual(x.rooms.state,before);assert.equal(x.rooms.isOpen(r),false);assert.equal(x.rooms.availability(r).state,'verifying');
+ x.time(x.now()+16000);assert.equal(x.rooms.syncTimes.get(v.code),at);assert.equal(x.web.watch(r).fresh,false);assert.equal(x.rooms.availability(r).state,'verifying');
+ x.hourly.sync(v.code,x.snapshot);assert.equal(x.rooms.isOpen(r),true);x.hourly.source(v.code,r.gameId,'verifying',10);assert.equal(x.rooms.availability(r).state,'closed');
+ x.hourly.sync(v.code,x.snapshot);assert.equal(x.rooms.isOpen(r),false);assert.equal(x.rooms.availability(r).state,'closed');
+ assert.throws(()=>x.hourly.source(v.code,'wrong-game','verifying',1));
 });
 test('failed saving rolls back wallet, global QQ receipt, joining, account creation and event outbox together',()=>{
  let fail=false;const x=fixture(()=>{if(fail)throw new Error('disk unavailable')});const r=x.open(),before=structuredClone(x.rooms.state);fail=true;

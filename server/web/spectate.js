@@ -39,7 +39,7 @@ async function join(){
 function draw(){
  if(!room)return;
  $('watch-code').textContent='仙府对局 · #'+room.code;$('watch-title').textContent=room.hostName+' 的观战席';
- $('watch-live').textContent=room.settled?'本局已结算':room.ended?'等待最终战果':!room.fresh?'战况来源离线':(room.round>=10||room.tradingClosed)?'第 '+room.round+' 回合 · 已封盘':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段');
+ $('watch-live').textContent=room.availability?.message??(room.settled?'本局已结算':room.ended?'等待最终战果':(room.round>=10||room.tradingClosed)?'第 '+room.round+' 回合 · 已封盘':!room.fresh?'机器人同步正在恢复':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段'));
  $('watch-live').className=room.fresh&&!room.ended?'live-text':'muted';
  $('watch-rule').textContent=(room.eventSlot?'整点专场 · 倍率额外×1.15 · ':'')+(room.horseShuffle?'本局随机交换2–3匹真人马的档位 · ':'只猜冠军 · ')+'第10回合封盘';$('horse-grid').replaceChildren();
  room.players.forEach((p,i)=>{const card=node('button',undefined,'horse-card c'+i+(i===selected?' selected':''));card.type='button';card.setAttribute('aria-pressed',String(i===selected));card.onclick=()=>{selected=i;draw()};
@@ -88,7 +88,7 @@ function drawBet(){
  $('bet-quote').textContent=p.quoteRate?rate(p.quoteRate):'—';const claim=Number.isSafeInteger(amount)&&amount>0?Math.floor(amount*p.quoteRate/10000):0;
  $('bet-return').textContent=fmt(claim)+' 马币';$('bet-partial').textContent=fmt(Math.floor(claim/4))+' / '+fmt(Math.floor(claim/10));
  $('held-position').textContent=position?fmt(position.stake)+' 马币':'暂无投入';$('held-claim').textContent=position?(wallet?.forfeited?'已离场放弃，不再返还':'锁定冠军返还 '+fmt(position.claim??0)+' 马币'+(position.resolved?' · 已结算':'')):'';
- let reason=wallet?.forfeited?'已离场放弃本局持仓，仅可查看，不再返还。':room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':!room.fresh?'战况来源暂时离线，已暂停交易。':(room.round>=10||room.tradingClosed)?'第10回合起已封盘，等待本局结算。':!room.open?'等待下一修炼阶段开放交易。':!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有持仓，请加入新的冠军预测房间。':'';
+ let reason=wallet?.forfeited?'已离场放弃本局持仓，仅可查看，不再返还。':!room.open?(room.availability?.message??(room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':(room.round>=10||room.tradingClosed)?'第10回合起已封盘，等待本局结算。':!room.fresh?'机器人同步正在恢复，已暂停交易。':'等待下一修炼阶段开放交易。')):!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有持仓，请加入新的冠军预测房间。':'';
  if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=reason;$('bet-retry').hidden=!pending||pending.owner!==window.predictionMe?.id;
  $('bet-buy').disabled=busy||!!reason||!Number.isSafeInteger(amount)||amount<1||amount>10000||amount>(wallet?.balance??0);
  $('bet-half').disabled=$('bet-sell').disabled=busy||!!reason||!position||position.resolved;
