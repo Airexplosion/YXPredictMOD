@@ -114,7 +114,7 @@ export class Rooms {
         closedThrough: 0, open: false, ended: false, settled: false, cashflowVersion:1,cashflows:{},horseShuffle:s.horseShuffle??false, eventSlot:event?.slot??null, bonusBps:event?.bonusBps??10000, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       const featured=this.websiteRoom();
-      if(isPublic&&(!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
+      if(isPublic&&(event||!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
       return this.view(code, key);
     });
   }
