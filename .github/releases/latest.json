@@ -1,9 +1,9 @@
 {
-  "version": "0.8.1",
-  "tag": "v0.8.1",
-  "title": "v0.8.1 - 观战总览一键网页绑定",
-  "artifact": "dist/天机赌马-0.8.1.zip",
-  "assetName": "tianji-duma-0.8.1.zip",
-  "sha256": "aec574b8dd7350e5f7e7c74b66fd8be19ee10c8ee9d6a4a34c7b142a8da24e65",
-  "notes": ".github/releases/v0.8.1.md"
+  "version": "0.8.2",
+  "tag": "v0.8.2",
+  "title": "v0.8.2 - 房间观众身份匿名保护",
+  "artifact": "dist/天机赌马-0.8.2.zip",
+  "assetName": "tianji-duma-0.8.2.zip",
+  "sha256": "b33d927854be492a1c88ede5385b4474859294c7f35acf3f91e98b0632ea257b",
+  "notes": ".github/releases/v0.8.2.md"
 }
