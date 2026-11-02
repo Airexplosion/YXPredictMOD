@@ -3,5 +3,6 @@
   "key": "REPLACE_WITH_DEDICATED_OBSERVER_KEY",
   "tokenCache": "/srv/game-observer/token.json",
   "lockDirectory": "/var/lib/yx-replay",
-  "cardNames": "/var/lib/yx-duma-observer/card-names.json"
+  "cardNames": "/var/lib/yx-duma-observer/card-names.json",
+  "buildCatalog": "/var/lib/yx-duma-observer/build-catalog.json"
 }

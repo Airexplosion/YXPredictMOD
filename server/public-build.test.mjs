@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Rooms} from './rooms.mjs';
+import {PredictionWeb} from './web.mjs';
+import {publicBuild,buildLines,publicPresentation} from './public-build.mjs';
+import {publicSummary} from './hourly.mjs';
+import {settlementReport} from './settlement.mjs';
+export const build=(i=0)=>({characterId:1000001+i,characterName:'青松'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:3,realmName:'金丹',talents:[{id:10001,name:'筑基 · 凝气'},{id:10002,name:'金丹 · 明心'}],baijia:[{id:1001,name:'百家·清风'}],fates:[{id:21,name:'天衍·静修'}],resonance:{id:4,name:'共鸣·生息'},selectionRound:1,selectionsKnown:true});
+export function setup(save){const rooms=new Rooms(undefined,save),web=new PredictionWeb(rooms),key=rooms.register('观战房主').token;
+ const snapshot={id:'public-builds',gameRoomId:'native-builds',round:2,closedThrough:1,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'public-player-'+i,name:'道友'+i})),states:Array.from({length:8},()=>({life:90,wins:1,losses:0})),ranks:Array(8).fill(0),active:Array(8).fill(true),baseRates:Array(64).fill(40000),builds:Array.from({length:8},(_,i)=>build(i))};
+ const code=rooms.create(key,snapshot).code;return {rooms,web,key,code,snapshot};}
+test('public metadata follows UID reordering and retains each round without exposing producer extras',()=>{
+ const x=setup();x.snapshot.builds[0].elo=9876;x.snapshot.builds[0].hand=['private-hand'];x.snapshot.builds[0].uid='secret-uid';
+ x.rooms.sync(x.code,x.key,x.snapshot);x.snapshot.players.reverse();x.snapshot.states.reverse();x.snapshot.builds.reverse();x.rooms.sync(x.code,x.key,x.snapshot);
+ let view=x.web.watch(x.rooms.state.rooms[x.code]);assert.equal(view.players[0].build.characterName,'青松0');assert.equal(view.players[7].build.characterName,'青松7');
+ const encoded=JSON.stringify(view);assert(!/9876|private-hand|secret-uid/.test(encoded));
+ x.snapshot.round=3;x.snapshot.builds[7].baijia.push({id:1002,name:'百家·明月'});x.rooms.sync(x.code,x.key,x.snapshot);view=x.web.watch(x.rooms.state.rooms[x.code]);
+ assert.equal(view.frames[0].builds[0].baijia.length,1);assert.equal(view.players[0].build.baijia.length,2);assert.equal(view.frames.at(-1).builds[0].baijia.length,2);
+});
+test('public build validation rejects malformed selections and future disclosure, while old sources remain compatible',()=>{
+ const x=setup();for(const patch of [{characterId:0},{careerId:'2'},{selectionRound:3},{baijia:[{id:0,name:'bad'}]},{talents:Array(33).fill({id:1,name:'overflow'})},{characterName:'bad'+String.fromCharCode(10)},{resonance:{id:1,name:''}}])assert.throws(()=>publicBuild({...build(),...patch},2));
+ assert.equal(publicBuild(null),null);delete x.snapshot.builds;x.rooms.sync(x.code,x.key,x.snapshot);assert.equal(x.web.watch(x.rooms.state.rooms[x.code]).players[0].build.characterName,'青松0');
+ assert(buildLines(null)[0].includes('待同步'));const pending={...build(),selectionRound:0,selectionsKnown:false,baijia:[]};assert(buildLines(pending).some(s=>s.includes('等待公开')));
+});
+test('QQ per-round and individual public summaries include role, career, talents and public Baijia choices',()=>{
+ const x=setup(),view=x.web.watch(x.rooms.state.rooms[x.code]),lines=publicSummary(view,{player:0}).join('\n');
+ for(const text of ['青松0','符师','筑基 · 凝气','百家·清风','共鸣·生息','天衍·静修','公开至第1回合'])assert(lines.includes(text));
+ assert(!lines.includes('青松1'));const historical=publicSummary(view,{round:2,player:0}).join('\n');assert(historical.includes('百家·清风'));
+});
+test('metadata persistence failures roll back alongside holdings and balances',()=>{
+ let fail=false;const x=setup(()=>{if(fail)throw Error('disk failure')});x.rooms.trade(x.code,x.key,{kind:'buy',player:0,rank:1,stake:100,operation:'metadata-buy-001',version:x.rooms.state.rooms[x.code].version});
+ const before=structuredClone(x.rooms.state);x.snapshot.builds[0].baijia.push({id:1002,name:'百家·明月'});fail=true;assert.throws(()=>x.rooms.sync(x.code,x.key,x.snapshot));assert.deepEqual(x.rooms.state,before);
+});
+test('illustrated public reports retain actual board rounds, selected players and mirror matchup markers without identities',()=>{
+ const x=setup(),r=x.rooms.state.rooms[x.code];r.builds[0].cards=[101];r.builds[0].cardNames=['上次公开牌'];
+ r.battles=[{round:1,first:0,second:1,firstMirror:false,secondMirror:true,winner:1,firstCards:[201],firstNames:['公开剑'],secondCards:[301],secondNames:['公开符'],firstLife:90,secondLife:95}];
+ const view=x.web.watch(r),report=publicPresentation(view,{player:0});assert.equal(report.players.length,1);assert.equal(report.players[0].board.round,1);assert.deepEqual(report.players[0].board.cards,[201]);
+ assert.equal(report.battles[0].secondMirror,true);assert.equal(report.battles[0].winnerName,view.players[1].name);assert.equal(report.battles[0].firstCharacterId,1000001);assert(!JSON.stringify(report).includes('public-player-'));
+ const other=publicPresentation(view,{player:7});assert.equal(other.battles.length,0);assert.equal(other.players[0].index,7);
+ view.battles.push({...view.battles[0],round:2,first:2,second:3});const full=publicPresentation(view);assert.equal(full.battles[0].round,2);assert.equal(full.players[0].board.round,1);
+});
+test('final player returns and net profit account for partial sales, repeat buys and idempotent orders, excluding grants',()=>{
+ const x=setup(),order={kind:'buy',player:0,rank:1,stake:100,operation:'settlement-buy-001',version:x.rooms.state.rooms[x.code].version};
+ x.rooms.trade(x.code,x.key,order);x.rooms.trade(x.code,x.key,order);
+ x.rooms.trade(x.code,x.key,{kind:'half',player:0,operation:'settlement-sale-001',version:x.rooms.state.rooms[x.code].version});
+ x.rooms.trade(x.code,x.key,{kind:'buy',player:0,rank:1,stake:100,operation:'settlement-buy-002',version:x.rooms.state.rooms[x.code].version});
+ x.rooms.state.accounts[x.key].balance+=200;x.rooms.state.accounts[x.key].checkInGranted=200;
+ x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.key,x.snapshot);
+ const report=settlementReport(x.rooms,x.rooms.state.rooms[x.code]),r=report.rows[0];assert.equal(r.invested,200);assert.equal(r.sold,48);assert.equal(r.payout,600);assert.equal(r.net,448);assert.equal(x.rooms.state.accounts[x.key].balance,1648);
+ assert(!JSON.stringify(report).includes(x.key));assert(publicSummary(x.web.watch(x.rooms.state.rooms[x.code])).join(' ').includes('净收益+448'));
+ const old=x.rooms.state.rooms[x.code];delete old.cashflows;delete old.cashflowVersion;assert.equal(settlementReport(x.rooms,old).rows[0].net,null);
+});

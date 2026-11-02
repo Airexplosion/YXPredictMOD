@@ -11,7 +11,7 @@ import {createHandler} from './server.mjs';
 const user={subject:'a'.repeat(64),qqSubject:'c'.repeat(64),bindingDigest:createHash('sha256').update('[]').digest('hex'),gameUidRef:null,name:'认证观众',scope:'qq-prediction',groupId:'599092307'};
 function fixture(save){
  let now=Date.UTC(2026,10,1,0,0);const rooms=new Rooms(undefined,save,()=>now),web=new PredictionWeb(rooms,{now:()=>now});
- const hourly=new HourlyEvents(rooms,web),info={roomId:'native-hourly',round:1,isPrivate:false,avgRankScore:3001,playerCount:8};
+ const hourly=new HourlyEvents(rooms,web),info={roomId:'native-hourly',round:1,isPrivate:false,avgRankScore:6000,playerCount:8};
  const snapshot={id:'code:1234567',gameRoomId:info.roomId,round:1,closedThrough:0,open:true,ended:false,
   players:Array.from({length:8},(_,i)=>({uid:'private-player-'+i,name:'选手'+(i+1)})),ranks:Array(8).fill(0),active:Array(8).fill(true),
   baseRates:Array(64).fill(40000),horseTitles:Array(8).fill('上等马'),states:Array.from({length:8},()=>({life:100,wins:0,losses:0}))};
@@ -24,7 +24,7 @@ test('Beijing hourly window excludes 02 through 06 inclusive, stops searching af
 });
 test('selection uses actual public eight-player round 1/2 and native rank score, never an Elo default',()=>{
  const x=fixture();assert(eligibleLobby(x.info));
- for(const patch of [{isPrivate:true},{round:0},{round:3},{avgRankScore:3000},{avgRankScore:2999},{playerCount:7},{roomId:'../private'}])assert(!eligibleLobby({...x.info,...patch}));
+ for(const patch of [{isPrivate:true},{round:0},{round:3},{avgRankScore:5999},{avgRankScore:3001},{playerCount:7},{roomId:'../private'}])assert(!eligibleLobby({...x.info,...patch}));
  assert(!eligibleLobby({...x.info,avgRankScore:undefined,elo:9999}));
 });
 test('one authoritative hourly room, immutable 15% premium, restart deduplication and unchanged standard quotes',()=>{
@@ -36,6 +36,13 @@ test('one authoritative hourly room, immutable 15% premium, restart deduplicatio
  const key=x.rooms.register('普通房主').token,normal=x.rooms.create(key,{...x.snapshot,id:'another',gameRoomId:'another-native'});
  assert.equal(normal.quoteRates[0],40000);assert.equal(normal.bonusBps,10000);
  x.snapshot.round=2;x.snapshot.baseRates.fill(500000);x.hourly.sync(code,x.snapshot);assert.equal(x.rooms.state.rooms[code].quoteRates[0],575000);
+});
+test('6000 inclusive applies to new openings; an existing lower-score game continues with its original claims',()=>{
+ const x=fixture(),r=x.open();x.hourly.data().slots[x.rooms.state.rooms[r.code].eventSlot].info.avgRankScore=3500;
+ const key=x.rooms.register('观众').token;x.rooms.join(r.code,key,x.snapshot.id);x.rooms.trade(r.code,key,{kind:'buy',player:0,rank:1,stake:100,version:x.rooms.state.rooms[r.code].version,operation:'score-rule-bet-001'});
+ const claim=x.rooms.state.rooms[r.code].positions[key][0].claim;x.snapshot.round=3;x.hourly.sync(r.code,x.snapshot);
+ assert.equal(x.rooms.state.rooms[r.code].positions[key][0].claim,claim);assert.equal(x.hourly.status().minimumRankScore,6000);assert.equal(x.hourly.status().active.code,r.code);
+ assert.equal(x.hourly.open({...x.info,avgRankScore:3500},x.snapshot).code,r.code);
 });
 test('QQ and website use one wallet, duplicate group commands across room changes cannot wager again; expiry does not cancel a locked payout',()=>{
  const x=fixture(),r=x.open();x.web.openAccount(user);const accounts=Object.keys(x.rooms.state.accounts).length;

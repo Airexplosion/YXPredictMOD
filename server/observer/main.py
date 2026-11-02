@@ -5,6 +5,7 @@ from public_lobby import PublicLobby,LobbyError,read_token,room_filter
 from projection import PublicProjection
 from transport import Spectator,public_mode
 from quotes import champion_rates,sources,titles
+from build_catalog import BuildCatalog
 
 LOG=logging.getLogger('duma-observer')
 STOP=False
@@ -13,7 +14,7 @@ def stop(*_):
     STOP=True
 
 def eligible(info):
-    return info.get('name')=='game_room' and info.get('status')==2 and info.get('isPrivate')is False and info.get('playerCount')==8 and 1<=info.get('round',0)<=2 and info.get('avgRankScore',0)>3000
+    return info.get('name')=='game_room' and info.get('status')==2 and info.get('isPrivate')is False and info.get('playerCount')==8 and 1<=info.get('round',0)<=2 and info.get('avgRankScore',0)>=6000
 
 class Backend:
     def __init__(self,url,key):self.url=url.rstrip('/');self.key=key;self.http=requests.Session()
@@ -41,11 +42,12 @@ def ratings_for(roster):
     return result
 
 class SnapshotBuilder:
-    def __init__(self,info,roster,model,card_names=None):
+    def __init__(self,info,roster,model,card_names=None,build_catalog=None):
         self.info=info;self.roster=roster;self.players=[{'uid':p['userInfo']['uid'],'name':p['userInfo']['username'],'isAI':p['isAI']}for p in roster]
         by_uid={p['uid']:p for p in model}
         if len(by_uid)!=8 or set(by_uid)!={p['uid']for p in self.players}:raise LobbyError('Frozen quote model disagrees with public roster')
         self.ratings=[by_uid[p['uid']]for p in self.players];self.card_names=card_names or {};self.last_rates=[0]*64;self.game_id=None
+        self.build_catalog=BuildCatalog(build_catalog)
     def build(self,p,live_round):
         states=p.public_state();game_id=p.game_id
         if not game_id or len(states)!=8:raise LobbyError('Public snapshot is not ready')
@@ -58,6 +60,7 @@ class SnapshotBuilder:
             # Missing final ranks never creates a quote or a fabricated result.
             quote_ready=False
         battles=[]
+        life_before=lambda q:((q.get('lastRound')or{}).get('life')or None)
         for battle in p.battles.values():
             if not max(1,p.round-1)<=battle['round']<=p.round:continue
             a,z=battle['first'],battle['second'];cards=lambda q:(q.get('lastRound')or {}).get('usedCards')
@@ -65,7 +68,8 @@ class SnapshotBuilder:
             names=lambda ids:None if ids is None else [self.card_names.get(str(i),'未知牌' if i else '空位')for i in ids]
             battles.append({'round':battle['round'],'first':a['uid'],'second':z['uid'],'winner':battle['winner'],
                 'firstMirror':a['isMirror'],'secondMirror':z['isMirror'],'firstCards':first,'secondCards':second,
-                'firstNames':names(first),'secondNames':names(second),'firstLife':a['life'],'secondLife':z['life']})
+                'firstNames':names(first),'secondNames':names(second),'firstLife':a['life'],'secondLife':z['life'],'lifeDamage':battle['lifeDamage'],
+                'firstLifeBefore':life_before(a),'secondLifeBefore':life_before(z)})
         if len(battles)>16:raise LobbyError('Public battle budget exceeded')
         elimination=[min(p.round,s['wins']+s['losses'])if s['life']<=0 else 0 for s in states]
         complete=p.ended or p.round_complete
@@ -74,7 +78,8 @@ class SnapshotBuilder:
             'ended':p.ended,'players':[{k:v for k,v in player.items()if k!='isAI'}for player in self.players],
             'states':[{k:v for k,v in s.items()if k!='rank'}for s in states],'ranks':[s['rank']for s in states],
             'active':[s['life']>0 for s in states],'baseRates':self.last_rates,'horseShuffle':True,
-            'horseTitles':titles(game_id,self.players,self.ratings),'eliminationRounds':elimination,'roundComplete':complete,'battles':battles}
+            'horseTitles':titles(game_id,self.players,self.ratings),'eliminationRounds':elimination,'roundComplete':complete,'battles':battles,
+            'builds':[self.build_catalog.project(p.players[player['uid']],p.round,self.card_names)for player in self.players]}
 
 def refresh_info(reader,info):
     cursor=info.get('createdTs')
@@ -109,7 +114,8 @@ def observe(config,backend,status):
         model=active['model']if active else ratings_for(roster)
         if not model:raise LobbyError('Frozen quote model is missing; operator review required')
         card_names=json.loads(pathlib.Path(config['cardNames']).read_text(encoding='utf8'))if config.get('cardNames')else {}
-        builder=SnapshotBuilder(info,roster,model,card_names);projection=PublicProjection(roster)
+        build_catalog=json.loads(pathlib.Path(config['buildCatalog']).read_text(encoding='utf8'))if config.get('buildCatalog')else {}
+        builder=SnapshotBuilder(info,roster,model,card_names,build_catalog);projection=PublicProjection(roster)
         mode=public_mode(reader);spectator=Spectator(reader,info,mode);spectator.join()
         code=active['code']if active else None;live_round=info['round'];last_meta=0;focus_index=0;meta_ready=False;started=time.monotonic()
         LOG.info('Public spectator connected (%s; %s)',mode,'recovering'if code else'candidate')
@@ -160,7 +166,7 @@ def main():
             status=backend.call('status')
             if status['active']or status['available']and not status['opened']:observe(config,backend,status)
         except BlockingIOError:LOG.warning('Dedicated spectator account is busy; preserving existing session')
-        except Exception as error:LOG.warning('Observation paused (%s); positions retained',str(error)if isinstance(error,LobbyError)else type(error).__name__)
+        except Exception as error:LOG.warning('Observation paused (%s); positions retained',str(error)if isinstance(error,(LobbyError,ValueError))else type(error).__name__)
         if args.once:break
         for _ in range(15):
             if STOP:break

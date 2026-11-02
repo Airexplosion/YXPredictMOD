@@ -5,6 +5,17 @@ let page=0,room=null,wallet=null,selected=0,joined=false,visible='hall',polling=
 try{pending=JSON.parse(sessionStorage.getItem('prediction-pending-order')||'null')}catch{}
 const fmt=n=>Number(n).toLocaleString('zh-CN'),rate=n=>(n/10000).toFixed(2)+'×';
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
+function drawBuild(build){
+ const root=node('div',undefined,'horse-build');
+ if(!build){root.append(node('p','角色、职业及仙命资料待同步','build-pending'));return root}
+ root.append(node('p',build.characterName+' · '+build.sectName+' · '+build.realmName,'build-character'),node('p','副职：'+build.careerName,'build-career'));
+ const row=(title,choices,empty)=>{const line=node('div',undefined,'build-row');line.append(node('span',title,'build-label'));const list=node('span',undefined,'build-choices');if(choices.length)for(const choice of choices)list.append(node('span',choice.name,'build-choice'));else list.append(node('span',empty,'build-pending'));line.append(list);root.append(line)};
+ row('仙命',build.talents,'暂无公开仙命');
+ row('百家仙命',build.baijia,build.selectionsKnown?'暂无公开选取':'等待公开');
+ if(build.resonance)row('共鸣仙命',[build.resonance],'');if(build.fates.length)row('天衍仙命',build.fates,'');
+ if(build.selectionRound)root.append(node('small','百家选取公开至第 '+build.selectionRound+' 回合','build-observed'));
+ return root;
+}
 function setPending(value){pending=value;if(value)sessionStorage.setItem('prediction-pending-order',JSON.stringify(value));else sessionStorage.removeItem('prediction-pending-order')}
 async function rooms(){
  $('rooms-refresh').disabled=true;
@@ -35,6 +46,7 @@ function draw(){
   const head=node('div',undefined,'horse-card-head');head.append(node('span',String(i+1).padStart(2,'0'),'horse-number'),node('span',p.rank?(p.rankMinimum<p.rankMaximum?'第 '+p.rankMinimum+'–'+p.rankMaximum+'名同出':'第 '+p.rank+' 名'):p.active?'在场':'已退出','horse-state'));card.append(head,node('h3',p.name),node('span',p.horseTitle||'','horse-tier'));
   const life=node('div',undefined,'horse-life');life.append(node('strong',p.state?String(p.state.life):'—'),node('span','命元'));card.append(life);
   card.append(node('p',p.state?p.state.wins+'胜 / '+p.state.losses+'负':'等待公开战况','muted'));
+  card.append(drawBuild(p.build));
   const quote=node('div',undefined,'horse-quote');quote.append(node('span','冠军倍率'),node('strong',p.quoteRate?rate(p.quoteRate):'—'));card.append(quote,node('small',p.baseRate?'基础 '+rate(p.baseRate)+' × 系数 '+rate(p.factor)+(room.bonusBps>10000?' × 专场 '+rate(room.bonusBps):''):'等待基础倍率','muted'));
   const held=wallet?.positions[i];card.append(node('span',held?'已投入 '+fmt(held.stake)+' 马币':i===selected?'已选中 · 预测冠军':'选择这位仙友',held?'horse-held':'horse-select'));$('horse-grid').append(card)});
  drawBattles();drawChart();drawNotes();drawBet();

@@ -30,6 +30,13 @@ class PublicTests(unittest.TestCase):
         self.assertNotIn('hand',json.dumps(p.players));self.assertEqual(p.players[UIDS[0]]['lastRound']['usedCards'],[1000010,1010010])
     def test_delayed_ignores_private_player_data(self):
         p=PublicProjection(ROSTER);self.assertTrue(p.accept(delayed()));self.assertNotIn('PRIVATE',json.dumps(p.players))
+    def test_ordinary_full_roster_mirror_flag_does_not_pause_original_players_or_apply_ghost_battle_stats(self):
+        raw=status(11).replace(blob(5,player(0)),blob(5,player(0)+number(11,1)),1)
+        p=PublicProjection(ROSTER);self.assertTrue(p.accept_ordinary(encoded(raw)));self.assertEqual(p.public_state()[0]['life'],100)
+        ghost=blob(1,blob(1,player(0,life=1)+number(11,1)))+blob(2,blob(1,player(1)))+number(7,11)+string_field(9,UIDS[1])
+        p.ordinary_event({'type':'BattleResult','data':encoded(ghost)});self.assertEqual(p.public_state()[0]['life'],100)
+        self.assertTrue(next(iter(p.battles.values()))['first']['isMirror'])
+        with self.assertRaises(ValueError):p.accept_ordinary(encoded(raw.replace(UIDS[0].encode(),b'f'*24)))
     def test_native_timestamps_do_not_fast_forward_future_commands(self):
         clock=[0.0];p=PublicProjection(ROSTER,lambda:clock[0]);data=delayed(commands=cmd(1,15000,'GameStatus',status(2)))
         p.accept(data);self.assertEqual(p.round,1);clock[0]=4;p.accept(data);self.assertEqual(p.round,1)
@@ -58,6 +65,12 @@ class PublicTests(unittest.TestCase):
         b=SnapshotBuilder({'roomId':'public'},ROSTER,[{'uid':u,'score':3000,'found':True}for u in UIDS],{'1000010':'云剑'})
         s=b.build(p,10);self.assertFalse(s['open']);self.assertEqual(s['liveRound'],10);self.assertEqual(s['battles'][0]['firstNames'],['云剑','未知牌'])
         self.assertNotIn('score',json.dumps(s));self.assertNotIn('sigma',json.dumps(s))
+    def test_native_battle_damage_and_public_before_after_life_are_separate(self):
+        battle=blob(1,player(0,life=80,private=True))+blob(2,player(1,life=90,private=True))+number(6,27)+number(7,1)+string_field(9,UIDS[1])
+        parsed=public_battles('BattleResult',encoded(battle))[0];self.assertEqual(parsed['lifeDamage'],27)
+        p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status()));p.ordinary_event({'type':'BattleResult','data':encoded(battle)})
+        s=SnapshotBuilder({'roomId':'public'},ROSTER,[{'uid':u,'score':3000,'found':True}for u in UIDS]).build(p,1)
+        self.assertEqual(s['battles'][0]['lifeDamage'],27);self.assertEqual(s['battles'][0]['firstLife'],80)
     def test_builder_restores_frozen_model_in_uid_order_and_same_shuffle(self):
         p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status()))
         model=[{'uid':u,'score':3000+i*100,'found':True}for i,u in enumerate(UIDS)]
@@ -65,9 +78,9 @@ class PublicTests(unittest.TestCase):
         b=SnapshotBuilder({'roomId':'public'},ROSTER,list(reversed(model))).build(p,1)
         self.assertEqual(a,b);self.assertTrue(a['open']);self.assertEqual(len(a['baseRates']),64)
     def test_candidate_uses_native_rank_score_strictly(self):
-        i={'name':'game_room','status':2,'isPrivate':False,'playerCount':8,'round':1,'avgRankScore':3001}
+        i={'name':'game_room','status':2,'isPrivate':False,'playerCount':8,'round':1,'avgRankScore':6000}
         self.assertTrue(eligible(i))
-        for k,v in [('round',3),('avgRankScore',3000),('playerCount',7),('isPrivate',True)]:self.assertFalse(eligible({**i,k:v}))
+        for k,v in [('round',3),('avgRankScore',5999),('playerCount',7),('isPrivate',True)]:self.assertFalse(eligible({**i,k:v}))
     def test_reservation_cannot_redirect_or_join_foreign_room(self):
         r={'room':{'name':'game_room','roomId':'pub','processId':'process','publicAddress':'evil.invalid'},'sessionId':'session'}
         self.assertTrue(reservation_url(r,'pub','https://trusted.invalid/game').startswith('wss://trusted.invalid/'))

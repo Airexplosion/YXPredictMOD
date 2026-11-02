@@ -1,6 +1,7 @@
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
 import {publicSummary} from './hourly.mjs';
+import {publicPresentation} from './public-build.mjs';
 import {syncQqWallet} from './qq-wallet.mjs';
 
 export function serviceAccess(header,key){
@@ -43,12 +44,12 @@ export function qqCommand(web,hourly,user,body){
   }
   const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点赌马专场',404);
   const view=web.watch(room);
-  if(command==='/赌马')return {lines:[instructions,...publicSummary(view)],forward:true};
+  if(command==='/赌马')return {lines:[instructions,...publicSummary(view)],presentation:publicPresentation(view),forward:true};
   ensure(args.length>=1,'请提供选手编号1～8或完整昵称');
   let index;
   if(/^[1-8]$/.test(args[0]))index=Number(args[0])-1;
   else{const found=view.players.map((p,i)=>p.name===args[0]?i:-1).filter(i=>i>=0);ensure(found.length===1,found.length?'昵称重复，请使用选手编号':'没有找到这位选手，请使用编号1～8');index=found[0];}
-  if(command==='/选手')return {lines:publicSummary(view,{player:index}),forward:true};
+  if(command==='/选手')return {lines:publicSummary(view,{player:index}),presentation:publicPresentation(view,{player:index}),forward:true};
   const kind=command==='/下注'?'buy':command==='/退半'?'half':'sell';
   ensure(args.length===(kind==='buy'?2:1),kind==='buy'?'用法：/下注 选手编号 马币数':'用法：'+command+' 选手编号');
   const stake=kind==='buy'&&/^[1-9][0-9]{0,4}$/.test(args[1])?Number(args[1]):0;
