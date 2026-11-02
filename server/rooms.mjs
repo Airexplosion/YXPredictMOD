@@ -1,4 +1,4 @@
-import { quoteRates, sale, returnFor } from './odds.mjs';
+import { quoteRates, eventQuote, sale, returnFor } from './odds.mjs';
 import { eliminationPlan, intervalReturn, championReturn } from './eliminations.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 
@@ -61,6 +61,7 @@ export class Rooms {
   snapshot(s) {
     requireThat(s && typeof s.id === 'string' && s.id.length > 0 && s.id.length <= 1024 && integer(s.round, 1, 100000)
       && integer(s.closedThrough, 0, 100000) && typeof s.open === 'boolean' && typeof s.ended === 'boolean', '对局状态无效');
+    requireThat(s.liveRound===undefined||integer(s.liveRound,s.round,100000),'公开观战实际回合无效');
     requireThat(Array.isArray(s.players) && s.players.length === 8 && new Set(s.players.map(x => x?.uid)).size === 8
       && s.players.every(x => x && typeof x.uid === 'string' && x.uid.length > 0 && x.uid.length <= 128
       && typeof x.name === 'string' && x.name.length <= 128), '需要完整八人名单');
@@ -90,10 +91,11 @@ export class Rooms {
     return { nativeId, exists: true, available: (r.members.includes(key) || r.members.length < 32) && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000,
       code: r.code, gameId: r.gameId, gameRoomId: nativeId, round: r.round, members: r.members.length };
   }
-  create(key, snapshot, allowMatch = true, isPublic = true) {
+  create(key, snapshot, allowMatch = true, isPublic = true, event = null) {
     this.account(key); const s = this.snapshot(snapshot);
     requireThat(typeof allowMatch === 'boolean', '匹配设置无效');
     requireThat(typeof isPublic === 'boolean', '公开设置无效');
+    requireThat(event===null||(event&&typeof event.slot==='string'&&/^[0-9]{10}$/.test(event.slot)&&event.bonusBps===11500),'整点专场设置无效');
     requireThat(!s.ended, '已结束的对局不能创建房间');
     const existing = Object.values(this.state.rooms).find(r => !r.ended && !r.settled && (r.gameId === s.id || (s.gameRoomId && r.gameRoomId === s.gameRoomId)));
     if (existing) {
@@ -104,7 +106,7 @@ export class Rooms {
     return this.commit(() => {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
-        closedThrough: 0, open: false, ended: false, settled: false, horseShuffle:s.horseShuffle??false, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+        closedThrough: 0, open: false, ended: false, settled: false, horseShuffle:s.horseShuffle??false, eventSlot:event?.slot??null, bonusBps:event?.bonusBps??10000, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       const featured=this.websiteRoom();
       if(isPublic&&(!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
@@ -153,19 +155,20 @@ export class Rooms {
       if(s.baseRates) r.baseRates=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
       const totals=Array.from({length:8},()=>Array(8).fill(0));
       for(const [key,ps] of Object.entries(r.positions)) if(!r.forfeited?.[key]) for(let i=0;i<8;i++) if(ps[i]&&!ps[i].resolved)totals[i][ps[i].rank-1]+=ps[i].stake;
-      const quotes=quoteRates(r.baseRates,totals,r.rules===3);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
+      const quotes=quoteRates(r.baseRates,totals,r.rules===3,r.bonusBps??10000);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
     }
     if(r.rules>=2 && s.baseRates){
       const nextBase=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
       if(JSON.stringify(nextBase)!==JSON.stringify(r.baseRates)){
-        r.baseRates=nextBase;r.quoteRates=nextBase.map((base,at)=>base<=0?0:Math.max(10100,Math.min(500000,Math.floor(base*r.factors[at]/10000))));r.version++;
+        r.baseRates=nextBase;r.quoteRates=nextBase.map((base,at)=>eventQuote(base,r.factors[at],r.bonusBps??10000));r.version++;
       }
     }
     if (s.gameRoomId) { requireThat(!r.gameRoomId || r.gameRoomId === s.gameRoomId, '游戏房间标识发生冲突'); r.gameRoomId = s.gameRoomId; }
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough,...(s.battles??[]).map(b=>b.round)); r.ended ||= s.ended;
-    r.tradingClosed ||= r.round >= 10 || r.closedThrough >= 10;
+    r.liveRound=Math.max(r.liveRound??r.round,s.liveRound??s.round);
+    r.tradingClosed ||= r.round >= 10 || r.liveRound >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
     if (s.states) {
       r.states = r.players.map(p => clone(s.states[s.players.findIndex(q => q.uid === p.uid)]));
@@ -337,6 +340,6 @@ export class Rooms {
     for (const [member,ps] of Object.entries(r.positions)) if(r.rules<2 || !r.forfeited?.[member]) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.displayName(member), uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
       isPublic:this.publicRoom(r), active:r.active ?? r.ranks.map(rank=>!rank), reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round >= 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, rankMinimum: r.rankMinimum ?? r.ranks, rankMaximum: r.rankMaximum ?? r.ranks, totals,
-      horseTitles:r.horseTitles??null,horseShuffle:r.horseShuffle??false,positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
+      horseTitles:r.horseTitles??null,horseShuffle:r.horseShuffle??false,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

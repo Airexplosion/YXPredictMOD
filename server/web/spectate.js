@@ -30,12 +30,12 @@ function draw(){
  $('watch-code').textContent='仙府对局 · #'+room.code;$('watch-title').textContent=room.hostName+' 的观战席';
  $('watch-live').textContent=room.settled?'本局已结算':room.ended?'等待最终战果':!room.fresh?'战况来源离线':(room.round>=10||room.tradingClosed)?'第 '+room.round+' 回合 · 已封盘':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段');
  $('watch-live').className=room.fresh&&!room.ended?'live-text':'muted';
- $('watch-rule').textContent=(room.horseShuffle?'本局随机交换2–3匹真人马的档位 · ':'只猜冠军 · ')+'第10回合封盘';$('horse-grid').replaceChildren();
+ $('watch-rule').textContent=(room.eventSlot?'整点专场 · 倍率额外×1.15 · ':'')+(room.horseShuffle?'本局随机交换2–3匹真人马的档位 · ':'只猜冠军 · ')+'第10回合封盘';$('horse-grid').replaceChildren();
  room.players.forEach((p,i)=>{const card=node('button',undefined,'horse-card c'+i+(i===selected?' selected':''));card.type='button';card.setAttribute('aria-pressed',String(i===selected));card.onclick=()=>{selected=i;draw()};
   const head=node('div',undefined,'horse-card-head');head.append(node('span',String(i+1).padStart(2,'0'),'horse-number'),node('span',p.rank?(p.rankMinimum<p.rankMaximum?'第 '+p.rankMinimum+'–'+p.rankMaximum+'名同出':'第 '+p.rank+' 名'):p.active?'在场':'已退出','horse-state'));card.append(head,node('h3',p.name),node('span',p.horseTitle||'','horse-tier'));
   const life=node('div',undefined,'horse-life');life.append(node('strong',p.state?String(p.state.life):'—'),node('span','命元'));card.append(life);
   card.append(node('p',p.state?p.state.wins+'胜 / '+p.state.losses+'负':'等待公开战况','muted'));
-  const quote=node('div',undefined,'horse-quote');quote.append(node('span','冠军倍率'),node('strong',p.quoteRate?rate(p.quoteRate):'—'));card.append(quote,node('small',p.baseRate?'基础 '+rate(p.baseRate)+' × 系数 '+rate(p.factor):'等待基础倍率','muted'));
+  const quote=node('div',undefined,'horse-quote');quote.append(node('span','冠军倍率'),node('strong',p.quoteRate?rate(p.quoteRate):'—'));card.append(quote,node('small',p.baseRate?'基础 '+rate(p.baseRate)+' × 系数 '+rate(p.factor)+(room.bonusBps>10000?' × 专场 '+rate(room.bonusBps):''):'等待基础倍率','muted'));
   const held=wallet?.positions[i];card.append(node('span',held?'已投入 '+fmt(held.stake)+' 马币':i===selected?'已选中 · 预测冠军':'选择这位仙友',held?'horse-held':'horse-select'));$('horse-grid').append(card)});
  drawBattles();drawChart();drawNotes();drawBet();
 }

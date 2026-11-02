@@ -49,7 +49,7 @@ export class PredictionWeb {
     const fresh=this.rooms.now()-(this.rooms.syncTimes.get(r.code)??-Infinity)<=15000;
     const totals=Array(8).fill(0);
     for(const positions of Object.values(r.positions))for(let i=0;i<8;i++)if(positions[i])totals[i]+=positions[i].stake;
-    return {code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,version:r.version,rules:r.rules??1,
+    return {code:r.code,hostName:this.rooms.displayName(r.host),round:r.round,version:r.version,rules:r.rules??1,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,open:this.rooms.isOpen(r),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
         horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],state:r.states?.[i]??null,baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
@@ -140,7 +140,7 @@ export class PredictionWeb {
     return {updatedAt:this.cached.at,page,total:rows.length,items:rows.slice(page*20,page*20+20).map(({balance,accounts,...row},i)=>({...row,rank:page*20+i+1})),summary};
   }
   buildLeaderboard() {
-    const groups=new Map();for(const [key,a]of Object.entries(this.rooms.state.accounts)){const group=a.webOwner?'owner:'+a.webOwner:'account:'+key;if(!groups.has(group))groups.set(group,[]);groups.get(group).push([key,a]);}
+    const groups=new Map();for(const [key,a]of Object.entries(this.rooms.state.accounts)){if(a.systemObserver)continue;const group=a.webOwner?'owner:'+a.webOwner:'account:'+key;if(!groups.has(group))groups.set(group,[]);groups.get(group).push([key,a]);}
     const stats=this.totals(),rows=[...groups].map(([group,accounts])=>this.aggregate(group.startsWith('owner:')?group.slice(6):group,accounts,stats));
     rows.sort((a,b)=>b.net-a.net||b.wins-a.wins||a.id.localeCompare(b.id));
     return {rows,summary:{players:rows.length,games:rows.reduce((n,r)=>n+r.games,0),net:rows.reduce((n,r)=>n+r.net,0)}};
