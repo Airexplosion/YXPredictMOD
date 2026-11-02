@@ -1,6 +1,6 @@
 import {RoomError} from './rooms.mjs';
 import {randomBytes} from 'node:crypto';
-import {buildLines,publicPresentation} from './public-build.mjs';
+import {buildLines,publicPresentation,publicReportReady} from './public-build.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -42,6 +42,12 @@ export class HourlyEvents{
       active:active?{code:active.code,gameId:active.gameId,gameRoomId:active.gameRoomId,info:this.data().slots[active.eventSlot]?.info??null,model:this.data().slots[active.eventSlot]?.model??null}:null,
       opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active&&(!featured||featured.ended||featured.settled)};
   }
+  source(code,gameId,state,round){
+    const r=this.rooms.state.rooms[code];ensure(r?.eventSlot&&r.host===this.data().hostToken&&r.gameId===gameId,'观战来源与房间不一致',403);
+    ensure(['connecting','reconnecting','verifying'].includes(state)&&Number.isSafeInteger(round)&&round>=1&&round<=100000,'观战连接状态无效',400);
+    const previous=this.rooms.sourceHealth.get(code);this.rooms.sourceHealth.set(code,{state,at:this.rooms.now(),round:Math.max(round,r.liveRound??r.round,previous?.round??0)});
+    return {ok:true};
+  }
   open(info,snapshot,model=null){
     const slot=hourlySlot(this.rooms.now());ensure(slot,'当前不在整点开盘时段');
     const previous=this.data().slots[slot];
@@ -70,27 +76,33 @@ export class HourlyEvents{
       slot.participants[snapshot.round]??=r.players.map(p=>{const i=snapshot.players.findIndex(q=>q.uid===p.uid);return !snapshot.states?.[i]||snapshot.states[i].life>0;});
       this.rooms.sync(code,data.hostToken,snapshot);
       for(const frame of r.frames??[])if(frame.round<=r.closedThrough&&(frame.round<snapshot.round||snapshot.roundComplete!==false)){
-        const covered=new Set();for(const b of r.battles??[])if(b.round===frame.round){if(!b.firstMirror)covered.add(b.first);if(!b.secondMirror)covered.add(b.second);}
-        const expected=slot.participants[frame.round]??frame.states.map(p=>!!p&&p.life>0);
-        slot.noticeWait[frame.round]??=this.rooms.now()+45000;
-        if(r.settled||expected.every((active,i)=>!active||covered.has(i))||this.rooms.now()>=slot.noticeWait[frame.round])this.enqueue('round',r,frame.round);
+        this.enqueue('round',r,frame.round);
       }
       if(r.settled)this.enqueue('settled',r);
-      return this.web.watch(r);
+      return {...this.web.watch(r),reportReady:r.settled?this.ready(r,'settled',r.round):false};
     });
   }
   enqueue(kind,r,round=r.round){
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
-    if(data.outbox.some(e=>e.id===id))return;
+    const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
       ?[`整点赌马开盘 #${r.code} · 倍率额外×1.15\n只猜冠军，第10回合封盘；第二25%、第三10%。\n/下注 选手编号 马币数 · /赌马 · /选手 编号\nhttps://duma.kaigua.vip/`,...publicSummary(view)]
-      :publicSummary(view,{round});
-    data.outbox.push({id,kind,code:r.code,round,lines,presentation:publicPresentation(view,{round}),createdAt:this.rooms.now(),deliveredAt:null});
+      :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
+    if(old){old.lines=lines;old.presentation=publicPresentation(view,{round,noticeType:kind});return;}
+    data.outbox.push({id,kind,code:r.code,round,lines,presentation:publicPresentation(view,{round,noticeType:kind}),createdAt:this.rooms.now(),deliveredAt:null});
     if(data.outbox.length>4000)data.outbox=data.outbox.filter(e=>!e.deliveredAt||e.deliveredAt>this.rooms.now()-7*86400000);
   }
   claim(){
-    const row=this.data().outbox.find(e=>!e.deliveredAt&&(!e.leaseUntil||e.leaseUntil<=this.rooms.now()));if(!row)return null;
-    return this.rooms.commit(()=>{if(!row.presentation&&this.rooms.state.rooms[row.code])row.presentation=publicPresentation(this.web.watch(this.rooms.state.rooms[row.code]),{round:row.round});row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
+    for(const row of this.data().outbox){
+      if(row.deliveredAt||row.leaseUntil>this.rooms.now())continue;
+      const r=this.rooms.state.rooms[row.code];if(!r||!this.ready(r,row.kind,row.round))continue;
+      return this.rooms.commit(()=>{row.presentation=publicPresentation(this.web.watch(r),{round:row.round,noticeType:row.kind});row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
+    }
+    return null;
+  }
+  ready(r,kind,round){
+    const slot=this.data().slots[r.eventSlot],expected=(slot?.participants?.[round]??r.players.map(()=>false)).map((active,i)=>active||(r.eliminationRounds?.[i]??0)>=round);
+    return publicReportReady(publicPresentation(this.web.watch(r),{round,noticeType:kind}),expected);
   }
   ack(id,lease){
     const row=this.data().outbox.find(e=>e.id===id);ensure(row&&row.lease===lease,'通知租约已过期');

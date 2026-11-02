@@ -16,20 +16,39 @@ export function publicBuild(value,round=100000){
     talents:value.talents.map(choice),baijia:value.baijia.map(choice),fates:value.fates.map(choice),resonance:value.resonance===null?null:choice(value.resonance),
     selectionRound:value.selectionRound,selectionsKnown:value.selectionsKnown,cards:cards&&[...cards],cardNames:cardNames&&[...cardNames]};
 }
-export function publicPresentation(view,{round=view.round,player=null}={}){
+export function publicPresentation(view,{round=view.round,player=null,noticeType='query'}={}){
   const frame=view.frames?.find(f=>f.round===round),after=view.frames?.find(f=>f.round===round+1);
   const available=(view.battles??[]).filter(b=>b.round<=round&&(player===null||b.first===player||b.second===player));
   const battleRound=available.some(b=>b.round===round)?round:Math.max(0,...available.map(b=>b.round));
   const battles=available.filter(b=>b.round===battleRound);
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
-    const p=view.players[index],build=frame?.builds?.[index]??(round===view.round?p.build:null);
+    const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
     const battle=available.filter(b=>b.first===index&&!b.firstMirror||b.second===index&&!b.secondMirror).sort((a,z)=>z.round-a.round)[0],side=battle?.first===index?'first':'second';
     const board=battle&&battle[side+'Cards']?{round:battle.round,cards:battle[side+'Cards'],names:battle[side+'Names']??battle[side+'Cards'].map(id=>id?'未知牌':'空位')}:build?.cards&&build.selectionRound>0&&build.selectionRound<=round?{round:build.selectionRound,cards:build.cards,names:build.cardNames}:null;
     return {index,name:p.name,horseTitle:p.horseTitle,rank:round===view.round?p.rank:after?.ranks?.[index]??frame?.ranks?.[index]??0,
       state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:round===view.round?p.quoteRate:0,build,board};
   });
-  return structuredClone({kind:'duma-public-v1',code:view.code,round,settled:view.settled,tradingClosed:view.tradingClosed,settlement:view.settled?view.settlement??null:null,players,
+  const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
+  return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,settlement:finalReport?view.settlement??null:null,players,
     battles:battles.map(b=>({...b,firstName:view.players[b.first].name,secondName:view.players[b.second].name,firstCharacterId:view.players[b.first].build?.characterId??0,secondCharacterId:view.players[b.second].build?.characterId??0,winnerName:b.winner===null?null:view.players[b.winner].name}))});
+}
+export function publicReportReady(report,expected=null){
+  const known=s=>typeof s==='string'&&s.length>0&&!/待同步|待识别|未知牌/.test(s),start=report.noticeType==='start';
+  if(report.players.length!==8)return false;
+  for(const p of report.players){
+    const b=p.build;if(!b||![p.name,p.horseTitle,b.characterName,b.sectName,b.realmName,b.careerName].every(known))return false;
+    if([...b.talents,...b.baijia,...b.fates,...(b.resonance?[b.resonance]:[])].some(c=>!known(c.name)))return false;
+    if(start)continue;
+    const required=expected?expected[p.index]:p.state?.life>0;
+    if((required||p.state&&p.state.wins+p.state.losses>0)&&(!p.board||p.board.names.some(s=>!known(s))))return false;
+    if(required&&(p.board.round!==report.round||b.selectionRound<report.round))return false;
+  }
+  if(start)return true;
+  const covered=new Set();for(const b of report.battles){
+    if(b.round!==report.round||b.winner===null&&!b.resultComplete||b.lifeDamage==null)return false;
+    if(!b.firstMirror)covered.add(b.first);if(!b.secondMirror)covered.add(b.second);
+  }
+  return report.players.every(p=>!(expected?expected[p.index]:p.state?.life>0)||covered.has(p.index));
 }
 export function buildLines(build){
   if(!build)return ['角色、职业及仙命资料待同步'];
