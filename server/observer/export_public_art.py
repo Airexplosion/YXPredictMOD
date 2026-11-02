@@ -2,6 +2,9 @@
 import argparse,base64,collections,gc,json,pathlib,re,warnings
 from public_lobby_wire import fields,read_varint,signed32
 
+SPRITE_PATTERN=re.compile(r'^(?:Card_\d+|Icon_Talent_\w+|Icon_XianMoStrategy_\w+|Icon_FateStrategy_\w+|Icon_ResonanceTalent_\w+|CharAvatar_\d+_0|CardUI_\w+_[012])$')
+INDEX_POLICY=2
+
 def rows(raw):return [v for n,k,v in fields(raw)if n==2 and k==2]
 def row(raw):
     result=collections.defaultdict(list)
@@ -17,6 +20,17 @@ def numbers(r,n):
         while at<len(v):i,at=read_varint(v,at);result.append(signed32(i))
     return result
 
+def select_sprite_index(index,configs):
+    # Native strategies may override their icon with any named sprite, including career icons.
+    override_paths=set()
+    for kind in ('XianMoStrategyConfig','FateStrategyConfig'):
+        for raw in rows(configs[kind]):
+            name=string(row(raw),15)
+            if name:override_paths.add(name)
+    missing=override_paths-set(index)
+    if missing:raise ValueError('Missing native override sprites: '+', '.join(sorted(missing)))
+    return {name:value for name,value in index.items()if SPRITE_PATTERN.fullmatch(name)or name in override_paths}
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--game',required=True);ap.add_argument('--out',required=True);args=ap.parse_args()
     warnings.filterwarnings('ignore');import UnityPy
@@ -24,24 +38,24 @@ def main():
     UnityPy.config.FALLBACK_UNITY_VERSION='2020.3.49f1'
     bundles=pathlib.Path(args.game)/'YiXianPai_Data/StreamingAssets/aa/StandaloneWindows64';out=pathlib.Path(args.out);out.mkdir(parents=True,exist_ok=True)
     index={};configs={};wanted_configs={'CardConfig','CardCombineConfig','TalentConfig','XianMoStrategyConfig','FateStrategyConfig','TalentResonanceConfig'}
-    pattern=re.compile(r'^(?:Card_\d+|Icon_Talent_\w+|Icon_XianMoStrategy_\w+|Icon_FateStrategy_\w+|Icon_ResonanceTalent_\w+|CharAvatar_\d+_0|CardUI_\w+_[012])$')
     cache=out/'.source-index.json'
     paths=list(bundles.glob('*.bundle'));stamp=[(p.name,p.stat().st_size,p.stat().st_mtime_ns)for p in paths]
     stored=json.loads(cache.read_text())if cache.exists()else None
-    if stored and stored['stamp']==[list(p)for p in stamp]and wanted_configs.issubset(stored['configs']):
+    if stored and stored.get('policy')==INDEX_POLICY and stored['stamp']==[list(p)for p in stamp]and wanted_configs.issubset(stored['configs']):
         index=stored['index'];configs={k:base64.b64decode(v)for k,v in stored['configs'].items()};paths=[]
     for i,path in enumerate(paths):
         env=UnityPy.load(str(path))
         for obj in env.objects:
             if obj.type.name not in ('Sprite','TextAsset'):continue
             name=obj.peek_name()
-            if obj.type.name=='Sprite'and name and pattern.fullmatch(name):index[name]=(path.name,obj.path_id)
+            if obj.type.name=='Sprite'and name:index[name]=(path.name,obj.path_id)
             elif name in wanted_configs:
                 value=obj.read().m_Script;configs[name]=value.encode('utf8','surrogateescape')if isinstance(value,str)else value
         del env;gc.collect()
         if i%30==0:print('Indexed bundles:',i,'sprites:',len(index),flush=True)
     if not wanted_configs.issubset(configs):raise ValueError('Missing current native display config')
-    cache.write_text(json.dumps({'stamp':stamp,'index':index,'configs':{k:base64.b64encode(v).decode()for k,v in configs.items()}}))
+    index=select_sprite_index(index,configs)
+    cache.write_text(json.dumps({'policy':INDEX_POLICY,'stamp':stamp,'index':index,'configs':{k:base64.b64encode(v).decode()for k,v in configs.items()}}))
     for d in ('sprites','cards','talents','baijia','fates','resonances','characters','frames'):(out/d).mkdir(exist_ok=True)
     grouped=collections.defaultdict(list)
     for name,(bundle,pid)in index.items():grouped[bundle].append((name,pid))
