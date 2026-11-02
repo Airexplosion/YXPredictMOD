@@ -14,7 +14,7 @@ namespace YxPrediction
         public long ReliefCount;
         public bool ReliefRequiresNoPendingBets;
         public string Code, GameId;
-        public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
+        public string[] MemberIds = new string[0], MemberNames = new string[0];
         public bool Host, Open, Settled, Forfeited, TradingClosed;
         public int Version, Round, Members, Rules;
         public int[] BaseRates=new int[64], QuoteRates=new int[64], Factors=new int[64];
@@ -77,8 +77,8 @@ namespace YxPrediction
             if (members != null)
             {
                 if (members.Count > 32) throw new FormatException("房间成员数量无效");
-                r.MemberIds = new string[members.Count]; r.MemberNames = new string[members.Count]; r.MemberUids = new string[members.Count];
-                for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]=Json.GetString(member,"name",""); r.MemberUids[i]=Json.GetString(member,"uid",""); }
+                r.MemberIds = new string[members.Count]; r.MemberNames = new string[members.Count];
+                for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]="观众"+(i+1).ToString(CultureInfo.InvariantCulture); }
             }
             var players = d["players"] as List<object>; var ranks = d["ranks"] as List<object>;
             var active = Json.GetArray(d, "active");

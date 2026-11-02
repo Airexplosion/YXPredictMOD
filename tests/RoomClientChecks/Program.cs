@@ -273,6 +273,7 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        AnonymousMembers();Console.WriteLine("PASS room arrivals anonymize legacy names and UIDs without exposing internal arrival IDs");
         PublicFeedWire();Console.WriteLine("PASS live public table wire preserves cards, names, mirror and winner without private hands");
         CohortTransport();Console.WriteLine("PASS cohort rounds and complete-result evidence survive host transport, retries and interval UI decoding");
         DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
@@ -291,6 +292,21 @@ internal static class Program
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
         MigratedDeparture();Console.WriteLine("PASS original-domain departure receipts apply once to the migrated identity");
         DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
+    }
+    static void AnonymousMembers()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);var data=View();var members=new List<object>();
+            data["memberDetails"]=members;
+            members.Add(new Dictionary<string,object>{{"id","arrival-one"},{"name","private-first-name"},{"uid","private-first-uid"}});
+            var observe=typeof(RoomClient).GetMethod("ObserveMembers",BindingFlags.Instance|BindingFlags.NonPublic);
+            observe.Invoke(mod.Client,new object[]{RoomState.Read(data)});Require(mod.Client.JoinNotice==null,"Initial members were announced");
+            members.Add(new Dictionary<string,object>{{"id","arrival-two"},{"name","private-second-name"},{"uid","private-second-uid"}});
+            var state=RoomState.Read(data);observe.Invoke(mod.Client,new object[]{state});
+            Require(mod.Client.JoinNotice=="观众2 加入房间","Legacy member identity appeared in arrival notice");
+            observe.Invoke(mod.Client,new object[]{state});Require(state.MemberNames[0]=="观众1"&&state.MemberNames[1]=="观众2","Legacy real member names retained");
+        }
     }
     static void PublicFeedWire()
     {
