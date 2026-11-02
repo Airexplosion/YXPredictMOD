@@ -1,10 +1,12 @@
 # Elo API 与匿名榜
 
-**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 提供两个独立视图。默认的10·29平衡窗口是截至北京时间2026年11月2日20:56的固定报告，含20,806局、14,540名玩家。[实时视图](https://elo.kaigua.vip/elo/characters/?source=live) 展示持续结算的角色评分。总体分等权合并3000–5999与6000及以上分段，可以按角色名和副职筛选。
+**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 默认展示百家之道第三期，采用换角校正 Elo（`within`）。页面可切换[第一期](https://elo.kaigua.vip/elo/characters/?phase=1)与[第二期](https://elo.kaigua.vip/elo/characters/?phase=2)。北京时间10月15日11:00、10月22日14:00、10月29日14:00分别起算，季前赛计入0局。第一、二期封存。第三期每天北京时间00:15、06:15、12:15、18:15开始重算。总体分等权合并3000–5999与6000及以上两段，玩家数分段列出。
 
-`web/characters/window.json` 仅含固定报告的公开汇总。生产 `yx-character-board-feed.timer` 约每两分钟调用 `publish_character_scores.py`，从现有角色榜读取匿名汇总并按字段白名单原子发布同域 `live.json`。失败时保留上一份有效数据。该页面的数据请求只访问这两个同域静态文件。
+正式页只读取同域 `season.json`。来源服务器运行 `season_scores.py`，从本赛季分期索引按字段白名单导出三期的角色分、出场人次和玩家数。网站的 `yx-season-board-feed.timer` 每五分钟通过限定来源地址和只读导出命令的专用 SSH 密钥拉取结果，核对时期、算法和角色名单，再原子发布。无效或过时的代次保留上一份成功快照。
 
-首次部署脚本 `install_character_board.py` 将页面装入现有 Caddy 静态目录，并在数据站首页和匿名玩家榜添加入口。浏览器回归 `tests/CharacterEloBrowserChecks.cjs` 验证两个数据源、分段、副职、搜索、移动宽度、匿名字段以及前端请求范围。
+[副职参考](https://elo.kaigua.vip/elo/characters/reference.html) 单独使用旧版公式，原两分钟汇总定时器继续维护 `live.json`，`window.json` 留存固定快照。旧链接中明确请求固定快照或副职的查询参数会转入该页，原实时角色榜链接打开第三期。
+
+首次部署前，在来源服务器安装只读导出器，并在网站服务器预置 `/etc/yx-character-board/source_key` 和已经核实主机指纹的 `known_hosts`。密钥在来源端只允许网站服务器的地址和强制命令 `/usr/bin/python3 -I -B /opt/yx-patch-rating-study/public_season_scores.py`，禁用转发、终端和交互命令。`install_character_board.py` 安装页面、两个镜像定时器及站内入口。`tests/CharacterEloBrowserChecks.cjs` 逐项核对三期分数、查询链接、手机宽度及匿名字段。
 
 本目录是独立的只读数据适配器、OpenSkill 计算器与 API。它不登录游戏、不加入观战、不发送游戏请求，也不修改身份采集服务。部署在赌马同服务器，域名 `https://elo.kaigua.vip`；域名恢复原来的卡牌/流派数据站及匿名Elo榜；MOD查询继续使用独立API。
 
