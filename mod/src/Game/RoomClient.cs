@@ -410,7 +410,7 @@ namespace YxPrediction
             {
                 if (_seenMembers.Contains(state.MemberIds[i])) continue;
                 _seenMembers.Add(state.MemberIds[i]);
-                string name = state.MemberNames[i] + "（ID " + (string.IsNullOrEmpty(state.MemberUids[i]) ? state.MemberIds[i] : state.MemberUids[i]) + "）";
+                string name = state.MemberNames[i];
                 if (!first) notice += (notice.Length > 0 ? "、" : "") + name;
             }
             if (notice.Length > 0)

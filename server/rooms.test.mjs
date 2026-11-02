@@ -1,3 +1,4 @@
+import {PredictionWeb} from './web.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -293,9 +294,10 @@ test('lookup HTTP route authenticates and never bypasses normal join checks',asy
     assert.throws(()=>x.rooms.view(x.code,key));assert.equal(x.rooms.account(key).balance,1000);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('member views identify arrivals without exposing bearer keys; repeat join is idempotent',()=>{
+test('member views use room-scoped anonymous arrivals without game identities; repeat join is idempotent',()=>{
  const x=setup();x.rooms.identify(x.a,{name:'游戏甲',uid:'uid-a'});x.rooms.identify(x.b,{name:'游戏乙',uid:'uid-b'});
- const view=x.rooms.view(x.code,x.a);assert.equal(view.memberDetails.length,2);assert.equal(view.memberDetails[1].name,'游戏乙');assert.equal(view.memberDetails[1].uid,'uid-b');
+ const view=x.rooms.view(x.code,x.a);assert.equal(view.memberDetails.length,2);assert.equal(view.memberDetails[1].name,'观众2');assert.equal(view.memberDetails[1].uid,undefined);
+ for(const secret of ['游戏甲','游戏乙','uid-a','uid-b',x.a,x.b])assert(!JSON.stringify(view).includes(secret));
  assert.ok(!JSON.stringify(view).includes(x.a));assert.ok(!JSON.stringify(view).includes(x.b));
  x.rooms.join(x.code,x.b,x.snapshot.id);assert.equal(x.rooms.view(x.code,x.a).memberDetails.length,2);
  assert.throws(()=>x.rooms.identify(x.b,{name:'x',uid:'bad id'}));
@@ -444,4 +446,16 @@ test('upgrading a paid legacy pair keeps its payments frozen and permits later c
  x.snapshot.eliminationRounds=[0,0,0,0,0,0,2,2];x.snapshot.roundComplete=true;x.rooms.sync(x.code,x.a,x.snapshot);
  Object.assign(x.snapshot,{round:4,eliminationRounds:[0,0,0,0,4,4,2,2]});
  const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1300);assert.equal(v.positions[5].resolved,true);assert.equal(v.rankMinimum[5],5);assert.equal(v.rankMaximum[5],6);
+});
+
+
+test('spectator names stay anonymous across room lists and website views, with separate arrival IDs in each room',()=>{
+ const x=setup();x.rooms.identify(x.a,{name:'private-spectator-name',uid:'private-spectator-uid'});
+ const before=structuredClone(x.rooms.state.accounts),first=x.rooms.view(x.code,x.a),second=x.rooms.create(x.a,{...x.snapshot,id:'other-match'});
+ assert.notEqual(first.memberDetails[0].id,second.memberDetails[0].id);
+ assert.equal(second.memberDetails[0].name,'观众1');
+ const web=new PredictionWeb(x.rooms);for(const view of [x.rooms.list(x.b),web.watch(x.rooms.state.rooms[x.code]),web.listRooms()]){
+  assert(!JSON.stringify(view).includes('private-spectator-name'));assert(!JSON.stringify(view).includes('private-spectator-uid'));
+ }
+ assert.deepEqual(x.rooms.state.accounts,before);
 });

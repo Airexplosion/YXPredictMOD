@@ -59,6 +59,7 @@ export class Rooms {
     requireThat(r.members.includes(key), '请先加入房间', 403); return r;
   }
   displayName(key) { const a=this.state.accounts[key];return (a.webOwner&&this.state.profiles?.[a.webOwner]?.name)||a.name; }
+  observerName(r,key){return r.eventSlot&&r.host===key?'WHITE整点观战':'观众'+String(Math.max(1,r.members.indexOf(key)+1));}
   snapshot(s) {
     requireThat(s && typeof s.id === 'string' && s.id.length > 0 && s.id.length <= 1024 && integer(s.round, 1, 100000)
       && integer(s.closedThrough, 0, 100000) && typeof s.open === 'boolean' && typeof s.ended === 'boolean', '对局状态无效');
@@ -285,7 +286,7 @@ export class Rooms {
       && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000);
     rooms.sort((a,b) => a.code.localeCompare(b.code));
     return { page, total: rooms.length, rooms: rooms.slice(page*6,page*6+6).map(r => ({
-      code:r.code, hostName:this.displayName(r.host), round:r.round, members:r.members.length,
+      code:r.code, hostName:this.observerName(r,r.host), round:r.round, members:r.members.length,
       available:r.members.includes(key)||r.members.length<32, open:this.isOpen(r)
     })) };
   }
@@ -377,7 +378,7 @@ export class Rooms {
   view(code, key) {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const [member,ps] of Object.entries(r.positions)) if(r.rules<2 || !r.forfeited?.[member]) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
-    return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.displayName(member), uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
+    return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(r.code+':'+r.gameId+':'+member).digest('hex').slice(0,16), name: this.observerName(r,member) })), round: r.round, version: r.version,
       isPublic:this.publicRoom(r), active:r.active ?? r.ranks.map(rank=>!rank), reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round >= 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, rankMinimum: r.rankMinimum ?? r.ranks, rankMaximum: r.rankMaximum ?? r.ranks, totals,
       horseTitles:r.horseTitles??null,horseShuffle:r.horseShuffle??false,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }

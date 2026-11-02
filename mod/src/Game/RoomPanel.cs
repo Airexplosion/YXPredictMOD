@@ -265,7 +265,7 @@ namespace YxPrediction
             {
                 string members = "成员：";
                 RoomState room = _mod.Online.State;
-                for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
+                for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i];
                 _message.text = _feedback ?? binding ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules>=2?"只猜冠军 · 第二25% / 第三10% · 同出取最高比例 · 第10回合封盘 · "+members:"旧资金池房间 · "+members));
             }
             else _message.text = _feedback ?? binding ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
