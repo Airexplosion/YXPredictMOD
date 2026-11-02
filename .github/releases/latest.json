@@ -1,9 +1,9 @@
 {
-  "version": "0.8.0",
-  "tag": "v0.8.0",
-  "title": "v0.8.0 - 网页观战下注与旧新历史合并 Elo",
-  "artifact": "dist/天机赌马-0.8.0.zip",
-  "assetName": "tianji-duma-0.8.0.zip",
-  "sha256": "c8ed2fb9f3441daac3474e027af7ef707a8ff08b77dfb1381c45d2e21a6e4785",
-  "notes": ".github/releases/v0.8.0.md"
+  "version": "0.8.1",
+  "tag": "v0.8.1",
+  "title": "v0.8.1 - 观战总览一键网页绑定",
+  "artifact": "dist/天机赌马-0.8.1.zip",
+  "assetName": "tianji-duma-0.8.1.zip",
+  "sha256": "aec574b8dd7350e5f7e7c74b66fd8be19ee10c8ee9d6a4a34c7b142a8da24e65",
+  "notes": ".github/releases/v0.8.1.md"
 }

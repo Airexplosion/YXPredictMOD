@@ -4,13 +4,13 @@
     {
       "id": "local.yxp.predictionpoints",
       "name": "天机赌马",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "author": "@TeraE / @Airexplosion",
       "description": "仙府观战预测，只猜冠军；第10回合起封盘，退出角色禁投。第一/二/三名返还锁定额度的100/25/10%。网站同一时间只直播一场公开对局，其余房间在游戏内使用。网页可持续查看公开牌桌、对战胜负和命元走势，YG登录后共用马币账户下注、改名及每日签到领取200马币。\n\n新局隐藏具体评级分数，每局随机交换2–3匹真人马的档位与基础评级，真人昵称不变。\n\nElo使用同服务器elo.kaigua.vip的八人批量API。默认保留人物头像，悬停显示马图，Ctrl+Shift+H切换。\n\n网页：https://duma.kaigua.vip/",
       "sdkVersion": ">=1.0.0 <2.0.0",
       "repo": "https://github.com/Airexplosion/YXPredictMOD",
-      "download": "https://github.com/Airexplosion/YXPredictMOD/releases/download/v0.8.0/tianji-duma-0.8.0.zip",
-      "sha256": "c8ed2fb9f3441daac3474e027af7ef707a8ff08b77dfb1381c45d2e21a6e4785"
+      "download": "https://github.com/Airexplosion/YXPredictMOD/releases/download/v0.8.1/tianji-duma-0.8.1.zip",
+      "sha256": "aec574b8dd7350e5f7e7c74b66fd8be19ee10c8ee9d6a4a34c7b142a8da24e65"
     }
   ]
 }
