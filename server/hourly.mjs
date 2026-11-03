@@ -6,7 +6,7 @@ export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
 export function hourlySlot(now){
   const t=new Date(now+8*3600000),hour=t.getUTCHours();
-  if(hour>=2&&hour<=6)return null;
+  if(hour>=2&&hour<=6||t.getUTCMinutes()>=10)return null;
   return t.toISOString().slice(0,13).replace(/[-T:]/g,'');
 }
 export function hourlySearch(now){
@@ -48,7 +48,7 @@ export class HourlyEvents{
   status(){
     const active=Object.values(this.rooms.state.rooms).find(r=>r.eventSlot&&!r.settled);
     const search=hourlySearch(this.rooms.now()),slot=search?.slot??null;
-    return {slot,bonusBps:EVENT_BONUS_BPS,searchPhase:search?.searchPhase??null,minimumRankScore:search?.minimumRankScore??6000,minimumRankScoreExclusive:search?.minimumRankScoreExclusive??false,maximumStartRound:2,searchMinutes:60,priorityMinutes:5,reports:this.pendingReports(),
+    return {slot,bonusBps:EVENT_BONUS_BPS,searchPhase:search?.searchPhase??null,minimumRankScore:search?.minimumRankScore??6000,minimumRankScoreExclusive:search?.minimumRankScoreExclusive??false,maximumStartRound:2,searchMinutes:10,priorityMinutes:5,reports:this.pendingReports(),
       active:active?{code:active.code,gameId:active.gameId,gameRoomId:active.gameRoomId,info:this.data().slots[active.eventSlot]?.info??null,model:this.data().slots[active.eventSlot]?.model??null}:null,
       opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active};
   }

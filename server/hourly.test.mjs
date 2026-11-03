@@ -22,13 +22,14 @@ function fixture(save){
 test('Beijing hourly window excludes 02 through 06 inclusive, keeps searching in fallback and has stable day keys',()=>{
  for(let hour=0;hour<24;hour++){const at=Date.UTC(2026,10,1,hour-8);assert.equal(!!hourlySlot(at),!(hour>=2&&hour<=6));}
  assert.equal(hourlySlot(Date.UTC(2026,10,1,0,4,59)),'2026110108');assert.equal(hourlySlot(Date.UTC(2026,10,1,0,5)),'2026110108');
+ assert.equal(hourlySlot(Date.UTC(2026,10,1,0,10)),null);
  assert.equal(hourlySlot(Date.UTC(2026,10,1,16)),'2026110200');
 });
-test('exactly five minutes switches from 6000 inclusive to strictly above 5000 until the next hour',()=>{
+test('five minutes switches from 6000 inclusive to strictly above 5000 and exactly ten minutes stops opening',()=>{
  const start=Date.UTC(2026,10,1,0),priority=hourlySearch(start+299999),fallback=hourlySearch(start+300000);
  assert.deepEqual(priority,{slot:'2026110108',searchPhase:'priority',minimumRankScore:6000,minimumRankScoreExclusive:false});
  assert.deepEqual(fallback,{slot:'2026110108',searchPhase:'fallback',minimumRankScore:5000,minimumRankScoreExclusive:true});
- assert.deepEqual(hourlySearch(start+3599999),fallback);assert.equal(hourlySearch(start+3600000).minimumRankScore,6000);
+ assert.deepEqual(hourlySearch(start+599999),fallback);assert.equal(hourlySearch(start+600000),null);assert.equal(hourlySearch(start+3599999),null);assert.equal(hourlySearch(start+3600000).minimumRankScore,6000);
  for(let hour=2;hour<=6;hour++)for(const minute of [0,5,59])assert.equal(hourlySearch(Date.UTC(2026,10,1,hour-8,minute)),null);
  const x=fixture();
  for(const score of [4999,5000,5001,5999,6000,7000]){
@@ -40,7 +41,7 @@ test('exactly five minutes switches from 6000 inclusive to strictly above 5000 u
 test('fallback opens one fresh 5001-point game per hour; restart and midnight cannot duplicate or weaken exclusions',()=>{
  const x=fixture(),start=x.now();x.info.avgRankScore=5001;
  assert.throws(x.open,/前5分钟/);assert.equal(Object.keys(x.rooms.state.rooms).length,0);
- x.time(start+300000);const status=x.hourly.status();assert.equal(status.available,true);assert.equal(status.searchPhase,'fallback');assert.equal(status.searchMinutes,60);assert.equal(status.priorityMinutes,5);assert.equal(status.minimumRankScoreExclusive,true);
+ x.time(start+300000);const status=x.hourly.status();assert.equal(status.available,true);assert.equal(status.searchPhase,'fallback');assert.equal(status.searchMinutes,10);assert.equal(status.priorityMinutes,5);assert.equal(status.minimumRankScoreExclusive,true);
  for(const patch of [{avgRankScore:5000},{round:3},{isPrivate:true},{playerCount:7}])assert.throws(()=>x.hourly.open({...x.info,...patch},x.snapshot));
  const room=x.open();assert.equal(room.bonusBps,11500);assert.equal(x.open().code,room.code);
  const restored=new Rooms(structuredClone(x.rooms.state),undefined,x.now),h=new HourlyEvents(restored,new PredictionWeb(restored,{now:x.now}));
@@ -48,8 +49,21 @@ test('fallback opens one fresh 5001-point game per hour; restart and midnight ca
  assert.throws(()=>h.open({...x.info,roomId:'another'}, {...x.snapshot,id:'another',gameRoomId:'another'}),/开过一场/);
  x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];h.sync(room.code,x.snapshot);
  assert.equal(h.status().opened,room.code);
- x.time(Date.UTC(2026,10,1,17,59));assert.equal(h.status().available,true);assert.equal(h.status().minimumRankScoreExclusive,true);
+ x.time(Date.UTC(2026,10,1,17,9));assert.equal(h.status().available,true);assert.equal(h.status().minimumRankScoreExclusive,true);
+ x.time(Date.UTC(2026,10,1,17,10));assert.equal(h.status().available,false);assert.equal(h.status().searchPhase,null);
  x.time(Date.UTC(2026,10,1,18,5));assert.equal(h.status().available,false);assert.equal(h.status().searchPhase,null);assert.throws(()=>h.open(x.info,{...x.snapshot,id:'blocked',ended:false}),/时段/);
+});
+test('a candidate picked before minute ten cannot open after it, while accepted wagers keep watching and settle normally',()=>{
+ const x=fixture(),start=x.now();x.info.avgRankScore=5001;x.time(start+599999);assert.equal(x.hourly.status().available,true);
+ const before=structuredClone(x.rooms.state);x.time(start+600000);assert.throws(x.open,/时段/);assert.deepEqual(x.rooms.state,before);
+ const y=fixture(),origin=y.now();y.time(origin+300000);const room=y.open(),key=y.rooms.register('持仓者').token;
+ y.rooms.join(room.code,key,y.snapshot.id);y.rooms.trade(room.code,key,{kind:'buy',player:0,rank:1,stake:100,version:y.rooms.state.rooms[room.code].version,operation:'before-search-deadline'});
+ const claim=y.rooms.state.rooms[room.code].positions[key][0].claim;
+ y.time(origin+600000);assert.equal(y.hourly.status().available,false);assert.equal(y.hourly.status().active.code,room.code);assert.equal(y.hourly.status().searchPhase,null);
+ y.snapshot.round=2;y.hourly.sync(room.code,y.snapshot);assert.equal(y.rooms.state.rooms[room.code].positions[key][0].claim,claim);assert.equal(y.web.watch(y.rooms.state.rooms[room.code]).open,true);
+ y.snapshot.round=15;y.snapshot.ended=true;y.snapshot.ranks=[1,2,3,4,5,6,7,8];y.hourly.sync(room.code,y.snapshot);
+ assert.equal(y.rooms.view(room.code,key).balance,900+claim);assert.equal(y.hourly.status().active,null);
+ y.hourly.sync(room.code,y.snapshot);assert.equal(y.rooms.view(room.code,key).balance,900+claim);
 });
 test('selection uses actual public eight-player round 1/2 and native rank score, never an Elo default',()=>{
  const x=fixture();assert(eligibleLobby(x.info));
