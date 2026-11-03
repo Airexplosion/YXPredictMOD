@@ -244,7 +244,8 @@ test('real HTTP separates observer, bot and normal clients, and rejects expired 
   const ticket=proof({...user,expiresAt:x.now()+10000});assert.equal((await post('/bot/command',body,{authorization:'Bearer '+botKey,'x-prediction-identity':ticket})).status,200);
   assert.equal(x.web.me(user).playBalance,900);
   assert.equal((await post('/bot/events',{action:'claim'},{authorization:'Bearer '+observerKey})).status,401);
-  assert((await post('/bot/events',{action:'claim'},{authorization:'Bearer '+botKey})).data);
+  assert.equal((await post('/bot/events',{action:'claim'},{authorization:'Bearer '+botKey})).status,409);
+  assert((await post('/bot/events',{action:'claim',protocol:2},{authorization:'Bearer '+botKey})).data);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
 test('concurrent HTTP retries of a multi-bet QQ message create one atomic receipt and one debit',async()=>{

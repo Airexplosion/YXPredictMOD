@@ -3,6 +3,7 @@ import {RoomError} from './rooms.mjs';
 import {publicSummary} from './hourly.mjs';
 import {publicPresentation} from './public-build.mjs';
 import {syncQqWallet,transferQqCoins} from './qq-wallet.mjs';
+import {isRaceGroup,normalizeRaceCommand} from './race-policy.mjs';
 
 export function serviceAccess(header,key){
   if(typeof key!=='string'||key.length<32)throw new RoomError('此服务入口尚未启用',503);
@@ -10,49 +11,75 @@ export function serviceAccess(header,key){
 }
 const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status)};
 const help=[
+  '赛马注册 昵称：无需认证，钱包绑定QQ；已认证可直接发送“赛马注册”。首次开户1000马币，已有钱包不重复赠送。',
   '/马币：查询余额，未开户自动开通。',
   '/马币帮助：查看本指令表。',
   '/马币签到：每日领取200马币，与网站共用签到记录，北京时间0点刷新。',
   '/马币转账 @某人 200：转账200马币；收款人未开户自动开通。转账不计输赢，转空余额不触发破产救济。',
-  '/赌马：查看本场；/选手 1：查看指定选手，也支持完整昵称。',
+  '/赛马：查看本场；/选手 1：查看指定选手，也支持完整昵称。',
   '/下注 1 200 2 300：一条命令多笔下注，可重复选手。',
-  '/退半 1：减半；/清仓 1：清仓；/赌马 查单：核对最近扣款回执。',
-  '签到、转账和下注需有效认证；只猜冠军，第10回合起封盘，第二返25%、第三返10%。'
+  '/退半 1：减半；/清仓 1：清仓；/赛马 查单：核对最近扣款回执。',
+  '赛马改名 新昵称：修改上榜ID。指令均可省略“/”，也可先@机器人。',
+  '注册后无需认证即可下注、签到、转账。只猜冠军，第10回合起封盘；第一返锁定权益100%、第二25%、第三10%，返还包含本金。'
 ];
-const instructions='群内赌马：/马币帮助 查看全部指令 · /马币 · /马币签到 · /马币转账 @某人 200 · /赌马 · /下注 1 200 2 300 · /选手 1 · /退半 1 · /清仓 1 · /赌马 查单。';
-export function isPredictionCommand(text){return typeof text==='string'&&/^\/(赌马|下注|选手|马币帮助|马币签到|马币转账|马币|退半|清仓)(\s|$)/.test(text.trim());}
+const instructions='群内赛马：赛马注册 昵称 → 赛马 查看本场 → 选手 1 查看牌阵 → 下注 1 200；可用退半 1、清仓 1调仓。马币帮助 查看全部指令。';
+const registrationHelp=['先起一个上榜ID：发送“赛马注册 你的昵称”，例如“赛马注册 小白”。无需游戏认证，钱包绑定你的QQ。','也支持 /赛马注册 昵称，或先@机器人再发送。'];
+export function isPredictionCommand(text){return normalizeRaceCommand(text)!==null;}
+const ownsReceipt=(user,row)=>row.owner===user.subject||row.owner===user.qqSubject||row.qqOwner&&row.qqOwner===user.qqSubject;
 function saveReceipt(web,user,operation,requestDigest,reply,code=null){
   const receipts=web.rooms.state.qqReceipts??={};
   for(const [id,r]of Object.entries(receipts))if(r.at<web.rooms.now()-90*86400000)delete receipts[id];
   ensure(Object.keys(receipts).length<100000,'群交易记录已达容量，请联系维护者',503);
-  receipts[operation]={code,at:web.rooms.now(),owner:user.subject,acknowledged:false,requestDigest,result:reply};
+  receipts[operation]={code,at:web.rooms.now(),owner:user.subject,qqOwner:user.qqSubject??null,acknowledged:false,requestDigest,result:reply};
 }
 
 export function qqCommand(web,hourly,user,body){
-  ensure(user.groupId==='599092307'&&(user.scope==='qq-prediction'||user.scope==='qq-wallet'&&typeof body.text==='string'&&['/马币','/马币帮助'].includes(body.text.trim())),'未认证账号只能开通和查询马币、查看帮助；签到、转账和下注请先完成有效认证',403);
+  body={...body,text:normalizeRaceCommand(body.text)};
+  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助'].includes(body.text)),'请从赛马群发起命令；旧钱包凭据只能查询，参与赛马请重新注册，无需游戏认证',403);
   if(body.action==='ack'){
-    ensure(user.scope==='qq-prediction','未认证账号只能开通和查询马币',403);
-    const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt?.owner===user.subject,'操作回执不属于当前账号',403);
+    ensure(['qq-prediction','qq-racing'].includes(user.scope),'旧钱包凭据只能查询',403);
+    const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt&&ownsReceipt(user,receipt),'操作回执不属于当前账号',403);
     return web.rooms.commit(()=>{receipt.acknowledged=true;return {acknowledged:true};});
   }
-  ensure(isPredictionCommand(body.text),'无法识别赌马命令');
+  ensure(isPredictionCommand(body.text),'无法识别赛马命令');
   const [command,...args]=body.text.trim().split(/\s+/);
-  if(command==='/马币帮助'||command==='/赌马'&&args[0]==='帮助')return {lines:help,forward:false};
-  const unconfirmed=Object.entries(web.rooms.state.qqReceipts??{}).find(([,r])=>r.owner===user.subject&&!r.acknowledged);
-  if(command==='/赌马'&&args[0]==='查单'){
-    const own=Object.entries(web.rooms.state.qqReceipts??{}).filter(([,r])=>r.owner===user.subject).sort((a,b)=>b[1].at-a[1].at)[0];
+  if(command==='/马币帮助'||command==='/赛马'&&args[0]==='帮助')return {lines:help,forward:false};
+  const registered=user.scope==='qq-prediction'||!!web.rooms.state.qqRegistrations?.[user.qqSubject];
+  if(command==='/赛马注册'){
+    ensure(/^[a-f0-9]{64}$/.test(user.qqSubject??''),'注册身份暂不可用，请重新发送',403);
+    const previous=web.rooms.state.qqRegistrations?.[user.qqSubject],bound=user.boundAccount===true||user.scope==='qq-prediction',given=args.join(' ').trim();
+    if(!previous&&!bound&&!given)return {lines:registrationHelp,forward:false};
+    const name=given||previous?.name||user.name;
+    ensure(typeof name==='string'&&name.length>=1&&name.length<=24&&!/[\x00-\x1f\x7f]/.test(name),'上榜ID需为1至24字，不能包含控制字符');
+    return web.rooms.commit(()=>{
+      const opened=syncQqWallet(web,user),owner=web.rooms.state.qqBindings?.[user.qqSubject]??user.subject;
+      web.rooms.state.profiles??={};const profile=web.rooms.state.profiles[owner]??={};
+      if(!previous||given){profile.name=name;profile.renamedAt=web.now();}
+      (web.rooms.state.qqRegistrations??={})[user.qqSubject]={at:previous?.at??web.now(),name:profile.name};
+      const me=web.me({...user,subject:owner});
+      return {lines:[`${previous?'你已注册赛马':'赛马注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可下注，第10回合起封盘。买入时锁定返还权益，最终第一返100%、第二25%、第三10%，返还包含本金。','退半/清仓按当前估值回收并扣3%；马币 查看余额，马币签到 每天领200，马币转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算持仓会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
+    });
+  }
+  if(command==='/赛马改名'){
+    ensure(registered,'请先发送“赛马注册 昵称”');
+    return web.rooms.commit(()=>{syncQqWallet(web,user);const identity={...user,subject:web.rooms.state.qqBindings?.[user.qqSubject]??user.subject},me=web.rename(identity,args.join(' '));if(web.rooms.state.qqRegistrations?.[user.qqSubject])web.rooms.state.qqRegistrations[user.qqSubject].name=me.name;return {lines:['上榜ID已修改为：'+me.name],forward:false};});
+  }
+  const unconfirmed=Object.entries(web.rooms.state.qqReceipts??{}).find(([,r])=>ownsReceipt(user,r)&&!r.acknowledged);
+  if(command==='/赛马'&&args[0]==='查单'){
+    const own=Object.entries(web.rooms.state.qqReceipts??{}).filter(([,r])=>ownsReceipt(user,r)).sort((a,b)=>b[1].at-a[1].at)[0];
     return own?{...own[1].result,receiptId:own[0]}:{lines:['暂无已确认的群内扣款记录。'],forward:false};
   }
   let operation,requestDigest,recipient;
   if(command==='/马币转账'){
     recipient=web.identity(body.recipientTicket);
-    ensure(recipient.groupId==='599092307'&&['qq-wallet','qq-prediction'].includes(recipient.scope)&&/^[a-f0-9]{64}$/.test(recipient.qqSubject??''),'收款人身份无效',403);
+    ensure(recipient.groupId===user.groupId&&isRaceGroup(recipient.groupId)&&['qq-wallet','qq-prediction','qq-racing'].includes(recipient.scope)&&/^[a-f0-9]{64}$/.test(recipient.qqSubject??''),'收款人身份无效',403);
   }
+  if(['/下注','/退半','/清仓','/马币签到','/马币转账'].includes(command))ensure(registered,'请先发送“赛马注册 昵称”，无需游戏认证。');
   if(['/下注','/退半','/清仓','/马币转账'].includes(command)){
     ensure(typeof body.messageId==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(body.messageId),'群消息标识无效');
-    operation='qq-'+createHash('sha256').update(user.subject+':'+user.groupId+':'+body.messageId).digest('hex');
+    operation='qq-'+createHash('sha256').update((user.scope==='qq-racing'?user.qqSubject:user.subject)+':'+user.groupId+':'+body.messageId).digest('hex');
     requestDigest=createHash('sha256').update(recipient?JSON.stringify([body.text.trim(),recipient.qqSubject]):body.text.trim()).digest('hex');
-    const receipt=web.rooms.state.qqReceipts?.[operation];
+    const legacy='qq-'+createHash('sha256').update(user.subject+':'+user.groupId+':'+body.messageId).digest('hex'),receipt=web.rooms.state.qqReceipts?.[operation]??web.rooms.state.qqReceipts?.[legacy];
     if(receipt){ensure(receipt.requestDigest===requestDigest,'重复消息的内容不一致',409);return receipt.result;}
     if(unconfirmed)return {...unconfirmed[1].result,receiptId:unconfirmed[0],lines:[...unconfirmed[1].result.lines,'这是上一笔的回执；本条新命令尚未执行。核对后可重新发送新命令。']};
     ensure(Number.isSafeInteger(body.messageAt)&&Math.abs(web.rooms.now()-body.messageAt)<=300000,'消息已过期，请重新发送命令',409);
@@ -75,12 +102,13 @@ export function qqCommand(web,hourly,user,body){
   }
   if(command==='/马币'){
     ensure(args.length===0,'用法：/马币');
+    if(user.scope==='qq-racing'&&!registered)return {lines:registrationHelp,forward:false};
     const result=syncQqWallet(web,user),me=result.me;
     return {lines:[`${result.created?'已自动开通马币账户。':result.linked||result.synced?'已自动同步游戏马币账户。':''}${me.name}：可用${me.playBalance}马币${me.accounts>1&&me.balance!==me.playBalance?`，名下合计${me.balance}马币`:''}，累计净收益${me.net}马币。${user.scope==='qq-wallet'?(user.boundAccount?'认证已到期，续期后可参与下注。':'尚未绑定游戏账号，暂不能下注；完成认证后再次发送 /马币 即可自动同步。'):''}`],forward:false};
   }
-  const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点赌马专场',404);
+  const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点赛马专场',404);
   const view=web.watch(room);
-  if(command==='/赌马')return {lines:[instructions,...publicSummary(view)],presentation:publicPresentation(view),forward:true};
+  if(command==='/赛马')return {lines:[instructions,...publicSummary(view)],presentation:publicPresentation(view),forward:true};
   ensure(args.length>=1,'请提供选手编号1～8或完整昵称');
   const resolve=arg=>{
     if(/^[1-8]$/.test(arg))return Number(arg)-1;
