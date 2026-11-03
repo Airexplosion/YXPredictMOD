@@ -3,7 +3,7 @@ export const TRANSITION_SLOT=process.env.RACE_TRANSITION_SLOT??'2026110314';
 export const isRaceGroup=group=>group===RACE_GROUP||group===LEGACY_GROUP;
 export function normalizeRaceCommand(value){
  if(typeof value!=='string')return null;
- const input=value.trim(),match=/^\/?(赛马注册|赛马改名|赛马|马币帮助|马币签到|马币转账|马币|下注|选手|退半|清仓|赌马注册|赌马)(?=\s|$)/.exec(input);
+ const input=value.trim(),match=/^\/?(赛马注册|赛马绑定|赛马改名|赛马|马币帮助|马币签到|马币转账|马币|下注|选手|退半|清仓|赌马注册|赌马)(?=\s|$)/.exec(input);
  if(!match)return null;
  const name=match[1].replace('赌马','赛马'),args=input.slice(match[0].length).trim();
  return '/'+name+(args?' '+args:'');

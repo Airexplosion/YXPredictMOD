@@ -1,6 +1,7 @@
 import {createHash,createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
 import {settlementReport} from './settlement.mjs';
+import {ownerOf} from './identity-links.mjs';
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const clonePublic=value=>JSON.parse(JSON.stringify(value));
 const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status);};
@@ -24,9 +25,12 @@ export class PredictionWeb {
     let code;do{code='TP-'+randomBytes(5).toString('hex').toUpperCase();}while(this.codes.has(digest(code)));
     this.codes.set(digest(code),{key,expires:this.now()+300000});return {code,expiresAt:this.now()+300000};
   }
-  profile(user) { return this.rooms.state.profiles?.[user.subject]??{name:user.name||'观众'}; }
-  owned(user) {return Object.entries(this.rooms.state.accounts).filter(([,a])=>a.webOwner===user.subject);}
+  codeHash(code){ensure(typeof code==='string'&&/^TP-[A-F0-9]{10}$/.test(code.trim().toUpperCase()),'请输入MOD中显示的绑定码');return digest(code.trim().toUpperCase());}
+  canonical(user){return {...user,subject:ownerOf(this.rooms.state,user.subject)};}
+  profile(user) { return this.rooms.state.profiles?.[ownerOf(this.rooms.state,user.subject)]??{name:user.name||'观众'}; }
+  owned(user) {const owner=ownerOf(this.rooms.state,user.subject);return Object.entries(this.rooms.state.accounts).filter(([,a])=>a.webOwner&&ownerOf(this.rooms.state,a.webOwner)===owner);}
   openAccount(user) {
+    user=this.canonical(user);
     if(this.owned(user).length)return this.me(user);
     ensure(Object.keys(this.rooms.state.accounts).length<10000,'服务器账户已满');
     this.rooms.commit(()=>{
@@ -62,21 +66,39 @@ export class PredictionWeb {
     return {page:0,total:rooms.length,rooms:rooms.map(r=>({code:r.code,hostName:this.rooms.observerName(r,r.host),round:r.round,members:r.members.length,open:this.rooms.isOpen(r),names:r.players.map(p=>p.name)}))};
   }
   play(user,body) {
+    user=this.canonical(user);
     if(body.action==='openAccount')return {me:this.openAccount(user)};
-    const key=this.playKey(user);
+    if(body.action==='selectAccount'){
+      const found=this.owned(user).find(([key])=>digest(key).slice(0,24)===body.wallet);
+      ensure(found&&!found[1].walletRedirect,'钱包不存在',404);
+      this.rooms.commit(()=>{this.rooms.state.profiles??={};this.rooms.state.profiles[user.subject]={...this.profile(user),playAccount:found[0]};});return {me:this.me(user)};
+    }
+    let key=this.playKey(user);
     ensure(typeof body.code==='string'&&/^[0-9]{6}$/.test(body.code),'请输入六位房间号');
     const r=this.rooms.state.rooms[body.code];ensure(r,'房间不存在',404);
     ensure(this.rooms.websiteRoom()?.code===r.code||(body.action==='view'&&(r.ended||r.settled)&&r.members.includes(key)),'此房间仅在游戏内开放，网站只直播一场公开对局',403);
+    const orderId=body.action==='trade'?body.operation:null,requestDigest=orderId?digest(JSON.stringify([body.code,body.kind,body.player,body.rank,body.stake,body.version])):null;
+    if(orderId){
+      ensure(typeof orderId==='string'&&/^[a-zA-Z0-9-]{1,128}$/.test(orderId),'操作标识无效');
+      const old=this.rooms.state.webOrders?.[orderId];
+      if(old){ensure(ownerOf(this.rooms.state,old.owner)===user.subject&&old.requestDigest===requestDigest,'操作标识已被使用',409);key=old.key;}
+      else {const legacy=this.owned(user).find(([k])=>r.receipts[k+':'+orderId]);if(legacy)key=legacy[0];}
+    }
     if(body.action==='join') {
       ensure(!r.ended&&!r.settled,'本局已结束',409);
       ensure(this.rooms.now()-(this.rooms.syncTimes.get(r.code)??-Infinity)<=15000,this.rooms.availability(r).message,409);
       this.rooms.join(r.code,key,r.gameId);
-    } else if(body.action==='trade')this.rooms.trade(r.code,key,body);
+    } else if(body.action==='trade')this.rooms.commit(()=>{
+      this.rooms.trade(r.code,key,body);
+      const receipts=this.rooms.state.webOrders??={};
+      if(!receipts[orderId]){ensure(Object.keys(receipts).length<500000,'网页交易记录已满，请联系维护者',503);receipts[orderId]={key,owner:user.subject,requestDigest,at:this.now()};}
+    });
     else ensure(body.action==='view','操作无效');
     const view=this.rooms.view(r.code,key);
     return {room:this.watch(r),wallet:{name:this.rooms.displayName(key),balance:view.balance,positions:clonePublic(view.positions),payout:view.payout,forfeited:view.forfeited??false},me:this.me(user)};
   }
   bind(user,code) {
+    user=this.canonical(user);
     ensure(typeof code==='string'&&/^TP-[A-F0-9]{10}$/.test(code.trim().toUpperCase()),'请输入MOD中显示的绑定码');
     const hash=digest(code.trim().toUpperCase()),row=this.codes.get(hash);
     ensure(row&&row.expires>this.now(),'绑定码已过期或已使用');
@@ -86,6 +108,7 @@ export class PredictionWeb {
     this.codes.delete(hash);return this.me(user);
   }
   rename(user,name) {
+    user=this.canonical(user);
     ensure(typeof name==='string'&&name.trim().length>=1&&name.trim().length<=24&&!/[\x00-\x1f\x7f]/.test(name),'名字需为1至24字，不能包含控制字符');
     const profile=this.profile(user);ensure(!profile.renamedAt||this.now()-profile.renamedAt>=30000,'请等待30秒再改名',429);
     this.rooms.commit(()=>{this.rooms.state.profiles??={};this.rooms.state.profiles[user.subject]={...this.profile(user),name:name.trim(),renamedAt:this.now()};});
@@ -97,6 +120,7 @@ export class PredictionWeb {
     return {day,amount:200,claimed:!!profile.lastCheckInDay&&profile.lastCheckInDay>=day,nextReset,eligible:this.owned(user).length>0};
   }
   checkIn(user) {
+    user=this.canonical(user);
     const status=this.checkInStatus(user),owned=this.owned(user);
     ensure(owned.length>0,'请先绑定MOD马币账户，再领取签到奖励');
     if(status.claimed)return {...this.me(user),checkInReceipt:{duplicate:true,amount:0}};
@@ -130,9 +154,10 @@ export class PredictionWeb {
     return {id:digest(owner).slice(0,16),name:this.rooms.state.profiles?.[owner]?.name??accounts[0]?.[1].name??'观众',balance,net,games,wins,accounts:accounts.length};
   }
   me(user) {
+    user=this.canonical(user);
     const accounts=this.owned(user),row=this.aggregate(user.subject,accounts,this.totals());
     const play=accounts.length?this.rooms.state.accounts[this.playKey(user)]:null;
-    return {...row,name:this.profile(user).name,linked:accounts.length>0,playBalance:play?.balance??null,checkIn:this.checkInStatus(user)};
+    return {...row,name:this.profile(user).name,linked:accounts.length>0,playBalance:play?.balance??null,checkIn:this.checkInStatus(user),links:this.browserAuth?.links(user),wallets:accounts.filter(([,a])=>!a.walletRedirect).map(([key,a])=>({id:digest(key).slice(0,24),name:a.uid?'游戏钱包':a.qqCreated?'QQ钱包':'网页钱包',balance:a.balance,pending:this.rooms.hasPendingBets(key),selected:key===this.playKey(user)}))};
   }
   leaderboard(page=0) {
     ensure(Number.isSafeInteger(page)&&page>=0&&page<=500,'页码无效');
