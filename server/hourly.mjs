@@ -2,6 +2,7 @@ import {RoomError} from './rooms.mjs';
 import {randomBytes} from 'node:crypto';
 import {buildLines,publicPresentation,publicReportReady,publicBuild} from './public-build.mjs';
 import {raceNoticeTargets} from './race-policy.mjs';
+import {shuffleReveal} from './shuffle-reveal.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -123,7 +124,16 @@ export class HourlyEvents{
         r.observerWithdrawals??=Array(8).fill(null);r.observerWithdrawals[index]=completed;
         for(const [round,participants]of Object.entries(slot.participants))if(Number(round)>completed)participants[index]=false;
       }
+      const wasSettled=r.settled;
       this.rooms.sync(code,data.hostToken,snapshot);
+      if(!wasSettled&&!slot.shuffleAnnounced){
+        const reveal=shuffleReveal(r);
+        if(reveal){
+          data.outbox.push({id:`${r.eventSlot}:${r.code}:shuffle:0`,kind:'shuffle',code:r.code,round:reveal.round,
+            lines:['本局封盘 · 马名互换揭晓'],presentation:reveal,createdAt:this.rooms.now(),deliveredAt:null});
+          slot.shuffleAnnounced=true;
+        }
+      }
       for(const frame of r.frames??[])if(frame.round<=r.closedThrough&&(frame.round<snapshot.round||snapshot.roundComplete!==false)){
         this.enqueue('round',r,frame.round);
       }
@@ -176,10 +186,16 @@ export class HourlyEvents{
     if(data.outbox.length>4000)data.outbox=data.outbox.filter(e=>!e.deliveredAt||e.deliveredAt>this.rooms.now()-7*86400000);
   }
   claim(){
-    for(const row of this.data().outbox){
+    const queue=this.data().outbox;
+    // A missed battle report must not delay the one-time reveal at permanent close.
+    const priority=queue.filter(row=>row.kind==='shuffle'&&!row.deliveredAt);
+    for(const row of [...priority,...queue]){
       if(row.deliveredAt||row.leaseUntil>this.rooms.now())continue;
-      const r=this.rooms.state.rooms[row.code];if(!r||!this.ready(r,row.kind,row.round))continue;
-      return this.rooms.commit(()=>{row.presentation=this.presentation(r,row.kind,row.round);row.deliveryTargets??=raceNoticeTargets(r.eventSlot,row.kind);row.deliveredGroups??={};row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone({...row,targets:row.deliveryTargets.filter(t=>!row.deliveredGroups[t.groupId])});});
+      const r=this.rooms.state.rooms[row.code];if(!r)continue;
+      if(row.kind==='shuffle'){
+        if(!(r.tradingClosed||r.ended||r.settled))continue;
+      }else if(!this.ready(r,row.kind,row.round))continue;
+      return this.rooms.commit(()=>{if(row.kind!=='shuffle')row.presentation=this.presentation(r,row.kind,row.round);row.deliveryTargets??=raceNoticeTargets(r.eventSlot,row.kind);row.deliveredGroups??={};row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone({...row,targets:row.deliveryTargets.filter(t=>!row.deliveredGroups[t.groupId])});});
     }
     return null;
   }
