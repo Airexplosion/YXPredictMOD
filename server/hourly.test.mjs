@@ -8,6 +8,8 @@ import {qqCommand,serviceAccess} from './qq.mjs';
 import http from 'node:http';
 import {createHmac,createHash} from 'node:crypto';
 import {createHandler} from './server.mjs';
+import {readFileSync} from 'node:fs';
+import {shuffleReveal} from './shuffle-reveal.mjs';
 
 const user={subject:'a'.repeat(64),qqSubject:'c'.repeat(64),bindingDigest:createHash('sha256').update('[]').digest('hex'),gameUidRef:null,name:'认证观众',scope:'qq-prediction',groupId:'599092307'};
 function fixture(save){
@@ -19,6 +21,32 @@ function fixture(save){
  snapshot.builds=Array.from({length:8},(_,i)=>({characterId:1000001+i,characterName:'角色'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:1,realmName:'炼气',talents:[{id:10001,name:'凝气'}],baijia:[],fates:[],resonance:null,selectionRound:0,selectionsKnown:false,cards:null,cardNames:null}));
  return {rooms,web,hourly,info,snapshot,now:()=>now,time:t=>now=t,open:()=>hourly.open(info,snapshot)};
 }
+test('closed horse reveal matches the actual donor for every native model fixture, including ties and AI',()=>{
+ const fixtures=JSON.parse(readFileSync(new URL('./observer/fixtures/quotes.json',import.meta.url),'utf8'));
+ const counts=new Set();
+ for(const f of fixtures){
+  const room={eventSlot:'event',code:'123456',horseShuffle:true,tradingClosed:true,round:10,gameId:f.id,horseTitles:f.titles,players:f.players.map((p,i)=>({uid:p.uid,name:'选手'+i}))};
+  const reveal=shuffleReveal(room),expected=f.sources.flatMap((donor,i)=>donor===i?[]:[{fromSeat:donor+1,fromName:'选手'+donor,toSeat:i+1,toName:'选手'+i,title:f.titles[i]}]);
+  counts.add(expected.length);assert.deepEqual(reveal.shuffleTransfers,expected);assert(!JSON.stringify(reveal).includes(f.players[0].uid));
+ }
+ assert(counts.has(2)&&counts.has(3));
+});
+test('WHITE reveals only after permanent close, without battle assets, once across resync, restart and per-group retry',()=>{
+ const x=fixture();x.time(Date.UTC(2026,10,3,6));x.snapshot.horseShuffle=true;const {code}=x.open(),start=x.hourly.claim();
+ for(const target of start.targets)x.hourly.ack(start.id,start.lease,target.groupId);
+ x.snapshot.round=9;x.snapshot.open=false;x.snapshot.sourcePhase='battle';x.snapshot.builds=Array(8).fill(null);
+ x.hourly.sync(code,x.snapshot);assert.equal(x.hourly.claim(),null);assert(!JSON.stringify(x.web.watch(x.rooms.state.rooms[code])).includes('shuffleTransfers'));
+ x.snapshot.liveRound=10;x.hourly.sync(code,x.snapshot);x.hourly.sync(code,x.snapshot);
+ const notice=x.hourly.claim();assert.equal(notice.kind,'shuffle');assert.equal(notice.presentation.round,10);assert(notice.presentation.shuffleTransfers.length>=2);
+ assert.equal(notice.targets.length,2);x.hourly.ack(notice.id,notice.lease,notice.targets[0].groupId);
+ x.time(x.now()+61000);const rooms=new Rooms(structuredClone(x.rooms.state),undefined,x.now),h=new HourlyEvents(rooms,new PredictionWeb(rooms,{now:x.now}));
+ const retry=h.claim();assert.equal(retry.id,notice.id);assert.deepEqual(retry.targets,notice.targets.slice(1));
+ h.ack(retry.id,retry.lease,retry.targets[0].groupId);h.sync(code,x.snapshot);assert.equal(h.claim(),null);
+ assert.equal(h.data().outbox.filter(e=>e.kind==='shuffle').length,1);
+ const room=rooms.state.rooms[code];assert.equal(shuffleReveal({...room,tradingClosed:false,ended:false,settled:false}),null);
+ assert.equal(shuffleReveal({...room,horseShuffle:false}),null);
+ assert.deepEqual(shuffleReveal({...room,horseTitles:Array(8).fill('电子马·中等')}).shuffleTransfers,[]);
+});
 test('Beijing hourly window excludes 02 through 06 inclusive, keeps searching in fallback and has stable day keys',()=>{
  for(let hour=0;hour<24;hour++){const at=Date.UTC(2026,10,1,hour-8);assert.equal(!!hourlySlot(at),!(hour>=2&&hour<=6));}
  assert.equal(hourlySlot(Date.UTC(2026,10,1,0,4,59)),'2026110108');assert.equal(hourlySlot(Date.UTC(2026,10,1,0,5)),'2026110108');
