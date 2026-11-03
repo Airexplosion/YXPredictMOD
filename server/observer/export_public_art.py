@@ -37,6 +37,17 @@ def export_skip_icon(images,out):
     target=out/'baijia'/'skip.png';source.save(target)
     return target
 
+def export_card_levels(cards, directory):
+    # Combination art is built after individual sprites. The native rarity
+    # digits change the card level, while its illustration uses the base ID.
+    for key,card in cards.items():
+        identifier=int(key)
+        base=str(identifier-(identifier//10000%100)*10000)
+        if key==base or base not in cards or card['art']!=cards[base]['art']:continue
+        target=directory/(key+'.png')
+        source=directory/(base+'.png')
+        if not target.exists() and source.is_file():target.write_bytes(source.read_bytes())
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--game',required=True);ap.add_argument('--out',required=True);args=ap.parse_args()
     warnings.filterwarnings('ignore');import UnityPy
@@ -99,6 +110,7 @@ def main():
             if target.exists()or not left.exists()or not right.exists():continue
             image=Image.new('RGBA',(180,216));image.paste(Image.open(left).convert('RGBA').resize((180,216)).crop((0,0,90,216)),(0,0));image.paste(Image.open(right).convert('RGBA').resize((180,216)).crop((90,0,180,216)),(90,0));image.save(target);changed=True
         if not changed:break
+    export_card_levels(cards,out/'cards')
     for identifier,c in cards.items():
         target=out/'cards'/(identifier+'.png')
         if c['dream']and target.exists():Image.open(target).transpose(Image.Transpose.FLIP_LEFT_RIGHT).save(target)

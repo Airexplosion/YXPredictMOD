@@ -1,13 +1,29 @@
 import pathlib,sys,tempfile,unittest
 from unittest.mock import Mock
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from export_public_art import select_sprite_index,export_skip_icon
+from export_public_art import select_sprite_index,export_skip_icon,export_card_levels
 from test_projection import number,blob
 
 def config(*names):
     return b''.join(blob(2,number(1,21001+i)+blob(15,name.encode('utf8')))for i,name in enumerate(names))
 
 class PublicArtTests(unittest.TestCase):
+    def test_upgraded_combination_cards_reuse_the_completed_native_art(self):
+        with tempfile.TemporaryDirectory()as folder:
+            directory=pathlib.Path(folder)
+            cards={key:{'art':art} for key,art in [('422',422),('10422',422),('20422',422),('137',137),('10137',137),('1000422',999),('1010422',998),('10148',148)]}
+            (directory/'422.png').write_bytes(b'combined')
+            (directory/'137.png').write_bytes(b'other combination')
+            (directory/'20422.png').write_bytes(b'level-specific')
+            (directory/'1000422.png').write_bytes(b'different base')
+            export_card_levels(cards,directory)
+            export_card_levels(cards,directory)
+            self.assertEqual((directory/'10422.png').read_bytes(),b'combined')
+            self.assertEqual((directory/'10137.png').read_bytes(),b'other combination')
+            self.assertEqual((directory/'20422.png').read_bytes(),b'level-specific')
+            self.assertFalse((directory/'1010422.png').exists())
+            self.assertFalse((directory/'10148.png').exists())
+
     def test_common_skip_icon_is_exported_even_without_a_numbered_strategy_config_row(self):
         source=Mock()
         with tempfile.TemporaryDirectory()as folder:
