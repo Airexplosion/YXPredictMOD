@@ -45,7 +45,7 @@ export function createHandler(rooms, options = {}) {
       if (req.method === 'GET' && requestUrl.pathname === '/web/leaderboard') { res.end(JSON.stringify({ok:true,data:web.leaderboard(Number(requestUrl.searchParams.get('page')??0))}));return; }
       if(req.method==='GET'&&requestUrl.pathname==='/web/rooms'){res.end(JSON.stringify({ok:true,data:web.listRooms(Number(requestUrl.searchParams.get('page')??0))}));return;}
       if(req.method==='GET'&&requestUrl.pathname==='/web/room'){res.end(JSON.stringify({ok:true,data:web.watch(web.publicRoom(requestUrl.searchParams.get('code')))}));return;}
-      if (req.method === 'GET' && req.url === '/web/me') { const user=web.identity(req.headers['x-prediction-identity']);if(user.scope==='qq-wallet')throw new RoomError('请先完成游戏认证',403);res.end(JSON.stringify({ok:true,data:web.me(user)}));return; }
+      if (req.method === 'GET' && req.url === '/web/me') { const user=web.identity(req.headers['x-prediction-identity']);if(['qq-wallet','qq-racing'].includes(user.scope))throw new RoomError('请使用网页登录',403);res.end(JSON.stringify({ok:true,data:web.me(user)}));return; }
       if (req.method !== 'POST' || !['/v1/room','/web/play','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket','/ops/hourly','/bot/command','/bot/events','/bot/accounts'].includes(req.url)) throw new RoomError('接口不存在', 404);
       if((req.url.startsWith('/web/')||req.url.startsWith('/auth/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
       let size = 0, chunks = [];const bodyLimit=req.url==='/ops/hourly'?131072:32768;
@@ -61,12 +61,12 @@ export function createHandler(rooms, options = {}) {
         serviceAccess(req.headers.authorization,options.botKey??process.env.PREDICTION_BOT_KEY);
         let data;
         if(req.url==='/bot/accounts'){if(body.action!=='candidates')throw new RoomError('身份查询操作无效');data=linkCandidates(rooms);}
-        else if(req.url==='/bot/events'){if(body.action==='claim')data=hourly.claim();else if(body.action==='ack')data=hourly.ack(body.id,body.lease);else throw new RoomError('通知操作无效');}
+        else if(req.url==='/bot/events'){if(body.action==='claim'){if(body.protocol!==2)throw new RoomError('请更新赛马消息适配器',409);data=hourly.claim();}else if(body.action==='ack')data=hourly.ack(body.id,body.lease,body.groupId??null);else throw new RoomError('通知操作无效');}
         else data=qqCommand(web,hourly,web.identity(req.headers['x-prediction-identity']),body);
         res.end(JSON.stringify({ok:true,data}));return;
       }
       if(req.url.startsWith('/auth/')){await relayAuth(req,res,body);return;}
-      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']);if(user.scope==='qq-wallet')throw new RoomError('请先完成游戏认证',403);const data=req.url==='/web/play'?web.play(user,body):req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
+      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']);if(['qq-wallet','qq-racing'].includes(user.scope))throw new RoomError('请使用网页登录',403);const data=req.url==='/web/play'?web.play(user,body):req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
       const key = req.headers.authorization?.replace(/^Bearer /, '');
       if (body.action !== 'register' && body.identity !== undefined) rooms.identify(key, body.identity);
       let result;

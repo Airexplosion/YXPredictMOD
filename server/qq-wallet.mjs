@@ -1,5 +1,6 @@
 import {createHash,createHmac} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
+import {isRaceGroup} from './race-policy.mjs';
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
 const reference=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 export function linkCandidates(rooms){
@@ -8,7 +9,7 @@ export function linkCandidates(rooms){
 }
 export function syncQqWallet(web,user){
   const rooms=web.rooms,qq=user.qqSubject,licensed=user.scope==='qq-prediction',bound=licensed||user.boundAccount===true;
-  ensure(licensed||user.scope==='qq-wallet','QQ身份无效',403);
+  ensure(licensed||user.scope==='qq-wallet'||user.scope==='qq-racing','QQ身份无效',403);
   if(!reference(qq)){
     ensure(licensed&&web.owned(user).length,'自动开户服务正在更新，请稍后重试',503);
     return {me:web.me(user),created:false,linked:0,synced:0};
@@ -35,6 +36,7 @@ export function syncQqWallet(web,user){
     if(bound)for(const account of Object.values(state.accounts))if(account.webOwner===qq)account.webOwner=owner;
     state.profiles??={};
     let profile=state.profiles[owner]??={...sourceProfile,name:sourceProfile?.renamedAt?sourceProfile.name:user.name||sourceProfile?.name||'未绑定道友'};
+    if(sourceProfile?.renamedAt&&!profile.renamedAt){profile.name=sourceProfile.name;profile.renamedAt=sourceProfile.renamedAt;}
     if(sourceProfile?.lastCheckInDay&&(!profile.lastCheckInDay||sourceProfile.lastCheckInDay>profile.lastCheckInDay))profile.lastCheckInDay=sourceProfile.lastCheckInDay;
     let owned=web.owned(identity),created=false;
     if(!owned.length){
@@ -70,8 +72,8 @@ export function syncQqWallet(web,user){
 }
 
 export function transferQqCoins(web,sender,recipient,amount,operation){
-  ensure(sender.scope==='qq-prediction','请先完成有效认证再转账',403);
-  ensure(recipient.groupId==='599092307'&&['qq-wallet','qq-prediction'].includes(recipient.scope)&&reference(recipient.qqSubject),'收款人身份无效',403);
+  ensure(['qq-prediction','qq-racing'].includes(sender.scope),'请先注册赛马再转账',403);
+  ensure(isRaceGroup(recipient.groupId)&&recipient.groupId===sender.groupId&&['qq-wallet','qq-prediction','qq-racing'].includes(recipient.scope)&&reference(recipient.qqSubject),'收款人身份无效',403);
   ensure(Number.isSafeInteger(amount)&&amount>=1&&amount<=1e12,'转账金额须为1～1000000000000的整数',400);
   ensure(sender.qqSubject!==recipient.qqSubject,'不能给自己转账',400);
   return web.rooms.commit(()=>{

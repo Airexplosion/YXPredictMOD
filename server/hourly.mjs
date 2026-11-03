@@ -1,6 +1,7 @@
 import {RoomError} from './rooms.mjs';
 import {randomBytes} from 'node:crypto';
 import {buildLines,publicPresentation,publicReportReady,publicBuild} from './public-build.mjs';
+import {raceNoticeTargets} from './race-policy.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -21,7 +22,7 @@ export function eligibleLobby(info,minimumRankScore=6000,exclusive=false){
 const rate=n=>(n/10000).toFixed(2)+'倍';
 export function publicSummary(view,{round=view.round,player=null,nativeRanks=null}={}){
   const frame=view.frames?.find(f=>f.round===round+1)??view.frames?.find(f=>f.round===round),players=player===null?view.players.map((_,i)=>i):[player];
-  const lines=[`整点赌马 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 已封盘':''}`];
+  const lines=[`整点赛马 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 已封盘':''}`];
   const reference=publicPresentation(view,{round,player});
   if(reference.closingWarning)lines.unshift(reference.closingWarning);
   if(reference.quoteRange)lines.push(`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?' · 已封盘，仅供参考':reference.bettingOpen?' · 修炼阶段可下注':' · 暂停下注，等待修炼'}；以下单确认为准。`);
@@ -168,7 +169,7 @@ export class HourlyEvents{
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
     const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
-      ?[`整点赌马开盘 #${r.code} · 倍率额外×1.15\n只猜冠军，第10回合封盘；第二25%、第三10%。\n/下注 选手编号 马币数 · /赌马 · /选手 编号\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
+      ?[`整点赛马开盘 #${r.code} · 倍率额外×1.15\n无需认证，先发 赛马注册 昵称 开通QQ钱包。只猜冠军，第10回合封盘；第二25%、第三10%。\n下注 选手编号 马币数 · 赛马 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
       :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
     if(old){old.lines=lines;old.presentation=this.presentation(r,kind,round);return;}
     data.outbox.push({id,kind,code:r.code,round,lines,presentation:this.presentation(r,kind,round),createdAt:this.rooms.now(),deliveredAt:null});
@@ -178,7 +179,7 @@ export class HourlyEvents{
     for(const row of this.data().outbox){
       if(row.deliveredAt||row.leaseUntil>this.rooms.now())continue;
       const r=this.rooms.state.rooms[row.code];if(!r||!this.ready(r,row.kind,row.round))continue;
-      return this.rooms.commit(()=>{row.presentation=this.presentation(r,row.kind,row.round);row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone(row);});
+      return this.rooms.commit(()=>{row.presentation=this.presentation(r,row.kind,row.round);row.deliveryTargets??=raceNoticeTargets(r.eventSlot,row.kind);row.deliveredGroups??={};row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone({...row,targets:row.deliveryTargets.filter(t=>!row.deliveredGroups[t.groupId])});});
     }
     return null;
   }
@@ -189,9 +190,16 @@ export class HourlyEvents{
     const slot=this.data().slots[r.eventSlot],expected=(slot?.participants?.[round]??r.players.map(()=>false)).map((active,i)=>active||(r.eliminationRounds?.[i]??0)>=round);
     return publicReportReady(publicPresentation(this.web.watch(r),{round,noticeType:kind}),expected);
   }
-  ack(id,lease){
+  ack(id,lease,groupId=null){
     const row=this.data().outbox.find(e=>e.id===id);ensure(row&&row.lease===lease,'通知租约已过期');
     if(row.deliveredAt)return {ok:true};
-    return this.rooms.commit(()=>{row.deliveredAt=this.rooms.now();return {ok:true};});
+    return this.rooms.commit(()=>{
+      const r=this.rooms.state.rooms[row.code],targets=row.deliveryTargets??raceNoticeTargets(r.eventSlot,row.kind);
+      if(groupId===null&&targets.length===1)groupId=targets[0].groupId;
+      ensure(targets.some(t=>t.groupId===groupId),'请按目标群分别确认转发');
+      row.deliveredGroups??={};row.deliveredGroups[groupId]??=this.rooms.now();
+      if(targets.every(t=>row.deliveredGroups[t.groupId]))row.deliveredAt=this.rooms.now();
+      return {ok:true,complete:!!row.deliveredAt};
+    });
   }
 }

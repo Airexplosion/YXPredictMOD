@@ -18,7 +18,7 @@ test('unbound QQ can open once through /马币 without a market, while wagering 
  assert.equal(Object.keys(x.rooms.state.accounts).length,1);assert.equal(x.rooms.state.accounts[key].balance,1000);
  for(const text of ['/下注 1 100','/退半 1','/清仓 1','/选手 1','/赌马'])assert.throws(()=>qqCommand(x.web,x.hourly,pre,{text}),/认证/);
  assert.throws(()=>qqCommand(x.web,x.hourly,pre,{action:'ack',receiptId:'fake'}));
- assert.throws(()=>qqCommand(x.web,x.hourly,{...pre,boundAccount:true},{text:'/马币',action:'ack',receiptId:'fake'}),/只能开通和查询/);
+ assert.throws(()=>qqCommand(x.web,x.hourly,{...pre,boundAccount:true},{text:'/马币',action:'ack',receiptId:'fake'}),/旧钱包凭据/);
 });
 test('later verified UID automatically binds the existing game wallet, transfers earlier QQ coins once and preserves accounting',()=>{
  const x=fixture();qqCommand(x.web,x.hourly,pre,{text:'/马币'});const earlier=x.web.playKey(pre),game=x.rooms.register('游戏昵称').token;
