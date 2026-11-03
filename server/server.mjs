@@ -8,10 +8,13 @@ import { createAuthRelay } from './auth.mjs';
 import {HourlyEvents} from './hourly.mjs';
 import {serviceAccess,qqCommand} from './qq.mjs';
 import {linkCandidates} from './qq-wallet.mjs';
+import {BrowserAuth} from './browser-auth.mjs';
 
 export function createHandler(rooms, options = {}) {
   const buckets = new Map();
   const web = new PredictionWeb(rooms, options);
+  const browserAuth=new BrowserAuth(web,options);
+  const webUser=req=>{const session=browserAuth.session(req);if(session)return session;const user=web.identity(req.headers['x-prediction-identity']);if(['qq-wallet','qq-racing'].includes(user.scope))throw new RoomError('请使用网页登录',403);return user;};
   const hourly=new HourlyEvents(rooms,web);
   const webOrigin = options.webOrigin ?? process.env.PREDICTION_WEB_ORIGIN ?? 'https://duma.kaigua.vip';
   const relayAuth = createAuthRelay({...options,webOrigin});
@@ -33,7 +36,7 @@ export function createHandler(rooms, options = {}) {
         res.setHeader('X-Content-Type-Options','nosniff');res.end(fs.readFileSync(new URL('./web/'+file,import.meta.url)));return;
       }
       const requestUrl = new URL(req.url,'http://localhost');
-      const art=/^\/art\/(cards|talents|baijia|fates|resonances|characters|frames)\/([a-zA-Z0-9_-]{1,40})\.png$/.exec(requestUrl.pathname);
+      const art=/^\/art\/(cards|talents|baijia|fates|resonances|characters|frames|ui)\/([a-zA-Z0-9_-]{1,80})\.png$/.exec(requestUrl.pathname);
       if(req.method==='GET'&&art){
         // Native skip choices use the NPC's small ID, not a strategy config row.
         // They all resolve to the game's common Skip icon.
@@ -45,13 +48,14 @@ export function createHandler(rooms, options = {}) {
       if (req.method === 'GET' && requestUrl.pathname === '/web/leaderboard') { res.end(JSON.stringify({ok:true,data:web.leaderboard(Number(requestUrl.searchParams.get('page')??0))}));return; }
       if(req.method==='GET'&&requestUrl.pathname==='/web/rooms'){res.end(JSON.stringify({ok:true,data:web.listRooms(Number(requestUrl.searchParams.get('page')??0))}));return;}
       if(req.method==='GET'&&requestUrl.pathname==='/web/room'){res.end(JSON.stringify({ok:true,data:web.watch(web.publicRoom(requestUrl.searchParams.get('code')))}));return;}
-      if (req.method === 'GET' && req.url === '/web/me') { const user=web.identity(req.headers['x-prediction-identity']);if(['qq-wallet','qq-racing'].includes(user.scope))throw new RoomError('请使用网页登录',403);res.end(JSON.stringify({ok:true,data:web.me(user)}));return; }
-      if (req.method !== 'POST' || !['/v1/room','/web/play','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket','/ops/hourly','/bot/command','/bot/events','/bot/accounts'].includes(req.url)) throw new RoomError('接口不存在', 404);
-      if((req.url.startsWith('/web/')||req.url.startsWith('/auth/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
+      if (req.method === 'GET' && req.url === '/web/me') {res.end(JSON.stringify({ok:true,data:web.me(webUser(req))}));return; }
+      if (req.method !== 'POST' || !['/v1/room','/web/play','/web/bind','/web/profile','/web/check-in','/auth/login','/auth/logout','/auth/ticket','/ops/hourly','/bot/command','/bot/events','/bot/accounts','/session/register','/session/login','/session/game','/session/qq/start','/session/qq/finish','/session/logout'].includes(req.url)) throw new RoomError('接口不存在', 404);
+      if((req.url.startsWith('/web/')||req.url.startsWith('/auth/')||req.url.startsWith('/session/'))&&(req.headers['x-prediction-client']!=='1'||(req.headers.origin&&req.headers.origin!==webOrigin)))throw new RoomError('请在本站页面操作',403);
       let size = 0, chunks = [];const bodyLimit=req.url==='/ops/hourly'?131072:32768;
       for await (const chunk of req) { size += chunk.length; if (size > bodyLimit) throw new RoomError('请求过大', 413); chunks.push(chunk); }
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RoomError('JSON无效'); }
       if (!body || typeof body !== 'object') throw new RoomError('请求无效');
+      if(req.url.startsWith('/session/')){const data=await browserAuth.handle(req,res,body,ip);res.end(JSON.stringify({ok:true,data}));return;}
       if(req.url==='/ops/hourly'){
         serviceAccess(req.headers.authorization,options.observerKey??process.env.PREDICTION_OBSERVER_KEY);
         const data=body.action==='status'?hourly.status():body.action==='open'?hourly.open(body.info,body.snapshot,body.model??null):body.action==='sync'?hourly.sync(body.code,body.snapshot):body.action==='report'?hourly.recoverReport(body.code,body.gameId,body.battles,body.builds??null):body.action==='source'?hourly.source(body.code,body.gameId,body.state,body.round):null;
@@ -66,7 +70,7 @@ export function createHandler(rooms, options = {}) {
         res.end(JSON.stringify({ok:true,data}));return;
       }
       if(req.url.startsWith('/auth/')){await relayAuth(req,res,body);return;}
-      if (req.url.startsWith('/web/')) { const user=web.identity(req.headers['x-prediction-identity']);if(['qq-wallet','qq-racing'].includes(user.scope))throw new RoomError('请使用网页登录',403);const data=req.url==='/web/play'?web.play(user,body):req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
+      if (req.url.startsWith('/web/')) { const user=webUser(req);const data=req.url==='/web/play'?web.play(user,body):req.url==='/web/bind'?web.bind(user,body.code):req.url==='/web/check-in'?web.checkIn(user):web.rename(user,body.name);res.end(JSON.stringify({ok:true,data}));return; }
       const key = req.headers.authorization?.replace(/^Bearer /, '');
       if (body.action !== 'register' && body.identity !== undefined) rooms.identify(key, body.identity);
       let result;

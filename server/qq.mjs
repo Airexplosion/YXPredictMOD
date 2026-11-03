@@ -20,6 +20,7 @@ const help=[
   '/下注 1 200 2 300：一条命令多笔下注，可重复选手。',
   '/退半 1：减半；/清仓 1：清仓；/赛马 查单：核对最近扣款回执。',
   '赛马改名 新昵称：修改上榜ID。指令均可省略“/”，也可先@机器人。',
+  '赛马绑定 SM-…：确认赛马网页上的QQ登录或绑定请求。只复制自己网页上的指令。',
   '注册后无需认证即可下注、签到、转账。只猜冠军，第10回合起封盘；第一返锁定权益100%、第二25%、第三10%，返还包含本金。'
 ];
 const instructions='群内赛马：赛马注册 昵称 → 赛马 查看本场 → 选手 1 查看牌阵 → 下注 1 200；可用退半 1、清仓 1调仓。马币帮助 查看全部指令。';
@@ -43,6 +44,10 @@ export function qqCommand(web,hourly,user,body){
   }
   ensure(isPredictionCommand(body.text),'无法识别赛马命令');
   const [command,...args]=body.text.trim().split(/\s+/);
+  if(command==='/赛马绑定'){
+    ensure(web.browserAuth,'网页绑定服务正在更新',503);ensure(args.length===1,'用法：赛马绑定 网页显示的SM码');
+    web.browserAuth.confirmQq(user,args[0]);return {lines:['QQ身份已确认，请返回你刚才打开的赛马网页完成登录或绑定。'],forward:false};
+  }
   if(command==='/马币帮助'||command==='/赛马'&&args[0]==='帮助')return {lines:help,forward:false};
   const registered=user.scope==='qq-prediction'||!!web.rooms.state.qqRegistrations?.[user.qqSubject];
   if(command==='/赛马注册'){

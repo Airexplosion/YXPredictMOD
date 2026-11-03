@@ -5,25 +5,26 @@ let page=0,room=null,wallet=null,selected=0,joined=false,visible='hall',polling=
 try{pending=JSON.parse(sessionStorage.getItem('prediction-pending-order')||'null')}catch{}
 const fmt=n=>Number(n).toLocaleString('zh-CN'),rate=n=>(n/10000).toFixed(2)+'×';
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
-function drawBuild(build){
- const root=node('div',undefined,'horse-build');
- if(!build){root.append(node('p','角色、职业及仙命资料待同步','build-pending'));return root}
- root.append(node('p',build.characterName+' · '+build.sectName+' · '+build.realmName,'build-character'),node('p','副职：'+build.careerName,'build-career'));
- const row=(title,choices,empty)=>{const line=node('div',undefined,'build-row');line.append(node('span',title,'build-label'));const list=node('span',undefined,'build-choices');if(choices.length)for(const choice of choices)list.append(node('span',choice.name,'build-choice'));else list.append(node('span',empty,'build-pending'));line.append(list);root.append(line)};
- row('仙命',build.talents,'暂无公开仙命');
- row('百家仙命',build.baijia,build.selectionsKnown?'暂无公开选取':'等待公开');
- if(build.resonance)row('共鸣仙命',[build.resonance],'');if(build.fates.length)row('天衍仙命',build.fates,'');
- if(build.selectionRound)root.append(node('small','百家选取公开至第 '+build.selectionRound+' 回合','build-observed'));
- return root;
+function art(kind,id,alt,cls=''){const img=node('img',undefined,cls);img.src='/art/'+kind+'/'+id+'.png';img.alt=alt;img.loading='lazy';img.onerror=()=>{img.hidden=true};return img}
+function cardArt(id,name){const c=node('div',undefined,'native-card'+(id?'':' empty-card'));c.title=name||'空位';if(id)c.append(art('cards',id,name||'卡牌'));c.append(node('span',id?name||'卡牌':'空位'));return c}
+function inspector(p){
+ const root=$('character-inspector');root.replaceChildren();const b=p.build,main=node('div',undefined,'character-main');main.append(node('h2',p.name,'character-title'),node('p',b?[b.characterName,b.careerName,b.realmName].join(' · '):'角色资料待同步','character-info'));
+ const orbit=node('div',undefined,'talent-orbit');if(b)orbit.append(art('characters',b.characterId,b.characterName,'character-portrait'));
+ for(const t of (b?.talents??[]).slice(0,5)){const item=node('div',undefined,'orbit-talent');item.title=t.name;item.append(art('talents',t.id,t.name),node('span',t.name));orbit.append(item)}main.append(orbit);
+ const life=node('div',undefined,'inspector-life');for(const [v,label]of [[p.state?.life??'—','命元'],[p.state?p.state.wins+' / '+p.state.losses:'—','胜 / 负']]){const n=node('div');n.append(node('strong',String(v)),node('small',label));life.append(n)}main.append(life);root.append(main);
+ const choices=(title,values,kind)=>{const section=node('section',undefined,'inspector-block');section.append(node('h3',title));const list=node('div',undefined,'build-choices');for(const t of values??[]){const icon=node('div',undefined,'choice-icon');icon.title=t.name;icon.append(art(kind,t.id,t.name),node('span',t.name));list.append(icon)}if(!list.children.length)list.append(node('small','暂无公开选取'));section.append(list);root.append(section)};
+ choices('百家仙命',b?.baijia,'baijia');if(b?.resonance)choices('共鸣仙命',[b.resonance],'resonances');if(b?.fates?.length)choices('天衍仙命',b.fates,'fates');
+ const last=(room.battles??[]).filter(x=>(x.first===selected&&!x.firstMirror)||(x.second===selected&&!x.secondMirror)).sort((a,b)=>b.round-a.round)[0],side=last?.first===selected?'first':'second';
+ const cards=b?.cards??last?.[side+'Cards'],names=b?.cardNames??last?.[side+'Names'];const deck=node('section',undefined,'inspector-block');deck.append(node('h3','公开牌阵'));const board=node('div',undefined,'selected-deck');if(cards)for(let i=0;i<8;i++)board.append(cardArt(cards[i]??0,names?.[i]));else board.append(node('small','等待牌阵同步'));deck.append(board);root.append(deck);
 }
 function setPending(value){pending=value;if(value)sessionStorage.setItem('prediction-pending-order',JSON.stringify(value));else sessionStorage.removeItem('prediction-pending-order')}
-async function rooms(){
+async function rooms(auto=false){
  $('rooms-refresh').disabled=true;
- try{const data=await P.api('/web/rooms?page='+page);$('rooms-count').textContent=data.total?'当前公开对局 · 持续观战':'等待下一场公开对局';$('room-list').replaceChildren();
-  if(!data.rooms.length){const e=node('div',undefined,'hall-empty');e.append(node('span','候一阵风，等一局棋。','empty-title'),node('p','目前没有正在同步的公开房间。MOD房主公开创建房间后，会出现在这里。'));$('room-list').append(e)}
-  for(const r of data.rooms){const card=node('article',undefined,'room-card'),head=node('div',undefined,'room-card-head');head.append(node('span',r.open?'可预测':'已封盘',r.open?'badge live':'badge'),node('span','第 '+r.round+' 回合','muted'));card.append(head,node('h3',r.hostName+' 的观战席'),node('p',r.names.slice(0,3).join(' · ')+' 等八位仙友','roster-preview'));const bottom=node('div',undefined,'room-card-bottom');bottom.append(node('span','#'+r.code+' · '+r.members+'人入席','muted'));const button=node('button','入席观战 ↗','text-button');button.onclick=()=>void enter(r.code);bottom.append(button);card.append(bottom);$('room-list').append(card)}
-  $('rooms-page').textContent='第 '+(page+1)+' / '+Math.max(1,Math.ceil(data.total/12))+' 页';$('rooms-prev').disabled=page===0;$('rooms-next').disabled=(page+1)*12>=data.total;
- }catch(e){P.note(e.message);$('rooms-count').textContent='对局读取失败，请点击刷新'}finally{$('rooms-refresh').disabled=false}
+ try{const data=await P.api('/web/rooms');$('rooms-count').textContent=data.total?'当前公开对局':'等待下一场公开对局';$('room-list').replaceChildren();
+  if(!data.rooms.length){const e=node('div',undefined,'hall-empty');e.append(node('strong','暂无正在进行的公开对局'),node('p','整点专场开始后会自动显示。'));$('room-list').append(e)}
+  for(const r of data.rooms){const c=node('article',undefined,'room-card'),info=node('div');info.append(node('h2',r.hostName+' · 第'+r.round+'回合'),node('p',r.names.join(' · ')),node('p','#'+r.code+' · '+(r.open?'修炼阶段，可下注':'观战中')));const button=node('button','进入房间','primary');button.onclick=()=>void enter(r.code);c.append(info,button);$('room-list').append(c)}
+  if(auto&&data.rooms[0])await enter(data.rooms[0].code);
+ }catch(e){P.note(e.message);$('rooms-count').textContent='读取失败，请刷新'}finally{$('rooms-refresh').disabled=false}
 }
 async function enter(code){
  if(busy)return;joined=false;wallet=null;selected=0;roundChoice='live';
@@ -33,23 +34,26 @@ async function enter(code){
 function accept(data){room=data.room;wallet=data.wallet;joined=true;if(data.me)P.renderMe(data.me);draw()}
 async function join(){
  if(!window.predictionMe){await P.openLogin();return}
- if(!window.predictionMe.linked){P.tab('mine');P.note('开通网页马币，或绑定已有MOD账户后即可入席');return}
+ if(!window.predictionMe.linked){const opened=await P.api('/web/play',{privateRequest:true,body:{action:'openAccount'}});P.renderMe(opened.me)}
  if(!room)return;try{accept(await P.api('/web/play',{privateRequest:true,body:{action:'join',code:room.code}}))}catch(e){P.note(e.message)}
 }
+const stakes=Array(8).fill('10');
 function draw(){
  if(!room)return;
- $('watch-code').textContent='仙府对局 · #'+room.code;$('watch-title').textContent=room.hostName+' 的观战席';
- $('watch-live').textContent=room.availability?.message??(room.settled?'本局已结算':room.ended?'等待最终战果':(room.round>=10||room.tradingClosed)?'第 '+room.round+' 回合 · 已封盘':!room.fresh?'机器人同步正在恢复':'第 '+room.round+' 回合 · '+(room.open?'可预测':'等待修炼阶段'));
- $('watch-live').className=room.fresh&&!room.ended?'live-text':'muted';
- $('watch-rule').textContent=(room.eventSlot?'整点专场 · 倍率额外×1.15 · ':'')+(room.horseShuffle?'本局随机交换2–3匹真人马的档位 · ':'只猜冠军 · ')+'第10回合封盘';$('horse-grid').replaceChildren();
- room.players.forEach((p,i)=>{const card=node('button',undefined,'horse-card c'+i+(i===selected?' selected':''));card.type='button';card.setAttribute('aria-pressed',String(i===selected));card.onclick=()=>{selected=i;draw()};
-  const head=node('div',undefined,'horse-card-head');head.append(node('span',String(i+1).padStart(2,'0'),'horse-number'),node('span',p.rank?(p.rankMinimum<p.rankMaximum?'第 '+p.rankMinimum+'–'+p.rankMaximum+'名同出':'第 '+p.rank+' 名'):p.active?'在场':'已退出','horse-state'));card.append(head,node('h3',p.name),node('span',p.horseTitle||'','horse-tier'));
-  const life=node('div',undefined,'horse-life');life.append(node('strong',p.state?String(p.state.life):'—'),node('span','命元'));card.append(life);
-  card.append(node('p',p.state?p.state.wins+'胜 / '+p.state.losses+'负':'等待公开战况','muted'));
-  card.append(drawBuild(p.build));
-  const quote=node('div',undefined,'horse-quote');quote.append(node('span','冠军倍率'),node('strong',p.quoteRate?rate(p.quoteRate):'—'));card.append(quote,node('small',p.baseRate?'基础 '+rate(p.baseRate)+' × 系数 '+rate(p.factor)+(room.bonusBps>10000?' × 专场 '+rate(room.bonusBps):''):'等待基础倍率','muted'));
-  const held=wallet?.positions[i];card.append(node('span',held?'已投入 '+fmt(held.stake)+' 马币':i===selected?'已选中 · 预测冠军':'选择这位仙友',held?'horse-held':'horse-select'));$('horse-grid').append(card)});
- drawBattles();drawChart();drawNotes();drawBet();
+ $('watch-code').textContent='仙府观战 · #'+room.code;$('watch-title').textContent=(room.eventSlot?'整点赛马':'天机赛马')+' · 第'+room.round+'回合';
+ $('watch-live').textContent=room.availability?.message??(room.settled?'本局已结算':room.open?'修炼阶段 · 可下注':'观战中 · 暂停交易');
+ $('watch-rule').textContent='只猜冠军 · 第10回合封盘'+(room.bonusBps>10000?' · 整点场 ×1.15':'');
+ const focus=document.activeElement,editing=focus?.classList.contains('row-stake'),idx=editing?Number(focus.dataset.player):-1;
+ if(!editing){$('horse-grid').replaceChildren();room.players.forEach((p,i)=>{
+  const position=wallet?.positions[i],row=node('article',undefined,'horse-row c'+i+(i===selected?' selected':'')+(!p.active||p.rank?' eliminated':''));row.setAttribute('role','listitem');
+  row.onclick=()=>{selected=i;$('bet-amount').value=stakes[i];draw()};const who=node('div',undefined,'racer');if(p.build)who.append(art('characters',p.build.characterId,p.build.characterName));const info=node('div');info.append(node('span',(i+1)+'. '+p.name,'name'),node('small',p.rank?'第'+p.rank+'名':p.active?'命元 '+(p.state?.life??'—'):'已退出'));who.append(info);
+  const tier=node('div',undefined,'horse-tier'),tiers=['特等马','上等马','中等马','牛马','海马','机械马','黑马'];if(tiers.includes(p.horseTitle))tier.append(art('ui','horse-'+tiers.indexOf(p.horseTitle),''));tier.append(node('span',p.horseTitle||'待同步'));
+  const quote=node('div',p.quoteRate?rate(p.quoteRate):'—','row-rate');quote.append(node('small',p.rank||!p.active?'已淘汰':room.round>=10?'封盘参考':p.baseRate?'基'+(p.baseRate/10000).toFixed(2)+'×系'+(p.factor/10000).toFixed(2):'冠军倍率'));
+  const amount=node('input',undefined,'row-stake');amount.type='number';amount.min='1';amount.max='10000';amount.step='1';amount.inputMode='numeric';amount.value=stakes[i];amount.dataset.player=i;amount.setAttribute('aria-label',p.name+' 投入马币');amount.onclick=e=>e.stopPropagation();amount.oninput=()=>{stakes[i]=amount.value;if(selected===i){$('bet-amount').value=amount.value;drawBet()}};
+  const actions=node('div',undefined,'row-actions');for(const [label,kind,cls]of [['加注','buy','primary'],['退半','half','caution'],['清仓','sell','danger']]){const button=node('button',label,cls);button.setAttribute('aria-label',p.name+' '+label);button.disabled=busy||!!pending||!room.open||!p.active||!!p.rank||room.rules!==3||(kind!=='buy'&&(!joined||!position||position.resolved||wallet?.forfeited));button.onclick=e=>{e.stopPropagation();selected=i;$('bet-amount').value=stakes[i];if(!joined)void join();else void trade(kind)};actions.append(button)}
+  const held=node('div',position?'已投 '+fmt(position.stake):'暂无预测','row-position');if(position)held.append(node('small','冠军返 '+fmt(position.claim)+(position.resolved?' · 已结算':'')));row.append(who,tier,quote,amount,actions,held);$('horse-grid').append(row);
+ });}
+ inspector(room.players[selected]);drawBattles();drawChart();drawNotes();drawBet();
 }
 function drawBattles(){
  const rounds=[...new Set((room.battles||[]).map(b=>b.round))].sort((a,b)=>b-a),select=$('battle-round');select.replaceChildren();const follow=node('option','跟随最新回合');follow.value='live';select.append(follow);
@@ -61,8 +65,8 @@ function drawBattles(){
  for(const battle of battles){const table=node('article',undefined,'duel-table'),winner=battle.winner;
   const title=node('div',undefined,'duel-title');title.append(node('span',room.players[battle.first].name+(battle.firstMirror?'（镜像）':'')),node('span',winner===null?'胜负待确认':room.players[winner].name+' 胜','duel-result'),node('span',room.players[battle.second].name+(battle.secondMirror?'（镜像）':'')));table.append(title);
   for(const side of ['first','second']){const line=node('div',undefined,'duel-side'),who=battle[side],cards=battle[side+'Cards'],names=battle[side+'Names'];
-   const name=node('div',undefined,'duel-player');name.append(node('strong',room.players[who].name),node('small',(battle[side+'Mirror']?'镜像 · ':'')+'战后命元 '+battle[side+'Life']));line.append(name);
-   const board=node('div',undefined,'card-board');if(cards===null){board.append(node('p','该方公开牌阵尚未同步','muted'))}else for(let i=0;i<8;i++){const id=cards[i]??0,card=node('div',undefined,'played-card'+(id?'':' empty-card'));card.append(node('small',String(i+1).padStart(2,'0'),'card-slot'),node('strong',id?(names?.[i]||'卡牌 '+id):'空位'));if(id)card.append(node('small','#'+id,'card-id'));board.append(card)}line.append(board);table.append(line);
+   const name=node('div',undefined,'duel-player');name.append(node('strong',room.players[who].name),node('small',(battle[side+'Mirror']?'镜像 · ':'')+'战后命元 '+battle[side+'Life']+((battle[side+'LifeBefore']??null)!==null?' · 扣命 '+Math.max(0,battle[side+'LifeBefore']-battle[side+'Life']):'')));line.append(name);
+   const board=node('div',undefined,'card-board');if(cards===null){board.append(node('p','该方公开牌阵尚未同步','muted'))}else for(let i=0;i<8;i++)board.append(cardArt(cards[i]??0,names?.[i]));line.append(board);table.append(line);
   }target.append(table);
  }
 }
@@ -89,18 +93,18 @@ function drawBet(){
  $('bet-return').textContent=fmt(claim)+' 马币';$('bet-partial').textContent=fmt(Math.floor(claim/4))+' / '+fmt(Math.floor(claim/10));
  $('held-position').textContent=position?fmt(position.stake)+' 马币':'暂无投入';$('held-claim').textContent=position?(wallet?.forfeited?'已离场放弃，不再返还':'锁定冠军返还 '+fmt(position.claim??0)+' 马币'+(position.resolved?' · 已结算':'')):'';
  let reason=wallet?.forfeited?'已离场放弃本局持仓，仅可查看，不再返还。':!room.open?(room.availability?.message??(room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':(room.round>=10||room.tradingClosed)?'第10回合起已封盘，等待本局结算。':!room.fresh?'机器人同步正在恢复，已暂停交易。':'等待下一修炼阶段开放交易。')):!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有持仓，请加入新的冠军预测房间。':'';
- if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=reason;$('bet-retry').hidden=!pending||pending.owner!==window.predictionMe?.id;
+ if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=reason;$('bet-retry').hidden=!pending||!window.predictionMe;
  $('bet-buy').disabled=busy||!!reason||!Number.isSafeInteger(amount)||amount<1||amount>10000||amount>(wallet?.balance??0);
  $('bet-half').disabled=$('bet-sell').disabled=busy||!!reason||!position||position.resolved;
 }
 async function trade(kind,retry=false){
  if(busy||!joined)return;
  let order=pending;
- if(retry){if(!order||order.owner!==window.predictionMe?.id){P.note('请用发起该笔操作的账户登录');return}}
+ if(retry){if(!order||!window.predictionMe){P.note('请用发起该笔操作的账户登录');return}}
  else{if(pending){P.note('请先确认上一笔操作');return}order={owner:window.predictionMe.id,action:'trade',code:room.code,kind,rank:1,player:selected,stake:Number($('bet-amount').value),version:room.version,operation:crypto.randomUUID()};setPending(order)}
  busy=true;drawBet();try{const {owner,...body}=order;const data=await P.api('/web/play',{privateRequest:true,body});setPending(null);accept(data);P.note('操作已确认，余额已更新')}
  catch(e){if([400,409].includes(e.status)){setPending(null);P.note(e.message+'，本笔未成交');void poll()}else P.note(e.message+'。请点击“确认上一笔操作”核对结果。')}
- finally{busy=false;drawBet()}
+ finally{busy=false;draw()}
 }
 async function poll(){
  if(polling||document.hidden||busy)return;polling=true;
@@ -108,9 +112,9 @@ async function poll(){
 }
  $('rooms-refresh').onclick=()=>void rooms();$('rooms-prev').onclick=()=>{if(page){page--;void rooms()}};$('rooms-next').onclick=()=>{page++;void rooms()};
  $('watch-back').onclick=()=>{P.tab('hall');void rooms()};$('watch-join').onclick=()=>void join();
- $('battle-round').onchange=()=>{roundChoice=$('battle-round').value;drawBattles()};$('bet-amount').oninput=drawBet;$('bet-buy').onclick=()=>void trade('buy');$('bet-half').onclick=()=>void trade('half');$('bet-sell').onclick=()=>void trade('sell');$('bet-retry').onclick=()=>void trade('',true);
+ $('battle-round').onchange=()=>{roundChoice=$('battle-round').value;drawBattles()};$('bet-amount').oninput=()=>{stakes[selected]=$('bet-amount').value;const input=document.querySelector('.row-stake[data-player="'+selected+'"]');if(input)input.value=stakes[selected];drawBet()};$('bet-buy').onclick=()=>void trade('buy');$('bet-half').onclick=()=>void trade('half');$('bet-sell').onclick=()=>void trade('sell');$('bet-retry').onclick=()=>void trade('',true);
  for(const b of document.querySelectorAll('[data-stake]'))b.onclick=()=>{$('bet-amount').value=b.dataset.stake==='half'?Math.max(1,Math.floor((wallet?.balance??0)/2)):b.dataset.stake;drawBet()};
  window.addEventListener('prediction-tab',e=>{visible=e.detail;if(visible==='hall')void rooms()});
- window.addEventListener('prediction-login',()=>{if(room){P.tab('watch');void join()}});window.addEventListener('prediction-logout',()=>{joined=false;wallet=null;if(room)draw()});
- setInterval(()=>void poll(),4000);void rooms();
+ window.addEventListener('prediction-wallet',()=>{joined=false;wallet=null;if(room){P.tab('watch');void join()}});window.addEventListener('prediction-login',()=>{if(room){P.tab('watch');void join()}});window.addEventListener('prediction-logout',()=>{joined=false;wallet=null;if(room)draw()});
+ for(const [button,panel]of [['toggle-chart','chart-panel'],['toggle-battles','battle-panel']])$(button).onclick=()=>{$(panel).hidden=!$(panel).hidden;$(button).setAttribute('aria-expanded',String(!$(panel).hidden));if(!$(panel).hidden)$(panel).scrollIntoView({behavior:'smooth',block:'nearest'})};setInterval(()=>void poll(),4000);void (async()=>{await window.predictionReady;await rooms(true)})();
 })();

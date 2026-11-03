@@ -1,6 +1,7 @@
 import {createHash,createHmac} from 'node:crypto';
 import {RoomError} from './rooms.mjs';
 import {isRaceGroup} from './race-policy.mjs';
+import {ownerOf,mergeOwners} from './identity-links.mjs';
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
 const reference=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 export function linkCandidates(rooms){
@@ -19,8 +20,8 @@ export function syncQqWallet(web,user){
   ensure(user.gameUidRef===undefined||user.gameUidRef===null||reference(user.gameUidRef),'游戏身份凭据无效',403);
   return rooms.commit(()=>{
     const state=rooms.state,bindings=state.qqBindings??={},previous=bindings[qq];
-    if(bound)ensure(!previous||previous===qq||previous===user.subject,'QQ已关联其他游戏账号，请核对原绑定');
-    const owner=bound?user.subject:previous??qq,identity={...user,subject:owner};
+    if(bound)ensure(!previous||previous===qq||ownerOf(state,previous)===ownerOf(state,user.subject),'QQ已关联其他游戏账号，请核对原绑定');
+    const owner=ownerOf(state,bound?user.subject:previous??qq),identity={...user,subject:owner};
     let linked=0,synced=0;
     if(bound&&user.gameUidRef){
       ensure(/^[a-f0-9]{64}$/i.test(web.key),'自动绑定服务尚未配置',503);
@@ -28,12 +29,16 @@ export function syncQqWallet(web,user){
         if(typeof account.uid!=='string'||!/^[a-f0-9]{24}$/.test(account.uid))continue;
         const ref=createHmac('sha256',Buffer.from(web.key,'hex')).update('prediction-game-uid:'+account.uid).digest('hex');
         if(ref!==user.gameUidRef)continue;
-        ensure(!account.webOwner||account.webOwner===owner||account.webOwner===qq,'游戏马币账户已绑定其他身份，请核对原绑定');
+        // A TP browser login may predate the guide service's canonical game
+        // subject. Reconcile only those explicitly recorded TP owners after
+        // the signed bridge proves this exact UID; legacy foreign owners fail closed.
+        if(account.webOwner&&ownerOf(state,account.webOwner)!==owner&&account.webOwner!==qq&&Object.keys(state.browserAuth?.gameLinks??{}).some(s=>ownerOf(state,s)===ownerOf(state,account.webOwner)))mergeOwners(web,account.webOwner,owner);
+        ensure(!account.webOwner||ownerOf(state,account.webOwner)===owner||account.webOwner===qq,'游戏马币账户已绑定其他身份，请核对原绑定');
         if(account.webOwner!==owner){account.webOwner=owner;linked++;}
       }
     }
     const sourceProfile=state.profiles?.[qq];
-    if(bound)for(const account of Object.values(state.accounts))if(account.webOwner===qq)account.webOwner=owner;
+    if(bound)mergeOwners(web,qq,owner);
     state.profiles??={};
     let profile=state.profiles[owner]??={...sourceProfile,name:sourceProfile?.renamedAt?sourceProfile.name:user.name||sourceProfile?.name||'未绑定道友'};
     if(sourceProfile?.renamedAt&&!profile.renamedAt){profile.name=sourceProfile.name;profile.renamedAt=sourceProfile.renamedAt;}
