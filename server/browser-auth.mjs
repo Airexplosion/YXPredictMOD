@@ -58,7 +58,7 @@ export class BrowserAuth{
   const code='SM-'+randomBytes(5).toString('hex').toUpperCase(),token=secret(),t=this.web.now();
   const expected=createHmac('sha256',Buffer.from(this.web.key,'hex')).update('prediction-qq:'+body.qq).digest('hex');
   this.rooms.commit(()=>{const data=this.data();for(const [id,c]of Object.entries(data.challenges))if(c.expires<=t)delete data.challenges[id];const old=cookies(req).yx_race_challenge;if(old)delete data.challenges[hash(old)];ensure(Object.keys(data.challenges).length<10000,'绑定请求过多',429);data.challenges[hash(token)]={codeHash:hash(code),expected,owner:this.session(req)?.subject??null,expires:t+300000};});
-  this.cookie(res,'yx_race_challenge',token,300);return {command:'赛马绑定 '+code,expiresAt:t+300000,group:'613486881'};
+  this.cookie(res,'yx_race_challenge',token,300);return {command:'绑定 '+code,expiresAt:t+300000,group:'613486881'};
  }
  confirmQq(user,code){
   ensure(isRaceGroup(user.groupId)&&['qq-racing','qq-prediction'].includes(user.scope),'请在赛马群操作',403);

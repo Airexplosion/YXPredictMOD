@@ -2,6 +2,7 @@ import { quoteRates, eventQuote, wagerFactorBps, cashout, returnFor } from './od
 import { eliminationPlan, intervalReturn, championReturn } from './eliminations.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {publicBuild} from './public-build.mjs';
+import {rememberMarket} from './market.mjs';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -210,7 +211,7 @@ export class Rooms {
     }
     if(s.battles)this.applyBattles(r,s.battles);
     if(r.rules>=2 && (s.eliminationRounds || r.eliminationRounds)) {
-      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks,r.active]))r.version++;return; }
+      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks,r.active]))r.version++;rememberMarket(r);return; }
       const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
       const dead = ranks.map((rank,i)=>!!rank || rounds[i]>0 || r.ranks[i]>0);
       let plan;
@@ -229,6 +230,7 @@ export class Rooms {
     if(r.rules>=2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
     if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active])) r.version++;
+    rememberMarket(r);
   }
   rememberBuilds(r,builds){
     if(!builds)return;
@@ -288,6 +290,7 @@ export class Rooms {
     return this.commit(() => {
       if (!r.settled && !r.forfeited?.[key]) {
         (r.forfeited ??= {})[key] = true; r.version++;
+        rememberMarket(r);
       }
       return { ...this.view(code, key), abandonConfirmed: true };
     });
@@ -370,6 +373,7 @@ export class Rooms {
       if(r.rules>=2){const counts=(r.actionCounts??={})[key]??=Array(8).fill(0);counts[input.player]++;}
       requireThat(Object.keys(r.receipts).length < (r.rules>=2?131072:20000), '本房间操作次数已满');
       r.receipts[receiptKey] = true; r.version++;
+      rememberMarket(r);
       return this.view(code, key);
     });
   }

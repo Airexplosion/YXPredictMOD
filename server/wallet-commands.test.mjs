@@ -21,8 +21,13 @@ function walletFixture(save){
 
 test('coin help lists balance, shared check-in, mentions, multi-bets and receipts without creating a wallet or needing a market',()=>{
  const x=walletFixture(),before=structuredClone(x.rooms.state),reply=qqCommand(x.web,x.hourly,x.receiver(),{text:'/马币帮助'});
- for(const text of ['/马币','/马币帮助','/马币签到','/马币转账','/下注','/退半','/清仓','/赛马 查单','赛马注册'])assert(reply.lines.some(line=>line.includes(text)));
+ for(const text of ['余额','帮助','签到','转账','下注','退半','清仓','查单','注册','盘口'])assert(reply.lines.some(line=>line.includes(text)));
  assert.equal(reply.forward,false);assert.deepEqual(x.rooms.state,before);for(const text of ['/马币帮助','/马币签到','/马币转账 200'])assert(isPredictionCommand(text));assert(!isPredictionCommand('/马币转账错误'));
+});
+test('the same transfer retried through the new short alias returns its old receipt without another debit',()=>{
+ const x=walletFixture(),first=x.transfer('200','short-alias-retry');
+ const retry=qqCommand(x.web,x.hourly,x.sender(),{text:'转账 200',messageId:'short-alias-retry',messageAt:x.now(),recipientTicket:x.sign(x.receiver())});
+ assert.deepEqual(retry,first);assert.equal(x.web.me(x.sender()).playBalance,800);assert.equal(x.web.me(x.receiver()).playBalance,1200);
 });
 
 test('group and website check-in share the same Beijing day in either order, including midnight and repeated delivery',()=>{
