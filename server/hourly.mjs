@@ -6,12 +6,17 @@ export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
 export function hourlySlot(now){
   const t=new Date(now+8*3600000),hour=t.getUTCHours();
-  if(hour>=2&&hour<=6||t.getUTCMinutes()>=5)return null;
+  if(hour>=2&&hour<=6)return null;
   return t.toISOString().slice(0,13).replace(/[-T:]/g,'');
 }
-export function eligibleLobby(info){
+export function hourlySearch(now){
+  const slot=hourlySlot(now);if(!slot)return null;
+  const fallback=new Date(now+8*3600000).getUTCMinutes()>=5;
+  return {slot,searchPhase:fallback?'fallback':'priority',minimumRankScore:fallback?5000:6000,minimumRankScoreExclusive:fallback};
+}
+export function eligibleLobby(info,minimumRankScore=6000,exclusive=false){
   return !!info&&info.isPrivate===false&&info.playerCount===8&&Number.isSafeInteger(info.round)&&info.round>=1&&info.round<=2
-    &&Number.isSafeInteger(info.avgRankScore)&&info.avgRankScore>=6000&&typeof info.roomId==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(info.roomId);
+    &&Number.isSafeInteger(info.avgRankScore)&&(exclusive?info.avgRankScore>minimumRankScore:info.avgRankScore>=minimumRankScore)&&typeof info.roomId==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(info.roomId);
 }
 const rate=n=>(n/10000).toFixed(2)+'倍';
 export function publicSummary(view,{round=view.round,player=null,nativeRanks=null}={}){
@@ -42,8 +47,8 @@ export class HourlyEvents{
   data(){return this.rooms.state.hourly??{slots:{},outbox:[]};}
   status(){
     const active=Object.values(this.rooms.state.rooms).find(r=>r.eventSlot&&!r.settled);
-    const slot=hourlySlot(this.rooms.now());
-    return {slot,bonusBps:EVENT_BONUS_BPS,minimumRankScore:6000,maximumStartRound:2,searchMinutes:5,reports:this.pendingReports(),
+    const search=hourlySearch(this.rooms.now()),slot=search?.slot??null;
+    return {slot,bonusBps:EVENT_BONUS_BPS,searchPhase:search?.searchPhase??null,minimumRankScore:search?.minimumRankScore??6000,minimumRankScoreExclusive:search?.minimumRankScoreExclusive??false,maximumStartRound:2,searchMinutes:60,priorityMinutes:5,reports:this.pendingReports(),
       active:active?{code:active.code,gameId:active.gameId,gameRoomId:active.gameRoomId,info:this.data().slots[active.eventSlot]?.info??null,model:this.data().slots[active.eventSlot]?.model??null}:null,
       opened:slot?this.data().slots[slot]?.code??null:null,available:!!slot&&!active};
   }
@@ -71,11 +76,11 @@ export class HourlyEvents{
     return {ok:true};
   }
   open(info,snapshot,model=null){
-    const slot=hourlySlot(this.rooms.now());ensure(slot,'当前不在整点开盘时段');
+    const search=hourlySearch(this.rooms.now()),slot=search?.slot;ensure(slot,'当前不在整点开盘时段');
     const previous=this.data().slots[slot];
     if(previous){ensure(previous.gameId===snapshot?.id,'本整点已经开过一场');return this.web.watch(this.rooms.state.rooms[previous.code]);}
     ensure(this.status().available,'上一场公开观战尚未结束');
-    ensure(eligibleLobby(info),'需要刚开始、原生平均段位分达到6000的公开八人对局');
+    ensure(eligibleLobby(info,search.minimumRankScore,search.minimumRankScoreExclusive),search.minimumRankScoreExclusive?'需要刚开始、原生平均段位分大于5000的公开八人对局':'前5分钟需要刚开始、原生平均段位分达到6000的公开八人对局');
     ensure(snapshot?.gameRoomId===info.roomId&&snapshot.round>=1&&snapshot.round<=2&&!snapshot.ended,'观战对局已不符合整点条件');
     ensure(Array.isArray(snapshot.baseRates)&&snapshot.baseRates.length===64&&snapshot.players?.every((_,i)=>snapshot.baseRates[i*8]>0),'等待八人冠军倍率就绪');
     ensure(model===null||(Array.isArray(model)&&model.length===8&&new Set(model.map(p=>p.uid)).size===8&&model.every(p=>snapshot.players.some(q=>q.uid===p.uid)&&typeof p.found==='boolean'&&typeof p.score==='number'&&Number.isFinite(p.score)&&p.score>=0&&p.score<=10000)),'观战报价模型格式无效');
