@@ -14,18 +14,34 @@ def stop(*_):
     global STOP
     STOP=True
 
-def eligible(info):
-    return info.get('name')=='game_room' and info.get('status')==2 and info.get('isPrivate')is False and info.get('playerCount')==8 and 1<=info.get('round',0)<=2 and info.get('avgRankScore',0)>=6000
+def eligible(info,minimum_rank_score=6000,exclusive=False):
+    score=info.get('avgRankScore')
+    return info.get('name')=='game_room' and info.get('status')==2 and info.get('isPrivate')is False and info.get('playerCount')==8 and type(info.get('round'))is int and 1<=info['round']<=2 and type(score)is int and (score>minimum_rank_score if exclusive else score>=minimum_rank_score)
 
-def select_candidate(rooms):
+def select_candidate(rooms,minimum_rank_score=6000,exclusive=False):
     by_id={}
     for r in rooms:
         identifier=r.get('roomId')
         if not isinstance(identifier,str)or not identifier:continue
         old=by_id.get(identifier)
         if old is None or r.get('round',0)>old.get('round',0):by_id[identifier]=r
-    candidates=[r for r in by_id.values()if eligible(r)]
+    candidates=[r for r in by_id.values()if eligible(r,minimum_rank_score,exclusive)]
     return min(candidates,key=lambda r:(-r['avgRankScore'],-r.get('createdTs',0),r['roomId']))if candidates else None
+
+def find_candidate(reader,backend):
+    rooms=[]
+    for game_mode in (0,3):
+        listed,_=reader.list_rooms(game_mode,max_pages=4);rooms.extend(listed)
+    # The backend clock owns the phase, including scans crossing :05 or the
+    # next hour. Never lower the limit from the observer's local clock.
+    search=backend.call('status')
+    if not search['available']or search['opened']:LOG.info('Hourly selection is no longer available');return None
+    minimum=search.get('minimumRankScore',6000);exclusive=search.get('minimumRankScoreExclusive',False)
+    info=select_candidate(rooms,minimum,exclusive)
+    if info is None:
+        starts=[r for r in rooms if eligible(r,0)]
+        LOG.info('No eligible newly started public match (phase=%s, minimum%s%d, scanned=%d, publicStarts=%d, highestStartAverage=%s)',search.get('searchPhase','priority'),'>'if exclusive else'>=',minimum,len(rooms),len(starts),max((r['avgRankScore']for r in starts),default=None))
+    return info
 
 class Backend:
     def __init__(self,url,key):self.url=url.rstrip('/');self.key=key;self.http=requests.Session()
@@ -172,11 +188,8 @@ def observe(config,backend,status):
     try:
         info=active['info']if active else None
         if info is None:
-            rooms=[]
-            for game_mode in (0,3):
-                listed,_=reader.list_rooms(game_mode,max_pages=4);rooms.extend(listed)
-            info=select_candidate(rooms)
-            if info is None:LOG.info('No eligible newly started public match');return
+            info=find_candidate(reader,backend)
+            if info is None:return
         else:reader.public_ids.add(info['roomId'])
         roster=reader.roster(info['roomId'])['players']
         if len(roster)!=8 or len({p['userInfo']['uid']for p in roster})!=8 or any(p['identityKind']=='unknown'for p in roster)or uid in {p['userInfo']['uid']for p in roster}:raise LobbyError('Public eight-player roster unavailable')

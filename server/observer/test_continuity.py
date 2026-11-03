@@ -2,7 +2,7 @@ import pathlib,sys,unittest
 from unittest.mock import Mock
 import requests
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,public_focus_targets,collect_public_battles
+from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,find_candidate,public_focus_targets,collect_public_battles
 from public_lobby import PublicLobby,LobbyError
 from projection import PublicProjection
 from test_projection import ROSTER,UIDS,status,player,number,blob,string_field,encoded
@@ -33,6 +33,31 @@ class ContinuityTests(unittest.TestCase):
         data=[room('newer-low',6500,900),room('older-high',8000,100,2),room('newest-high',8000,500),room('ineligible',9999,999,3)]
         for items in (data,list(reversed(data)),data[1:]+data[:1]):self.assertEqual(select_candidate(items)['roomId'],'newest-high')
         self.assertIsNone(select_candidate([room('too-low',5999,999)]));self.assertIsNone(select_candidate([room('same',8000,1),room('same',8000,1,3)]))
+    def test_fallback_uses_backend_threshold_strictly_and_still_picks_highest_fresh_public_average(self):
+        def room(code,score,created=1,**patch):return {'roomId':code,'avgRankScore':score,'createdTs':created,'round':1,'name':'game_room','status':2,'isPrivate':False,'playerCount':8,**patch}
+        lower=[room('exactly-five',5000),room('just-above',5001),room('best',5999)]
+        self.assertIsNone(select_candidate(lower))
+        self.assertEqual(select_candidate(lower,5000,True)['roomId'],'best')
+        for rows in ([room('exactly-five',5000)],[room('decimal',5000.5)],[room('private',9999,isPrivate=True)],[room('old',9999,round=3)],[room('short',9999,playerCount=7)]):self.assertIsNone(select_candidate(rows,5000,True))
+        self.assertEqual(select_candidate(lower+[room('six-thousand',6000)],5000,True)['roomId'],'six-thousand')
+        tied=[room('old',5500,1),room('new',5500,2)]
+        self.assertEqual(select_candidate(tied,5000,True)['roomId'],'new')
+    def test_scan_refreshes_backend_policy_after_room_lists_and_respects_hour_rollover_quiet_hours_and_opened_slot(self):
+        reader=Mock();backend=Mock();low={'roomId':'lower','avgRankScore':5500,'createdTs':1,'round':1,'name':'game_room','status':2,'isPrivate':False,'playerCount':8}
+        reader.list_rooms.return_value=([low],{})
+        policy={'available':True,'opened':None,'minimumRankScore':5000,'minimumRankScoreExclusive':True,'searchPhase':'fallback'}
+        def status(action):
+            self.assertEqual(action,'status');self.assertGreaterEqual(reader.list_rooms.call_count,2);return policy
+        backend.call.side_effect=status
+        self.assertEqual(find_candidate(reader,backend)['roomId'],'lower')
+        policy.update(minimumRankScore=6000,minimumRankScoreExclusive=False,searchPhase='priority')
+        self.assertIsNone(find_candidate(reader,backend))
+        policy.update(minimumRankScore=5000,minimumRankScoreExclusive=True,available=False)
+        self.assertIsNone(find_candidate(reader,backend))
+        policy.update(available=True,opened='already-opened')
+        self.assertIsNone(find_candidate(reader,backend))
+        policy.clear();policy.update(available=True,opened=None)
+        self.assertIsNone(find_candidate(reader,backend))
     def test_focused_battle_does_not_replace_authoritative_global_player_or_elimination_state(self):
         p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status(4)));before=p.public_state()
         battle=blob(1,blob(1,player(0,life=-20,rank=7)))+blob(2,blob(1,player(1)))+number(7,4)+string_field(9,UIDS[1])
