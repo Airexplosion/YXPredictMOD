@@ -17,37 +17,37 @@ const help=[
   '帮助：查看全部指令。',
   '签到：每天领200马币，与网站共用记录，北京时间0点刷新。',
   '转账 @某人 200：扣自己的200马币给对方；收款人未开户自动开通。',
-  '盘口：一张图查看八位角色的赔率、投入池和冠军返还权益走势。',
-  '赛马：查看本场；选手 1：查看指定选手的牌阵与仙命，也支持完整昵称。',
-  '下注 1 200 2 300：一条指令多笔下注，可重复选手。',
-  '退半 1：减半；清仓 1：清仓；查单：核对最近扣款回执。',
+  '走势：一张图查看八位角色的奖励倍率、竞猜总额和冠军奖励额度走势。',
+  '观战：查看本场；选手 1：查看指定选手的牌阵与仙命，也支持完整昵称。',
+  '竞猜 1 200 2 300：一条指令多笔竞猜，可重复选手。',
+  '减半 1：减半；撤回 1：撤回；查单：核对最近扣款回执。',
   '改名 新昵称：修改上榜ID；绑定 SM-…：确认本人网页上的QQ绑定请求。',
-  '全部指令均可带/不带“/”，也可先@机器人。只猜冠军，第10回合起封盘，第一返锁定权益100%、第二25%、第三10%，包含本金。'
+  '全部指令均可带/不带“/”，也可先@机器人。只猜冠军，第10回合起竞猜截止，第一返锁定权益100%、第二25%、第三10%，包含投入。'
 ];
-const instructions='群内赛马：注册 昵称 → 盘口 查看赔率与资金走势 → 选手 1 查看牌阵 → 下注 1 200；退半 1、清仓 1可调仓。帮助 查看全部指令。';
+const instructions='群内竞猜：注册 昵称 → 走势 查看奖励倍率与参与记录 → 选手 1 查看牌阵 → 竞猜 1 200；减半 1、撤回 1可调整参与记录。帮助 查看全部指令。';
 const registrationHelp=['先起一个上榜ID：发送“注册 你的昵称”，例如“注册 小白”。无需游戏认证，钱包绑定你的QQ。','也支持 /注册 昵称，或先@机器人再发送。'];
 export function isPredictionCommand(text){return normalizeRaceCommand(text)!==null;}
 const ownsReceipt=(user,row)=>row.owner===user.subject||row.owner===user.qqSubject||row.qqOwner&&row.qqOwner===user.qqSubject;
 function saveReceipt(web,user,operation,requestDigest,reply,code=null){
   const receipts=web.rooms.state.qqReceipts??={};
   for(const [id,r]of Object.entries(receipts))if(r.at<web.rooms.now()-90*86400000)delete receipts[id];
-  ensure(Object.keys(receipts).length<100000,'群交易记录已达容量，请联系维护者',503);
+  ensure(Object.keys(receipts).length<100000,'群操作记录已达容量，请联系维护者',503);
   receipts[operation]={code,at:web.rooms.now(),owner:user.subject,qqOwner:user.qqSubject??null,acknowledged:false,requestDigest,result:reply};
 }
 
 export function qqCommand(web,hourly,user,body){
   body={...body,text:normalizeRaceCommand(body.text)};
-  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助'].includes(body.text)),'请从赛马群发起命令；旧钱包凭据只能查询，参与赛马请重新注册，无需游戏认证',403);
+  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助'].includes(body.text)),'请从观战群发起命令；旧钱包凭据只能查询，参与竞猜请重新注册，无需游戏认证',403);
   if(body.action==='ack'){
     ensure(['qq-prediction','qq-racing'].includes(user.scope),'旧钱包凭据只能查询',403);
     const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt&&ownsReceipt(user,receipt),'操作回执不属于当前账号',403);
     return web.rooms.commit(()=>{receipt.acknowledged=true;return {acknowledged:true};});
   }
-  ensure(isPredictionCommand(body.text),'无法识别赛马命令');
+  ensure(isPredictionCommand(body.text),'无法识别观战命令');
   const [command,...args]=body.text.trim().split(/\s+/);
   if(command==='/赛马绑定'){
     ensure(web.browserAuth,'网页绑定服务正在更新',503);ensure(args.length===1,'用法：绑定 网页显示的SM码');
-    web.browserAuth.confirmQq(user,args[0]);return {lines:['QQ身份已确认，请返回你刚才打开的赛马网页完成登录或绑定。'],forward:false};
+    web.browserAuth.confirmQq(user,args[0]);return {lines:['QQ身份已确认，请返回你刚才打开的观战网页完成登录或绑定。'],forward:false};
   }
   if(command==='/马币帮助'||command==='/赛马'&&args[0]==='帮助')return {lines:help,forward:false};
   const registered=user.scope==='qq-prediction'||!!web.rooms.state.qqRegistrations?.[user.qqSubject];
@@ -63,7 +63,7 @@ export function qqCommand(web,hourly,user,body){
       if(!previous||given){profile.name=name;profile.renamedAt=web.now();}
       (web.rooms.state.qqRegistrations??={})[user.qqSubject]={at:previous?.at??web.now(),name:profile.name};
       const me=web.me({...user,subject:owner});
-      return {lines:[`${previous?'你已注册赛马':'赛马注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可下注，第10回合起封盘。买入时锁定返还权益，最终第一返100%、第二25%、第三10%，返还包含本金。','退半/清仓按当前估值回收并扣3%；余额 查看马币，签到 每天领200，转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算持仓会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
+      return {lines:[`${previous?'你已注册观战':'观战注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可竞猜，第10回合起竞猜截止。参与时锁定奖励额度，最终第一返100%、第二25%、第三10%，返还包含投入。','减半/撤回按当前估值回收并扣3%；余额 查看马币，签到 每天领200，转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算竞猜记录会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
     });
   }
   if(command==='/赛马改名'){
@@ -110,13 +110,13 @@ export function qqCommand(web,hourly,user,body){
     ensure(args.length===0,'用法：/马币');
     if(user.scope==='qq-racing'&&!registered)return {lines:registrationHelp,forward:false};
     const result=syncQqWallet(web,user),me=result.me;
-    return {lines:[`${result.created?'已自动开通马币账户。':result.linked||result.synced?'已自动同步游戏马币账户。':''}${me.name}：可用${me.playBalance}马币${me.accounts>1&&me.balance!==me.playBalance?`，名下合计${me.balance}马币`:''}，累计净收益${me.net}马币。${user.scope==='qq-wallet'?(user.boundAccount?'认证已到期，续期后可参与下注。':'尚未绑定游戏账号，暂不能下注；完成认证后再次发送 /马币 即可自动同步。'):''}`],forward:false};
+    return {lines:[`${result.created?'已自动开通马币账户。':result.linked||result.synced?'已自动同步游戏马币账户。':''}${me.name}：可用${me.playBalance}马币${me.accounts>1&&me.balance!==me.playBalance?`，名下合计${me.balance}马币`:''}，累计净变化${me.net}马币。${user.scope==='qq-wallet'?(user.boundAccount?'认证已到期，续期后可参与竞猜。':'尚未绑定游戏账号，暂不能竞猜；完成认证后再次发送 /马币 即可自动同步。'):''}`],forward:false};
   }
-  const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点赛马专场',404);
+  const room=web.rooms.websiteRoom();ensure(room?.eventSlot,'目前没有整点竞猜专场',404);
   const view=web.watch(room);
   if(command==='/盘口'){
-    ensure(args.length===0,'用法：盘口');
-    return {lines:['本局盘口：各角色赔率、投入池及冠军返还权益走势。'],market:marketPresentation(web.rooms,room),forward:true};
+    ensure(args.length===0,'用法：走势');
+    return {lines:['本局走势：各角色奖励倍率、竞猜总额及冠军奖励额度走势。'],market:marketPresentation(web.rooms,room),forward:true};
   }
   if(command==='/赛马')return {lines:[instructions,...publicSummary(view)],presentation:publicPresentation(view),forward:true};
   ensure(args.length>=1,'请提供选手编号1～8或完整昵称');
@@ -127,8 +127,8 @@ export function qqCommand(web,hourly,user,body){
   const index=resolve(args[0]);
   if(command==='/选手')return {lines:publicSummary(view,{player:index}),presentation:publicPresentation(view,{player:index}),forward:true};
   const kind=command==='/下注'?'buy':command==='/退半'?'half':'sell';
-  ensure(kind==='buy'?args.length>=2&&args.length%2===0:args.length===1,kind==='buy'?'用法：/下注 选手编号 马币数 [选手编号 马币数 …]':'用法：'+command+' 选手编号');
-  ensure(kind!=='buy'||args.length<=64,'一次最多下注32笔');
+  ensure(kind==='buy'?args.length>=2&&args.length%2===0:args.length===1,kind==='buy'?'用法：/竞猜 选手编号 马币数 [选手编号 马币数 …]':'用法：'+(kind==='half'?'减半':'撤回')+' 选手编号');
+  ensure(kind!=='buy'||args.length<=64,'一次最多竞猜32笔');
   const orders=[];
   if(kind==='buy')for(let at=0;at<args.length;at+=2){
     const stake=/^[1-9][0-9]{0,4}$/.test(args[at+1])?Number(args[at+1]):0;
@@ -138,7 +138,7 @@ export function qqCommand(web,hourly,user,body){
   // existing room transaction and receipt path, including retries and settlement.
   return web.rooms.commit(()=>{
     if(kind==='buy')syncQqWallet(web,user);
-    else ensure(web.owned(user).length,'尚无马币账户或持仓');
+    else ensure(web.owned(user).length,'尚无马币账户或竞猜记录');
     const key=web.playKey(user);
     if(!room.members.includes(key))web.play(user,{action:'join',code:room.code});
     const total=orders.reduce((sum,o)=>sum+o.stake,0);
@@ -148,9 +148,9 @@ export function qqCommand(web,hourly,user,body){
       const order=orders[at],previous=room.positions[key]?.[order.index]?.claim??0;
       result=web.play(user,{action:'trade',code:room.code,kind,player:order.index,rank:1,stake:order.stake,version:room.version,operation:orders.length===1?operation:operation+'-'+(at+1)});
       const p=result.wallet.positions[order.index];
-      lines.push(orders.length>1?`${order.index+1}号 ${view.players[order.index].name}：投入${order.stake}马币，本笔冠军锁定返还${p.claim-previous}马币。`:`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'清仓已确认'}${p?`，剩余冠军锁定返还${p.claim}马币`:''}。可用${result.wallet.balance}马币。`);
+      lines.push(orders.length>1?`${order.index+1}号 ${view.players[order.index].name}：投入${order.stake}马币，本笔冠军锁定奖励${p.claim-previous}马币。`:`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'撤回已确认'}${p?`，剩余冠军锁定奖励${p.claim}马币`:''}。可用${result.wallet.balance}马币。`);
     }
-    if(orders.length>1)lines.unshift(`批量下注已确认：${orders.length}笔，共投入${total}马币。可用${result.wallet.balance}马币。`);
+    if(orders.length>1)lines.unshift(`批量竞猜已确认：${orders.length}笔，共投入${total}马币。可用${result.wallet.balance}马币。`);
     const reply={lines,forward:false,receiptId:operation};
     saveReceipt(web,user,operation,requestDigest,reply,room.code);
     return reply;

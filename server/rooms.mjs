@@ -76,7 +76,7 @@ export class Rooms {
     requireThat(r.members.includes(key), '请先加入房间', 403); return r;
   }
   displayName(key) { const a=this.state.accounts[key];return (a.webOwner&&this.state.profiles?.[a.webOwner]?.name)||a.name; }
-  observerName(r,key){return r.eventSlot&&r.host===key?'WHITE整点观战':'观众'+String(Math.max(1,r.members.indexOf(key)+1));}
+  observerName(r,key){return r.eventSlot&&r.host===key?'WHITE整点竞猜':'观众'+String(Math.max(1,r.members.indexOf(key)+1));}
   snapshot(s) {
     requireThat(s && typeof s.id === 'string' && s.id.length > 0 && s.id.length <= 1024 && integer(s.round, 1, 100000)
       && integer(s.closedThrough, 0, 100000) && typeof s.open === 'boolean' && typeof s.ended === 'boolean', '对局状态无效');
@@ -88,7 +88,7 @@ export class Rooms {
     requireThat(Array.isArray(s.ranks) && s.ranks.length === 8 && s.ranks.every(x => integer(x, 0, 8)), '名次无效');
     requireThat(s.active === undefined || (Array.isArray(s.active) && s.active.length === 8 && s.active.every(x => typeof x === 'boolean')), '选手状态无效');
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
-    requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础倍率格式无效');
+    requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础奖励倍率格式无效');
     requireThat(s.horseShuffle===undefined||typeof s.horseShuffle==='boolean','换档规则格式无效');
     requireThat(s.horseTitles===undefined||(Array.isArray(s.horseTitles)&&s.horseTitles.length===8&&s.horseTitles.every(title=>typeof title==='string'&&title.length<=40&&!/[0-9\x00-\x1f\x7f]/.test(title))),'马匹称号格式无效');
     requireThat(s.states === undefined || (Array.isArray(s.states) && s.states.length === 8 && s.states.every(p => p === null || (p && integer(p.life,-1000000,1000000) && integer(p.wins,0,100000) && integer(p.losses,0,100000)))),'公开战况格式无效');
@@ -276,16 +276,16 @@ export class Rooms {
     const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,fresh=this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000,alive=monitor&&this.now()-monitor.at<=30000;
     if(r.settled)return {state:'settled',message:'本局已结算，马币已到账'};
     if(r.ended)return {state:'ended',message:'本局已结束，正在核对最终战果'};
-    if(r.tradingClosed||r.round>=10||r.closedThrough>=10||monitor?.round>=10)return {state:'closed',message:'第10回合起已封盘，等待本局结算'};
-    if(alive&&monitor.state==='verifying')return {state:'verifying',message:'机器人持续观战中，正在核对新战况，交易暂时暂停'};
-    if(alive&&['connecting','reconnecting'].includes(monitor.state))return {state:'reconnecting',message:'机器人观战连接正在恢复，交易暂时暂停'};
-    if(!fresh)return {state:'offline',message:r.eventSlot?'机器人战况同步暂时中断，正在自动恢复':'房主战况暂未更新，已暂停交易'};
-    if(this.isOpen(r))return {state:'open',message:'修炼阶段，可以下注'};
-    return {state:'waiting',message:r.eventSlot?(r.sourcePhase==='verifying'?'机器人正在核对本轮战况，交易暂时暂停':r.sourcePhase==='waiting-lobby'?'正在确认公开对局进度，交易暂时暂停':'本轮正在战斗或结算，下一轮修炼阶段恢复下注'):'等待下一轮修炼阶段开放交易'};
+    if(r.tradingClosed||r.round>=10||r.closedThrough>=10||monitor?.round>=10)return {state:'closed',message:'第10回合起竞猜已截止，等待本局结算'};
+    if(alive&&monitor.state==='verifying')return {state:'verifying',message:'机器人持续观战中，正在核对新战况，操作暂时暂停'};
+    if(alive&&['connecting','reconnecting'].includes(monitor.state))return {state:'reconnecting',message:'机器人观战连接正在恢复，操作暂时暂停'};
+    if(!fresh)return {state:'offline',message:r.eventSlot?'机器人战况同步暂时中断，正在自动恢复':'房主战况暂未更新，已暂停操作'};
+    if(this.isOpen(r))return {state:'open',message:'修炼阶段，可以竞猜'};
+    return {state:'waiting',message:r.eventSlot?(r.sourcePhase==='verifying'?'机器人正在核对本轮战况，操作暂时暂停':r.sourcePhase==='waiting-lobby'?'正在确认公开对局进度，操作暂时暂停':'本轮正在战斗或结算，下一轮修炼阶段恢复竞猜'):'等待下一轮修炼阶段开放操作'};
   }
   abandon(code, key, gameId, operation) {
     const r = this.room(code, key);
-    requireThat(r.gameId === gameId, '离场投注与当前房间对局不一致');
+    requireThat(r.gameId === gameId, '离场竞猜与当前房间对局不一致');
     requireThat(typeof operation === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(operation), '操作标识无效');
     return this.commit(() => {
       if (!r.settled && !r.forfeited?.[key]) {
@@ -317,15 +317,15 @@ export class Rooms {
     requireThat(typeof input.operation === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(input.operation), '操作标识无效');
     const receiptKey = key + ':' + input.operation;
     if (r.receipts[receiptKey]) return { ...this.view(code, key), duplicate: true };
-    requireThat(!r.forfeited?.[key], '离场已放弃本局未结算投注，不能重新下注');
+    requireThat(!r.forfeited?.[key], '离场已放弃本局未结算竞猜，不能重新竞猜');
     requireThat(this.isOpen(r),this.availability(r).message);
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
-    requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止交易');
-    requireThat(!r.active || r.active[input.player] !== false, '该选手已淘汰或退出，停止交易');
+    requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止操作');
+    requireThat(!r.active || r.active[input.player] !== false, '该选手已淘汰或退出，停止操作');
     if(r.rules>=2) requireThat((r.actionCounts?.[key]?.[input.player] ?? 0)<512,'该选手本局操作次数已达512次');
     requireThat(['buy', 'half', 'sell', 'switch'].includes(input.kind), '操作无效');
     if (this.championOnly && (input.kind === 'buy' || input.kind === 'switch')) {
-      requireThat(r.rules === 3, '旧房间保留原持仓，请在新对局创建冠军预测房间');
+      requireThat(r.rules === 3, '旧房间保留原竞猜记录，请在新对局创建冠军预测房间');
       requireThat(input.rank === 1, '仅支持预测冠军');
     }
     return this.commit(() => {
@@ -337,11 +337,11 @@ export class Rooms {
       let p = positions[input.player];
       const sell = input.kind === 'sell' || input.kind === 'half' || input.kind === 'switch';
       if (sell) {
-        requireThat(p && (r.rules>=2 ? p.claim>0&&!p.resolved : p.stake>0), '没有可出售的持仓');
+        requireThat(p && (r.rules>=2 ? p.claim>0&&!p.resolved : p.stake>0), '没有可出售的竞猜记录');
         if(r.rules>=2 && input.kind==='switch')requireThat(p.rank!==input.rank,'预测名次相同，请使用增持');
         if(r.rules>=2){
           const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;
-          requireThat(removed>0,'剩余权益不足减半，请使用清仓');
+          requireThat(removed>0,'剩余权益不足减半，请使用撤回');
           const exit=cashout(p,removed,r.quoteRates[input.player*8+p.rank-1],p.saleBasis?personalSaleRate(r,key,input.player,p.rank):0);
           const returned=exit.returned;
           requireThat(account.balance+returned-(input.kind==='switch'&&integer(input.stake,1,10000)?input.stake:0)<=1000000000000,'马币余额已达上限');

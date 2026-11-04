@@ -353,7 +353,7 @@ test('round ten start permanently closes all trades while keeping settlement ali
     const x=setup(undefined,2);x.snapshot.round=9;x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,100);
     if(nextRound)x.snapshot.round=10;else x.snapshot.closedThrough=10;
     let view=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(view.tradingClosed,true);assert.equal(view.open,false);
-    for(const kind of ['buy','half','sell','switch'])assert.throws(()=>x.trade(x.a,0,2,10,kind),/封盘/);
+    for(const kind of ['buy','half','sell','switch'])assert.throws(()=>x.trade(x.a,0,2,10,kind),/竞猜(?:已)?截止/);
     const restored=new Rooms(structuredClone(x.rooms.state));
     const stale={...x.snapshot,closedThrough:0};restored.sync(x.code,x.a,stale);assert.equal(restored.view(x.code,x.a).open,false);
     x.snapshot.round=20;x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];view=restored.sync(x.code,x.a,x.snapshot);
@@ -362,7 +362,7 @@ test('round ten start permanently closes all trades while keeping settlement ali
 });
 test('old room saves without cutoff flag cannot trade beyond round ten',()=>{
   const x=setup(undefined,2);const r=x.rooms.state.rooms[x.code];r.round=11;r.open=true;delete r.tradingClosed;
-  assert.equal(x.rooms.view(x.code,x.a).open,false);assert.throws(()=>x.trade(x.a,0,1,10),/封盘/);
+  assert.equal(x.rooms.view(x.code,x.a).open,false);assert.throws(()=>x.trade(x.a,0,1,10),/竞猜(?:已)?截止/);
 });
 test('same-round elimination rejects gaps atomically, then settles exact adjacent and losing claims by UID once',()=>{
   const x=setup(undefined,2);x.trade(x.a,7,8,100);x.trade(x.a,6,6,100);x.trade(x.a,5,1,100);

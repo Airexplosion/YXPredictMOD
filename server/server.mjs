@@ -65,7 +65,7 @@ export function createHandler(rooms, options = {}) {
         serviceAccess(req.headers.authorization,options.botKey??process.env.PREDICTION_BOT_KEY);
         let data;
         if(req.url==='/bot/accounts'){if(body.action!=='candidates')throw new RoomError('身份查询操作无效');data=linkCandidates(rooms);}
-        else if(req.url==='/bot/events'){if(body.action==='claim'){if(body.protocol!==2)throw new RoomError('请更新赛马消息适配器',409);data=hourly.claim();}else if(body.action==='ack')data=hourly.ack(body.id,body.lease,body.groupId??null);else throw new RoomError('通知操作无效');}
+        else if(req.url==='/bot/events'){if(body.action==='claim'){if(body.protocol!==2)throw new RoomError('请更新观战消息适配器',409);data=hourly.claim();}else if(body.action==='ack')data=hourly.ack(body.id,body.lease,body.groupId??null);else throw new RoomError('通知操作无效');}
         else data=qqCommand(web,hourly,web.identity(req.headers['x-prediction-identity']),body);
         res.end(JSON.stringify({ok:true,data}));return;
       }
@@ -77,7 +77,7 @@ export function createHandler(rooms, options = {}) {
       switch (body.action) {
         case 'register': result = rooms.register(body.name); break;
         case 'linkCode': result = web.issueCode(key); break;
-        case 'create': if(rooms.championOnly&&(![3,4].includes(body.protocol)||!body.snapshot?.baseRates))throw new RoomError('请更新MOD并等待冠军倍率就绪后创建房间',409);if(body.snapshot?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后创建随机换档房间',409);result = rooms.create(key, body.snapshot, body.allowMatch, body.isPublic); break;
+        case 'create': if(rooms.championOnly&&(![3,4].includes(body.protocol)||!body.snapshot?.baseRates))throw new RoomError('请更新MOD并等待冠军奖励倍率就绪后创建房间',409);if(body.snapshot?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后创建随机换档房间',409);result = rooms.create(key, body.snapshot, body.allowMatch, body.isPublic); break;
         case 'list': result = rooms.list(key, body.page); break;
         case 'join': if(rooms.state.rooms[body.code]?.rules===3&&![3,4].includes(body.protocol))throw new RoomError('请更新MOD后加入冠军预测房间',409);if(rooms.state.rooms[body.code]?.horseShuffle&&body.protocol!==4)throw new RoomError('请更新至0.8.0后加入随机换档房间',409);result = rooms.join(body.code, key, body.gameId); break;
         case 'findGame': result = rooms.findByGame(key, body.nativeId); break;

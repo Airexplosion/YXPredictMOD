@@ -47,7 +47,7 @@ test('final player returns and net profit account for partial sales, repeat buys
  x.rooms.state.accounts[x.key].balance+=200;x.rooms.state.accounts[x.key].checkInGranted=200;
  x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.key,x.snapshot);
  const report=settlementReport(x.rooms,x.rooms.state.rooms[x.code]),r=report.rows[0];assert.equal(r.invested,200);assert.equal(r.sold,48);assert.equal(r.payout,600);assert.equal(r.net,448);assert.equal(x.rooms.state.accounts[x.key].balance,1648);
- assert(!JSON.stringify(report).includes(x.key));assert(publicSummary(x.web.watch(x.rooms.state.rooms[x.code])).join(' ').includes('净收益+448'));
+ assert(!JSON.stringify(report).includes(x.key));assert(publicSummary(x.web.watch(x.rooms.state.rooms[x.code])).join(' ').includes('净增减+448'));
  const old=x.rooms.state.rooms[x.code];delete old.cashflows;delete old.cashflowVersion;assert.equal(settlementReport(x.rooms,old).rows[0].net,null);
 });
 test('signed native life damage accepts either side, and canonical player swaps reverse its direction',()=>{
