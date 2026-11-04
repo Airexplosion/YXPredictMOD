@@ -166,7 +166,7 @@ export class Rooms {
     return { code: r.code, gameId: r.gameId, gameRoomId: r.gameRoomId, round: r.round, members: r.members.length };
   }
   apply(r, s) {
-    const before = JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active]);
+    const before = JSON.stringify([r.round, r.closedThrough, r.open, r.allInOpen, r.ended, r.settled, r.ranks, r.active]);
     requireThat(r.gameId === s.id && r.players.every(p => s.players.some(q => q.uid === p.uid)), '房间名单或对局不一致');
     requireThat(s.round >= r.round, '拒绝旧回合状态');
     if(s.horseTitles){
@@ -197,6 +197,8 @@ export class Rooms {
     if(s.sourcePhase)r.sourcePhase=s.sourcePhase;
     r.tradingClosed ||= r.round >= 10 || r.liveRound >= 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
+    r.allInOpen = !r.ended && r.round<13 && r.liveRound<13 && r.closedThrough<r.round && s.roundComplete!==false
+      && (s.open||!!r.eventSlot&&s.sourcePhase==='preparation');
     if(s.builds){
       this.rememberBuilds(r,r.builds);
       r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
@@ -211,7 +213,7 @@ export class Rooms {
     }
     if(s.battles)this.applyBattles(r,s.battles);
     if(r.rules>=2 && (s.eliminationRounds || r.eliminationRounds)) {
-      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks,r.active]))r.version++;rememberMarket(r);return; }
+      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; r.allInOpen=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.allInOpen,r.ended,r.settled,r.ranks,r.active]))r.version++;rememberMarket(r);return; }
       const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
       const dead = ranks.map((rank,i)=>!!rank || rounds[i]>0 || r.ranks[i]>0);
       let plan;
@@ -226,10 +228,10 @@ export class Rooms {
     for (let i=0;i<8;i++) if(r.ranks[i] || (s.active && !s.active[s.players.findIndex(p=>p.uid===r.players[i].uid)])) r.active[i]=false;
     const known = r.ranks.filter(Boolean); requireThat(new Set(known).size === known.length, '名次重复');
     if(r.rules>=2 && known.length<8) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
-    if(r.rules>=2 && known.length>=7)r.open=false;
+    if(r.rules>=2 && known.length>=7){r.open=false;r.allInOpen=false;}
     if(r.rules>=2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
-    if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.ended, r.settled, r.ranks, r.active])) r.version++;
+    if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.allInOpen, r.ended, r.settled, r.ranks, r.active])) r.version++;
     rememberMarket(r);
   }
   rememberBuilds(r,builds){
@@ -271,16 +273,25 @@ export class Rooms {
     const result = this.commit(() => { this.apply(r, s); return this.view(code, key); });
     this.syncTimes.set(code, this.now());if(r.eventSlot)this.sourceHealth.set(code,{state:'live',at:this.now(),round:Math.max(this.sourceHealth.get(code)?.round??0,r.liveRound??r.round)});return {...result,open:this.isOpen(r)&&!r.forfeited?.[key]};
   }
-  isOpen(r) { const monitor=r.eventSlot?this.sourceHealth.get(r.code):null;return (!monitor||monitor.state==='live')&&(!monitor||monitor.round<10)&&r.open && !r.ended && !r.tradingClosed && r.round < 10 && r.closedThrough < 10 && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
-  availability(r){
+  isOpen(r,allIn=false) {
+    const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,limit=allIn?13:10;
+    const phaseOpen=allIn?(r.allInOpen??(r.round<10&&r.open)):r.open;
+    return (!monitor||monitor.state==='live')&&(!monitor||monitor.round<limit)&&phaseOpen
+      &&!r.ended&&!r.settled&&(allIn||!r.tradingClosed)&&r.round<limit
+      &&(r.liveRound??r.round)<limit&&r.closedThrough<limit
+      &&this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000;
+  }
+  availability(r,allIn=false){
     const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,fresh=this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000,alive=monitor&&this.now()-monitor.at<=30000;
     if(r.settled)return {state:'settled',message:'本局已结算，马币已到账'};
     if(r.ended)return {state:'ended',message:'本局已结束，正在核对最终战果'};
-    if(r.tradingClosed||r.round>=10||r.closedThrough>=10||monitor?.round>=10)return {state:'closed',message:'第10回合起竞猜已截止，等待本局结算'};
+    const round=Math.max(r.round,r.liveRound??r.round,r.closedThrough,monitor?.round??0);
+    if(allIn&&round>=13)return {state:'closed',message:'第13回合起全猜已截止，等待本局结算'};
+    if(!allIn&&(r.tradingClosed||round>=10))return {state:'closed',message:round<13?'普通竞猜已截止，减半和撤回已停止；第13回合前可在群内发送 全猜 选手编号':'竞猜已截止，减半和撤回已停止，等待本局结算'};
     if(alive&&monitor.state==='verifying')return {state:'verifying',message:'机器人持续观战中，正在核对新战况，操作暂时暂停'};
     if(alive&&['connecting','reconnecting'].includes(monitor.state))return {state:'reconnecting',message:'机器人观战连接正在恢复，操作暂时暂停'};
     if(!fresh)return {state:'offline',message:r.eventSlot?'机器人战况同步暂时中断，正在自动恢复':'房主战况暂未更新，已暂停操作'};
-    if(this.isOpen(r))return {state:'open',message:'修炼阶段，可以竞猜'};
+    if(this.isOpen(r,allIn))return {state:'open',message:allIn?'修炼阶段，可以全猜':'修炼阶段，可以竞猜'};
     return {state:'waiting',message:r.eventSlot?(r.sourcePhase==='verifying'?'机器人正在核对本轮战况，操作暂时暂停':r.sourcePhase==='waiting-lobby'?'正在确认公开对局进度，操作暂时暂停':'本轮正在战斗或结算，下一轮修炼阶段恢复竞猜'):'等待下一轮修炼阶段开放操作'};
   }
   abandon(code, key, gameId, operation) {
@@ -318,7 +329,8 @@ export class Rooms {
     const receiptKey = key + ':' + input.operation;
     if (r.receipts[receiptKey]) return { ...this.view(code, key), duplicate: true };
     requireThat(!r.forfeited?.[key], '离场已放弃本局未结算竞猜，不能重新竞猜');
-    requireThat(this.isOpen(r),this.availability(r).message);
+    const allIn=input.kind==='buy'&&input.allIn===true;
+    requireThat(this.isOpen(r,allIn),this.availability(r,allIn).message);
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
     requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止操作');
     requireThat(!r.active || r.active[input.player] !== false, '该选手已淘汰或退出，停止操作');
@@ -358,17 +370,23 @@ export class Rooms {
       if (input.kind === 'buy' || input.kind === 'switch') {
         requireThat(integer(input.rank, 1, 8) && !r.ranks.includes(input.rank), '请选择仍可能的名次');
         if(r.rules>=2)requireThat(input.rank<=8-r.ranks.filter(Boolean).length&&r.quoteRates[input.player*8+input.rank-1]>0,'该名次已不可能达到');
-        requireThat(integer(input.stake, 1, 10000) && account.balance >= input.stake, '马币不足或投入须为1至10000整数');
+        const allIn=input.allIn===true;
+        if(allIn)requireThat(r.rules===3&&input.kind==='buy'&&input.stake===account.balance,'全猜须使用当前全部可用余额');
+        requireThat(integer(input.stake, 1, allIn?Number.MAX_SAFE_INTEGER:10000) && account.balance >= input.stake, '马币不足或投入须为1至10000整数');
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
+        const claim=r.rules>=2?Number(BigInt(input.stake)*BigInt(r.quoteRates[input.player*8+input.rank-1])/10000n):0;
+        requireThat(Number.isSafeInteger((p?.claim??0)+claim),'本笔奖励额度超出安全范围');
         account.balance -= input.stake;
         flow.invested+=input.stake;
         if(!p)positions[input.player]=p={rank:input.rank,stake:0,...(r.rules>=2?{claim:0}:{})};
         if(r.rules===3){
           p.saleBasis??={legacyClaim:p.claim,units:0};
-          p.saleBasis.units+=Number(BigInt(input.stake)*BigInt(personalSaleRate(r,key,input.player,input.rank))/10000n);
+          const units=Number(BigInt(input.stake)*BigInt(personalSaleRate(r,key,input.player,input.rank))/10000n);
+          requireThat(Number.isSafeInteger(p.saleBasis.units+units),'本笔回收额度超出安全范围');
+          p.saleBasis.units+=units;
         }
         p.stake+=input.stake;
-        if(r.rules>=2)p.claim+=Math.floor(input.stake*r.quoteRates[input.player*8+input.rank-1]/10000);
+        if(r.rules>=2)p.claim+=claim;
       }
       if(r.rules>=2){const counts=(r.actionCounts??={})[key]??=Array(8).fill(0);counts[input.player]++;}
       requireThat(Object.keys(r.receipts).length < (r.rules>=2?131072:20000), '本房间操作次数已满');

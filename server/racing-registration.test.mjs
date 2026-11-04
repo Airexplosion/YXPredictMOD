@@ -17,6 +17,139 @@ function fixture(save){
  const sign=p=>{const payload=Buffer.from(JSON.stringify({...p,expiresAt:now()+60000})).toString('base64url');return payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');};
  return {rooms,web,hourly,user,actor,call,open,snapshot,now,time:n=>clock=n,sign};
 }
+test('rounds ten and twelve accept only full-balance guesses and keep both withdrawal commands closed',()=>{
+ for(const round of [10,12]){
+  const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round,liveRound:round,closedThrough:round-1,open:false,sourcePhase:'preparation'});
+  let room=x.rooms.state.rooms[code];assert.equal(room.open,false);assert.equal(room.tradingClosed,true);
+  assert.equal(x.web.watch(room).allInOpen,true);
+  const before=structuredClone(x.rooms.state);
+  assert.throws(()=>x.call('竞猜 3 100',{messageId:'late-partial'}),/截止/);
+  assert.deepEqual(x.rooms.state,before);
+  const full=x.call('全猜 3',{messageId:'late-full'});
+  assert.equal(x.rooms.state.rooms[code].positions[key][2].stake,1000);assert.equal(x.web.me(x.user).playBalance,0);
+  qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:full.receiptId});
+  for(const command of ['减半 3','撤回 3']){
+   const unchanged=structuredClone(x.rooms.state);
+   assert.throws(()=>x.call(command,{messageId:'late-withdraw'}),/截止|停止/);assert.deepEqual(x.rooms.state,unchanged);
+   room=x.rooms.state.rooms[code];
+   assert.throws(()=>x.rooms.trade(code,key,{kind:'sell',allIn:true,rank:1,player:2,stake:0,operation:'forged-full-sell',version:room.version}),/截止|停止/);
+   assert.deepEqual(x.rooms.state,unchanged);
+  }
+ }
+});
+
+test('all-in closes at actual round thirteen and cannot use stale, incomplete or non-preparation status',()=>{
+ for(const reason of ['round13','live13','monitor13','battle','unknown','incomplete','offline','verifying']){
+  const x=fixture();x.call('注册 小白');const {code}=x.open();
+  const s={...x.snapshot,round:12,liveRound:12,closedThrough:11,open:false,sourcePhase:'preparation'};
+  if(reason==='round13'){s.round=13;s.liveRound=13;s.closedThrough=12;}
+  if(reason==='live13')s.liveRound=13;
+  if(reason==='battle')s.sourcePhase='battle';
+  if(reason==='unknown')delete s.sourcePhase;
+  if(reason==='incomplete')s.roundComplete=false;
+  x.rooms.sync(code,x.hourly.data().hostToken,s);
+  if(reason==='offline')x.rooms.syncTimes.set(code,x.now()-15001);
+  if(reason==='monitor13')x.rooms.sourceHealth.set(code,{state:'live',at:x.now(),round:13});
+  if(reason==='verifying')x.rooms.sourceHealth.set(code,{state:'verifying',at:x.now(),round:12});
+  const before=structuredClone(x.rooms.state);
+  assert.throws(()=>x.call('全猜 3',{messageId:'blocked-all-in'}));
+  assert.deepEqual(x.rooms.state,before,reason);
+ }
+});
+
+test('old saved round twelve state needs a verified fresh preparation snapshot before enabling all-in',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),room=x.rooms.state.rooms[code];
+ room.round=12;room.liveRound=12;room.open=true;room.tradingClosed=true;delete room.allInOpen;
+ assert.equal(x.rooms.isOpen(room,true),false);
+ x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:12,liveRound:12,closedThrough:11,open:false,sourcePhase:'preparation'});
+ const p=x.hourly.presentation(x.rooms.state.rooms[code],'round',12);
+ assert.equal(p.allInOpen,true);assert.match(p.closingWarning,/第13回合/);
+});
+
+test('all-in uses the selected wallet balance once, including amounts above the normal order limit',()=>{
+ for(const balance of [10,1000,15037,350000,1000000000037]){
+  const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+  x.rooms.state.accounts[key].balance=balance;
+  const reply=x.call('全猜 3',{messageId:'full-wallet'});
+  const room=x.rooms.state.rooms[code],position=room.positions[key][2];
+  assert.equal(x.web.me(x.user).playBalance,0);
+  assert.equal(position.stake,balance);assert.equal(position.rank,1);
+  assert.equal(position.claim,Number(BigInt(balance)*BigInt(room.quoteRates[16])/10000n));
+  assert.equal(room.actionCounts[key][2],1);assert.equal(room.cashflows[key].invested,balance);
+  assert(reply.lines[0].includes('全部可用'+balance+'马币'));
+  const snapshot=structuredClone(x.rooms.state);
+  assert.deepEqual(x.call('/全猜 3',{messageId:'full-wallet'}),reply);
+  assert.deepEqual(x.rooms.state,snapshot);
+ }
+});
+
+test('all-in resolves normal low-balance relief before taking the final available amount',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+ x.rooms.state.accounts[key].balance=1;
+ x.call('全猜 3');
+ assert.equal(x.rooms.state.rooms[code].positions[key][2].stake,51);
+ assert.equal(x.web.me(x.user).playBalance,0);
+});
+
+test('all-in leaves existing positions and other wallets intact and settles its locked champion reward',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+ const other=x.rooms.register('原钱包').token;x.rooms.state.accounts[other].webOwner=x.user.subject;
+ const first=x.call('竞猜 1 100',{messageId:'earlier-quiz'});
+ qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:first.receiptId});
+ x.call('全猜 3',{messageId:'rest-quiz'});
+ const room=x.rooms.state.rooms[code],claim=room.positions[key][2].claim;
+ assert.equal(room.positions[key][0].stake,100);assert.equal(room.positions[key][2].stake,900);
+ assert.equal(x.rooms.state.accounts[other].balance,1000);
+ x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:20,closedThrough:20,open:false,ended:true,ranks:[8,7,1,6,5,4,3,2]});
+ assert.equal(x.rooms.state.accounts[key].balance,claim);
+ assert.equal(room.payouts[key],claim);assert.equal(x.rooms.state.accounts[other].balance,1000);
+});
+
+test('all-in receipts survive restart and never consume a later check-in grant',()=>{
+ const x=fixture();x.call('注册 小白');x.open();
+ const reply=x.call('全猜 选手2',{messageId:'full-restart'});
+ x.call('签到');assert.equal(x.web.me(x.user).playBalance,200);
+ const rooms=new Rooms(JSON.parse(JSON.stringify(x.rooms.state)),undefined,x.now),web=new PredictionWeb(rooms,{bridgeKey,now:x.now}),hourly=new HourlyEvents(rooms,web);
+ assert.deepEqual(qqCommand(web,hourly,x.user,{text:'/全猜 选手2',messageId:'full-restart',messageAt:x.now()}),reply);
+ assert.equal(web.me(x.user).playBalance,200);
+ assert.throws(()=>qqCommand(web,hourly,x.user,{text:'全猜 4',messageId:'full-restart',messageAt:x.now()}),/内容不一致/);
+ assert.equal(web.me(x.user).playBalance,200);
+});
+
+test('all-in rejects empty funds, extra amounts, retired players and round ten without changing state',()=>{
+ for(const reason of ['empty','amount','retired','closed','missing']){
+  const x=fixture();x.call('注册 小白');const {code}=x.open(),room=x.rooms.state.rooms[code],key=x.web.playKey(x.user);
+  if(reason==='empty'){x.rooms.state.accounts[key].balance=0;x.rooms.state.accounts[key].transferOut=1000;}
+  if(reason==='retired')room.active[2]=false;
+  if(reason==='closed'){room.round=13;room.tradingClosed=true;}
+  const before=structuredClone(x.rooms.state);
+  assert.throws(()=>x.call(reason==='amount'?'全猜 3 200':reason==='missing'?'全猜':'全猜 3'),reason==='empty'?/没有可用马币/:reason==='retired'?/已淘汰|退出/:reason==='closed'?/截止/:/用法|选手编号/);
+  assert.deepEqual(x.rooms.state,before,reason);
+ }
+});
+
+test('failed all-in persistence rolls back funds, positions and receipts so the exact message can retry',()=>{
+ let fail=false;const x=fixture(()=>{if(fail)throw Error('disk full');});x.call('注册 小白');x.open();
+ const before=structuredClone(x.rooms.state);fail=true;
+ assert.throws(()=>x.call('全猜 3',{messageId:'all-save-failure'}),/disk full/);
+ assert.deepEqual(x.rooms.state,before);fail=false;
+ const reply=x.call('全猜 3',{messageId:'all-save-failure'});
+ assert.equal(x.web.me(x.user).playBalance,0);
+ assert.deepEqual(x.call('全猜 3',{messageId:'all-save-failure'}),reply);
+});
+
+test('only an explicit complete-balance order bypasses the ordinary 10000 limit',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user),room=x.rooms.state.rooms[code];
+ x.rooms.join(code,key,room.gameId);x.rooms.state.accounts[key].balance=35000;
+ const order={kind:'buy',player:2,rank:1,operation:'ordinary-full-order',version:room.version,stake:35000};
+ const before=structuredClone(x.rooms.state);
+ assert.throws(()=>x.rooms.trade(code,key,order),/10000/);
+ assert.throws(()=>x.rooms.trade(code,key,{...order,stake:20000,allIn:true}),/全部可用余额/);
+ assert.deepEqual(x.rooms.state,before);
+ x.rooms.trade(code,key,{...order,allIn:true});assert.equal(x.rooms.state.accounts[key].balance,0);
+});
+
 test('quiz aliases preserve canonical receipt digests and never repeat a debit',()=>{
  for(const [input,canonical]of [['竞猜','下注'],['观战','赛马'],['走势','盘口'],['减半','退半'],['撤回','清仓'],['马币','马币']]){
   for(const prefix of ['','/'])assert.equal(normalizeRaceCommand(prefix+input+' 1 200'),'/'+canonical+' 1 200');

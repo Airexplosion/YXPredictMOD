@@ -24,7 +24,7 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   const eligibleQuote=p=>!view.ended&&!view.settled&&!p.rank&&p.active!==false&&!(p.state&&p.state.life<=0)&&integer(p.quoteRate,1,575000);
   const quoted=view.players.filter(eligibleQuote).map(p=>p.quoteRate);
   const quoteRange=quoted.length?{minimumRate:Math.min(...quoted),maximumRate:Math.max(...quoted)}:null;
-  const closingWarning=view.round===9&&!view.tradingClosed&&!view.ended&&!view.settled?'提醒：下回合（第10回合）起竞猜截止，这是最后一个可竞猜回合。':null;
+  const closingWarning=view.ended||view.settled?null:view.round===12?'提醒：下回合（第13回合）起全猜截止，这是最后一个可全猜回合。':view.round===9&&!view.tradingClosed?'提醒：下回合（第10回合）起普通竞猜、减半和撤回截止；全猜可用至第12回合。':null;
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
     const p=view.players[index],build=[after?.builds?.[index],frame?.builds?.[index],p.build,...(view.buildHistory?.[index]??[])].filter(b=>b&&b.selectionRound<=round).sort((a,b)=>b.selectionRound-a.selectionRound)[0]??null;
     const battle=available.filter(b=>b.first===index&&!b.firstMirror||b.second===index&&!b.secondMirror).sort((a,z)=>z.round-a.round)[0],side=battle?.first===index?'first':'second';
@@ -37,7 +37,7 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
   return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,
-    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,
+    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,allInOpen:!!view.allInOpen&&!view.ended&&!view.settled&&view.round<13,
     bettingState:view.availability?.state??(view.open?'open':view.tradingClosed?'closed':'waiting'),settlement:finalReport?view.settlement??null:null,players,
     battles:battles.map(b=>({...b,firstName:view.players[b.first].name,secondName:view.players[b.second].name,firstCharacterId:view.players[b.first].build?.characterId??0,secondCharacterId:view.players[b.second].build?.characterId??0,winnerName:b.winner===null?null:view.players[b.winner].name}))});
 }
