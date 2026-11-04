@@ -20,11 +20,12 @@ const help=[
   '走势：一张图查看八位角色的奖励倍率、竞猜总额和冠军奖励额度走势。',
   '观战：查看本场；选手 1：查看指定选手的牌阵与仙命，也支持完整昵称。',
   '竞猜 1 200 2 300：一条指令多笔竞猜，可重复选手。',
+  '全猜 3：第1～12回合修炼阶段，将当前竞猜钱包的全部可用马币用于3号选手，不填写金额。',
   '减半 1：减半；撤回 1：撤回；查单：核对最近扣款回执。',
   '改名 新昵称：修改上榜ID；绑定 SM-…：确认本人网页上的QQ绑定请求。',
-  '全部指令均可带/不带“/”，也可先@机器人。只猜冠军，第10回合起竞猜截止，第一返锁定权益100%、第二25%、第三10%，包含投入。'
+  '全部指令均可带/不带“/”，也可先@机器人。只猜冠军，普通竞猜、减半和撤回从第10回合起截止；全猜从第13回合起截止。第一返锁定权益100%、第二25%、第三10%，包含投入。'
 ];
-const instructions='群内竞猜：注册 昵称 → 走势 查看奖励倍率与参与记录 → 选手 1 查看牌阵 → 竞猜 1 200；减半 1、撤回 1可调整参与记录。帮助 查看全部指令。';
+const instructions='群内竞猜：注册 昵称 → 走势 查看奖励倍率与参与记录 → 选手 1 查看牌阵 → 竞猜 1 200；全猜 1 使用全部可用马币，减半 1、撤回 1可调整参与记录。帮助 查看全部指令。';
 const registrationHelp=['先起一个上榜ID：发送“注册 你的昵称”，例如“注册 小白”。无需游戏认证，钱包绑定你的QQ。','也支持 /注册 昵称，或先@机器人再发送。'];
 export function isPredictionCommand(text){return normalizeRaceCommand(text)!==null;}
 const ownsReceipt=(user,row)=>row.owner===user.subject||row.owner===user.qqSubject||row.qqOwner&&row.qqOwner===user.qqSubject;
@@ -63,7 +64,7 @@ export function qqCommand(web,hourly,user,body){
       if(!previous||given){profile.name=name;profile.renamedAt=web.now();}
       (web.rooms.state.qqRegistrations??={})[user.qqSubject]={at:previous?.at??web.now(),name:profile.name};
       const me=web.me({...user,subject:owner});
-      return {lines:[`${previous?'你已注册观战':'观战注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可竞猜，第10回合起竞猜截止。参与时锁定奖励额度，最终第一返100%、第二25%、第三10%，返还包含投入。','减半/撤回按当前估值回收并扣3%；余额 查看马币，签到 每天领200，转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算竞猜记录会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
+      return {lines:[`${previous?'你已注册观战':'观战注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可普通竞猜，第1～12回合可全猜；第10回合起减半和撤回截止。参与时锁定奖励额度，最终第一返100%、第二25%、第三10%，返还包含投入。','减半/撤回按当前估值回收并扣3%；余额 查看马币，签到 每天领200，转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算竞猜记录会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
     });
   }
   if(command==='/赛马改名'){
@@ -80,8 +81,8 @@ export function qqCommand(web,hourly,user,body){
     recipient=web.identity(body.recipientTicket);
     ensure(recipient.groupId===user.groupId&&isRaceGroup(recipient.groupId)&&['qq-wallet','qq-prediction','qq-racing'].includes(recipient.scope)&&/^[a-f0-9]{64}$/.test(recipient.qqSubject??''),'收款人身份无效',403);
   }
-  if(['/下注','/退半','/清仓','/马币签到','/马币转账'].includes(command))ensure(registered,'请先发送“注册 昵称”，无需游戏认证。');
-  if(['/下注','/退半','/清仓','/马币转账'].includes(command)){
+  if(['/下注','/全猜','/退半','/清仓','/马币签到','/马币转账'].includes(command))ensure(registered,'请先发送“注册 昵称”，无需游戏认证。');
+  if(['/下注','/全猜','/退半','/清仓','/马币转账'].includes(command)){
     ensure(typeof body.messageId==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(body.messageId),'群消息标识无效');
     operation='qq-'+createHash('sha256').update((user.scope==='qq-racing'?user.qqSubject:user.subject)+':'+user.groupId+':'+body.messageId).digest('hex');
     requestDigest=createHash('sha256').update(recipient?JSON.stringify([body.text.trim(),recipient.qqSubject]):body.text.trim()).digest('hex');
@@ -126,11 +127,11 @@ export function qqCommand(web,hourly,user,body){
   };
   const index=resolve(args[0]);
   if(command==='/选手')return {lines:publicSummary(view,{player:index}),presentation:publicPresentation(view,{player:index}),forward:true};
-  const kind=command==='/下注'?'buy':command==='/退半'?'half':'sell';
-  ensure(kind==='buy'?args.length>=2&&args.length%2===0:args.length===1,kind==='buy'?'用法：/竞猜 选手编号 马币数 [选手编号 马币数 …]':'用法：'+(kind==='half'?'减半':'撤回')+' 选手编号');
+  const allIn=command==='/全猜',kind=command==='/下注'||allIn?'buy':command==='/退半'?'half':'sell';
+  ensure(allIn?args.length===1:kind==='buy'?args.length>=2&&args.length%2===0:args.length===1,allIn?'用法：全猜 选手编号或完整昵称，不填写金额':kind==='buy'?'用法：/竞猜 选手编号 马币数 [选手编号 马币数 …]':'用法：'+(kind==='half'?'减半':'撤回')+' 选手编号');
   ensure(kind!=='buy'||args.length<=64,'一次最多竞猜32笔');
   const orders=[];
-  if(kind==='buy')for(let at=0;at<args.length;at+=2){
+  if(kind==='buy'&&!allIn)for(let at=0;at<args.length;at+=2){
     const stake=/^[1-9][0-9]{0,4}$/.test(args[at+1])?Number(args[at+1]):0;
     ensure(stake>=1&&stake<=10000,'每笔投入1～10000马币');orders.push({index:resolve(args[at]),stake});
   }else orders.push({index,stake:0});
@@ -140,16 +141,23 @@ export function qqCommand(web,hourly,user,body){
     if(kind==='buy')syncQqWallet(web,user);
     else ensure(web.owned(user).length,'尚无马币账户或竞猜记录');
     const key=web.playKey(user);
+    if(allIn){
+      ensure(web.rooms.isOpen(room,true),web.rooms.availability(room,true).message,409);
+      const balance=web.rooms.account(key).balance;
+      ensure(Number.isSafeInteger(balance)&&balance>0,'当前没有可用马币，无法全猜');
+      orders[0].stake=balance;
+    }
     if(!room.members.includes(key))web.play(user,{action:'join',code:room.code});
     const total=orders.reduce((sum,o)=>sum+o.stake,0);
     if(kind==='buy')ensure(total<=web.rooms.state.accounts[key].balance,'马币不足，本条共需'+total+'马币');
     const lines=[];let result;
     for(let at=0;at<orders.length;at++){
       const order=orders[at],previous=room.positions[key]?.[order.index]?.claim??0;
-      result=web.play(user,{action:'trade',code:room.code,kind,player:order.index,rank:1,stake:order.stake,version:room.version,operation:orders.length===1?operation:operation+'-'+(at+1)});
+      result=web.play(user,{action:'trade',code:room.code,kind,player:order.index,rank:1,stake:order.stake,...(allIn?{allIn:true}:{}),version:room.version,operation:orders.length===1?operation:operation+'-'+(at+1)});
       const p=result.wallet.positions[order.index];
       lines.push(orders.length>1?`${order.index+1}号 ${view.players[order.index].name}：投入${order.stake}马币，本笔冠军锁定奖励${p.claim-previous}马币。`:`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'撤回已确认'}${p?`，剩余冠军锁定奖励${p.claim}马币`:''}。可用${result.wallet.balance}马币。`);
     }
+    if(allIn)lines.unshift(`全猜已确认：${index+1}号 ${view.players[index].name}，投入全部可用${total}马币。`);
     if(orders.length>1)lines.unshift(`批量竞猜已确认：${orders.length}笔，共投入${total}马币。可用${result.wallet.balance}马币。`);
     const reply={lines,forward:false,receiptId:operation};
     saveReceipt(web,user,operation,requestDigest,reply,room.code);

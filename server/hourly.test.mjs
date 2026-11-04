@@ -188,7 +188,7 @@ test('batch save failures preserve every wallet, claim, cashflow and deduplicati
 test('round nine warning leads the first sentence and multi-bets retain the round ten closure',()=>{
  const x=fixture(),v=x.open();x.snapshot.round=9;x.hourly.sync(v.code,x.snapshot);
  const view=x.web.watch(x.rooms.state.rooms[v.code]),presentation=publicPresentation(view,{round:8,noticeType:'round'});
- assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起竞猜截止'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
+ assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起普通竞猜、减半和撤回截止'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
  const reply=qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-nine-batch',messageAt:x.now()});
  qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:reply.receiptId});x.snapshot.round=10;x.hourly.sync(v.code,x.snapshot);
  assert.equal(publicPresentation(x.web.watch(x.rooms.state.rooms[v.code])).closingWarning,null);
