@@ -29,8 +29,8 @@ def season_units(dest):
         f"ProtectSystem=strict\nProtectHome=true\nReadWritePaths={dest}\nPrivateTmp=true\nNoNewPrivileges=true\nTimeoutStartSec=40\n"
     )
     timer=(
-        "[Unit]\nDescription=Check season character scores every five minutes\n[Timer]\n"
-        f"OnActiveSec=5min\nOnUnitInactiveSec=5min\nAccuracySec=5s\nUnit={prefix}.service\n[Install]\nWantedBy=timers.target\n"
+        "[Unit]\nDescription=Check season character scores every minute\n[Timer]\n"
+        f"OnActiveSec=1min\nOnUnitInactiveSec=1min\nAccuracySec=5s\nUnit={prefix}.service\n[Install]\nWantedBy=timers.target\n"
     )
     return {units/(prefix+'.service'):service.encode(),units/(prefix+'.timer'):timer.encode()}
 

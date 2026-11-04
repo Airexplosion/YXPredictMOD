@@ -6,7 +6,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),requests=[],errors=[],payloads=[];
   page.on('request',r=>requests.push(r.url()));page.on('pageerror',e=>errors.push(e.message));
-  page.on('response',async r=>{if(new URL(r.url()).pathname==='/api/v1/leaderboard')payloads.push(await r.json())});
+  page.on('response',async r=>{if(new URL(r.url()).pathname==='/elo/public/leaderboard.json')payloads.push(await r.json())});
   assert.equal((await page.goto(url)).status(),200);await page.waitForSelector('.anon-score');assert.equal(await page.locator('.anon-score').count(),100);
   assert.deepEqual(await page.locator('#view-elo thead th').allTextContents(),['名次','保守分 ↓','不确定性','技术分']);
   assert.equal(await page.locator('.anon-uncertainty').count(),100);assert.equal(await page.locator('.anon-technical').count(),100);
@@ -21,7 +21,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   const shown=payloads.at(-1).rows[0],format=n=>n.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
   assert.equal(await page.locator('.anon-conservative').first().innerText(),format(shown.conservative));assert.equal(await page.locator('.anon-uncertainty').first().innerText(),format(shown.uncertainty));assert.equal(await page.locator('.anon-technical').first().innerText(),format(shown.technical));
   assert(await page.locator('#view-elo tbody tr').first().evaluate(row=>parseFloat(getComputedStyle(row.querySelector('.anon-conservative')).fontSize)>parseFloat(getComputedStyle(row.querySelector('.anon-technical')).fontSize)));
-  assert(payloads.length>=1);assert(!requests.some(u=>new URL(u).pathname.startsWith('/data/elo/')));assert(!requests.some(u=>new URL(u).pathname==='/api/v1/ratings'));
+  assert(payloads.length>=1);assert(!requests.some(u=>new URL(u).pathname.startsWith('/data/elo/')));assert(!requests.some(u=>new URL(u).pathname.startsWith('/api/v1/')));
   assert.deepEqual((await (await page.request.get(origin+'/api/v1/leaderboard?offset=100&limit=100')).json()).scores,[]);
   assert.equal((await page.request.get(origin+'/data/elo/names.json')).status(),404);assert.equal((await page.request.get(origin+'/data/elo/top.json')).status(),404);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({anonymousPayloads:payloads.length,threeNumericColumns:true,conservativeEmphasized:true,noPlayerSearchOrLinks:true,noLegacyIdentityRequests:true,top100Only:true,noPagination:true,desktopMobile:true,scriptErrors:0}));

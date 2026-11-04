@@ -59,12 +59,12 @@ function render(){
   btn.onclick=()=>{band=b;render()};$("leads").append(btn);
  }
  rows(p);$("board").hidden=false;
- $("status").textContent=!ended&&Date.now()-p.asOf>6.5*3600000?"更新超过一个评分周期，当前展示最近一次成功发布的数据。":"";
+ $("status").textContent=!ended&&Date.now()-p.asOf>20*60000?"更新已延迟，当前展示最近一次成功发布的数据。":"";
 }
 async function refresh(){
  if(loading)return;loading=true;
  try{
-  const response=await fetch("season.json",{cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer"});
+  const response=await fetch("season.json",{cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer",signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error("fetch");
   const incoming=await response.json();
   if(incoming.schema!=="season11-character-elo-v1"||incoming.model!=="within"||incoming.periods?.length!==3)throw Error("schema");
@@ -77,6 +77,6 @@ async function refresh(){
 document.querySelectorAll("[data-phase]").forEach(n=>n.onclick=()=>{phase=Number(n.dataset.phase);render()});
 document.querySelectorAll("[data-band]").forEach(n=>n.onclick=()=>{band=n.dataset.band;render()});
 $("search").oninput=()=>{if(data)rows(data.periods[phase-1])};
-controls();refresh();setInterval(()=>{if(!document.hidden)refresh()},300000);
+controls();refresh();setInterval(()=>{if(!document.hidden)refresh()},60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
 })();
