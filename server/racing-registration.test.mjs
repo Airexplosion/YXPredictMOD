@@ -17,6 +17,36 @@ function fixture(save){
  const sign=p=>{const payload=Buffer.from(JSON.stringify({...p,expiresAt:now()+60000})).toString('base64url');return payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');};
  return {rooms,web,hourly,user,actor,call,open,snapshot,now,time:n=>clock=n,sign};
 }
+test('coin ranking shows ten highest current balances, aggregates an owner and never opens the reader wallet',()=>{
+ const x=fixture(),keys=Array.from({length:13},(_,i)=>x.rooms.register('道友'+i).token);
+ keys.forEach((key,i)=>{x.rooms.state.accounts[key].balance=1000+i;});
+ x.rooms.state.accounts[keys[0]].balance=20000;x.rooms.state.accounts[keys[0]].checkInGranted=20000;
+ x.rooms.state.accounts[keys[1]].balance=15000;
+ x.rooms.state.accounts[keys[2]].balance=3000;x.rooms.state.accounts[keys[3]].balance=4000;
+ x.rooms.state.accounts[keys[2]].webOwner=x.user.subject;x.rooms.state.accounts[keys[3]].webOwner=x.user.subject;
+ x.rooms.state.profiles={[x.user.subject]:{name:'合并道友'}};
+ const observer=x.rooms.register('系统观战').token;x.rooms.state.accounts[observer].systemObserver=true;x.rooms.state.accounts[observer].balance=1000000000000;
+ const before=structuredClone(x.rooms.state),webOrder=x.web.leaderboard();
+ const reply=x.call('马币排行',{}, {...x.user,scope:'qq-wallet'});
+ assert.equal(reply.forward,false);assert.equal(reply.lines.length,11);
+ assert.match(reply.lines[1],/^1\. 道友0.*20,000 马币$/);
+ assert.match(reply.lines[2],/^2\. 道友1.*15,000 马币$/);
+ assert.match(reply.lines[3],/^3\. 合并道友.*7,000 马币$/);
+ assert.equal(reply.lines.filter(line=>line.includes('合并道友')).length,1);
+ for(const secret of [...keys,observer,x.user.subject,'系统观战'])assert(!reply.lines.join('\n').includes(secret));
+ assert.deepEqual(x.call('/马币排行').lines,reply.lines);
+ assert.deepEqual(x.rooms.state,before);assert.deepEqual(x.web.leaderboard(),webOrder);
+ x.rooms.commit(()=>{x.rooms.state.accounts[keys[4]].balance=30000;});
+ assert.match(x.call('马币排行').lines[1],/^1\. 道友4.*30,000 马币$/);
+});
+
+test('coin ranking works with no market, reports an empty list and rejects extra arguments without changes',()=>{
+ const x=fixture(),before=structuredClone(x.rooms.state);
+ assert.deepEqual(x.call('马币排行').lines,['马币余额排行 · 前十（不含已投入的马币）','暂无上榜记录。']);
+ assert.throws(()=>x.call('马币排行 20'),/用法：马币排行/);assert.deepEqual(x.rooms.state,before);
+ assert.equal(normalizeRaceCommand('马币排行榜'),null);
+});
+
 test('rounds ten and twelve accept only full-balance guesses and keep both withdrawal commands closed',()=>{
  for(const round of [10,12]){
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);

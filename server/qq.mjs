@@ -14,6 +14,7 @@ const ensure=(ok,message,status=400)=>{if(!ok)throw new RoomError(message,status
 const help=[
   '注册 昵称：无需认证，钱包绑定QQ；已认证可只发“注册”。首次开户1000马币，已有钱包不重复赠送。',
   '余额（或马币）：查询现有马币。',
+  '马币排行：按当前可用马币余额列出前十名，已投入的马币不计入可用余额。',
   '帮助：查看全部指令。',
   '签到：每天领200马币，与网站共用记录，北京时间0点刷新。',
   '转账 @某人 200：扣自己的200马币给对方；收款人未开户自动开通。',
@@ -38,7 +39,7 @@ function saveReceipt(web,user,operation,requestDigest,reply,code=null){
 
 export function qqCommand(web,hourly,user,body){
   body={...body,text:normalizeRaceCommand(body.text)};
-  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助'].includes(body.text)),'请从观战群发起命令；旧钱包凭据只能查询，参与竞猜请重新注册，无需游戏认证',403);
+  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助','/马币排行'].includes(body.text)),'请从观战群发起命令；旧钱包凭据只能查询，参与竞猜请重新注册，无需游戏认证',403);
   if(body.action==='ack'){
     ensure(['qq-prediction','qq-racing'].includes(user.scope),'旧钱包凭据只能查询',403);
     const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt&&ownsReceipt(user,receipt),'操作回执不属于当前账号',403);
@@ -51,6 +52,11 @@ export function qqCommand(web,hourly,user,body){
     web.browserAuth.confirmQq(user,args[0]);return {lines:['QQ身份已确认，请返回你刚才打开的观战网页完成登录或绑定。'],forward:false};
   }
   if(command==='/马币帮助'||command==='/赛马'&&args[0]==='帮助')return {lines:help,forward:false};
+  if(command==='/马币排行'){
+    ensure(args.length===0,'用法：马币排行');
+    const rows=web.buildLeaderboard().rows.sort((a,b)=>b.balance-a.balance||a.id.localeCompare(b.id)).slice(0,10);
+    return {lines:['马币余额排行 · 前十（不含已投入的马币）',...rows.map((row,i)=>(i+1)+'. '+row.name.replace(/\s+/g,' ')+'　'+row.balance.toLocaleString('zh-CN')+' 马币'),...(rows.length?[]:['暂无上榜记录。'])],forward:false};
+  }
   const registered=user.scope==='qq-prediction'||!!web.rooms.state.qqRegistrations?.[user.qqSubject];
   if(command==='/赛马注册'){
     ensure(/^[a-f0-9]{64}$/.test(user.qqSubject??''),'注册身份暂不可用，请重新发送',403);
