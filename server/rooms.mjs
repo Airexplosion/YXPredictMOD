@@ -281,6 +281,9 @@ export class Rooms {
       &&(r.liveRound??r.round)<limit&&r.closedThrough<limit
       &&this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000;
   }
+  allInMultiplier(r) {
+    return Math.max(r.round,r.liveRound??r.round,this.sourceHealth.get(r.code)?.round??0)===1?3:1;
+  }
   availability(r,allIn=false){
     const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,fresh=this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000,alive=monitor&&this.now()-monitor.at<=30000;
     if(r.settled)return {state:'settled',message:'本局已结算，马币已到账'};
@@ -350,6 +353,7 @@ export class Rooms {
       const sell = input.kind === 'sell' || input.kind === 'half' || input.kind === 'switch';
       if (sell) {
         requireThat(p && (r.rules>=2 ? p.claim>0&&!p.resolved : p.stake>0), '没有可出售的竞猜记录');
+        requireThat(!p.cashoutLocked,'首回合全猜已锁定至结算，不能减半、撤回或换目标');
         if(r.rules>=2 && input.kind==='switch')requireThat(p.rank!==input.rank,'预测名次相同，请使用增持');
         if(r.rules>=2){
           const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;
@@ -374,11 +378,19 @@ export class Rooms {
         if(allIn)requireThat(r.rules===3&&input.kind==='buy'&&input.stake===account.balance,'全猜须使用当前全部可用余额');
         requireThat(integer(input.stake, 1, allIn?Number.MAX_SAFE_INTEGER:10000) && account.balance >= input.stake, '马币不足或投入须为1至10000整数');
         requireThat(!p || p.rank === input.rank, '请使用换预测操作');
-        const claim=r.rules>=2?Number(BigInt(input.stake)*BigInt(r.quoteRates[input.player*8+input.rank-1])/10000n):0;
+        const multiplier=allIn?this.allInMultiplier(r):1;
+        const claim=r.rules>=2?Number(BigInt(input.stake)*BigInt(r.quoteRates[input.player*8+input.rank-1])*BigInt(multiplier)/10000n):0;
         requireThat(Number.isSafeInteger((p?.claim??0)+claim),'本笔奖励额度超出安全范围');
+        if(allIn){
+          const claims=positions.map(q=>q&&!q.resolved?q.claim:0);
+          claims[input.player]=(p?.claim??0)+claim;claims.sort((a,b)=>b-a);
+          const maximum=claims[0]+Math.floor(claims[1]/4)+Math.floor(claims[2]/10);
+          requireThat(Number.isSafeInteger(maximum)&&account.balance-input.stake+maximum<=1000000000000,'全猜奖励额度超过马币余额上限，本次未扣款');
+        }
         account.balance -= input.stake;
         flow.invested+=input.stake;
         if(!p)positions[input.player]=p={rank:input.rank,stake:0,...(r.rules>=2?{claim:0}:{})};
+        if(multiplier===3)p.cashoutLocked=true;
         if(r.rules===3){
           p.saleBasis??={legacyClaim:p.claim,units:0};
           const units=Number(BigInt(input.stake)*BigInt(personalSaleRate(r,key,input.player,input.rank))/10000n);

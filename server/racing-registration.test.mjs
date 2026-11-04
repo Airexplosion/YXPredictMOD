@@ -68,20 +68,85 @@ test('old saved round twelve state needs a verified fresh preparation snapshot b
 });
 
 test('all-in uses the selected wallet balance once, including amounts above the normal order limit',()=>{
- for(const balance of [10,1000,15037,350000,1000000000037]){
+ for(const balance of [10,1000,15037,350000,70000000001]){
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
   x.rooms.state.accounts[key].balance=balance;
   const reply=x.call('全猜 3',{messageId:'full-wallet'});
   const room=x.rooms.state.rooms[code],position=room.positions[key][2];
   assert.equal(x.web.me(x.user).playBalance,0);
   assert.equal(position.stake,balance);assert.equal(position.rank,1);
-  assert.equal(position.claim,Number(BigInt(balance)*BigInt(room.quoteRates[16])/10000n));
+  assert.equal(position.claim,Number(BigInt(balance)*BigInt(room.quoteRates[16])*3n/10000n));
+  assert.equal(position.cashoutLocked,true);
   assert.equal(room.actionCounts[key][2],1);assert.equal(room.cashflows[key].invested,balance);
   assert(reply.lines[0].includes('全部可用'+balance+'马币'));
   const snapshot=structuredClone(x.rooms.state);
   assert.deepEqual(x.call('/全猜 3',{messageId:'full-wallet'}),reply);
   assert.deepEqual(x.rooms.state,snapshot);
  }
+});
+
+test('first-round triple claims settle by the locked amount for first, second and third place',()=>{
+ for(const rank of [1,2,3]){
+  const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+  const reply=x.call('全猜 3');assert.match(reply.lines[0],/首回合额外×3/);
+  const room=x.rooms.state.rooms[code],claim=room.positions[key][2].claim;
+  assert.equal(claim,13800);
+  const available=[1,2,3,4,5,6,7,8].filter(r=>r!==rank),ranks=Array.from({length:8},(_,i)=>i===2?rank:available.shift());
+  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:20,closedThrough:20,open:false,ended:true,ranks});
+  const expected=rank===1?claim:rank===2?Math.floor(claim/4):Math.floor(claim/10);
+  assert.equal(x.rooms.state.accounts[key].balance,expected);
+  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:20,closedThrough:20,open:false,ended:true,ranks});
+  assert.equal(x.rooms.state.accounts[key].balance,expected);
+ }
+});
+
+test('first-round all-in permanently locks that position against halves, sells and switches, including after restart',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+ const reply=x.call('全猜 3');qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:reply.receiptId});
+ for(const round of [1,2,9]){
+  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round,liveRound:round,closedThrough:round-1,open:true,sourcePhase:'preparation'});
+  for(const command of ['减半 3','撤回 3']){
+   const before=structuredClone(x.rooms.state);
+   assert.throws(()=>x.call(command,{messageId:'locked-reduction'}),/锁定至结算/);
+   assert.deepEqual(x.rooms.state,before);
+  }
+  for(const kind of ['half','sell','switch']){
+   const room=x.rooms.state.rooms[code],before=structuredClone(x.rooms.state);
+   assert.throws(()=>x.rooms.trade(code,key,{kind,player:2,rank:1,stake:1,operation:'locked-operation',version:room.version}),/锁定至结算/);
+   assert.deepEqual(x.rooms.state,before);
+  }
+ }
+ const restored=new Rooms(JSON.parse(JSON.stringify(x.rooms.state)),undefined,x.now);
+ restored.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:9,liveRound:9,closedThrough:8,open:true,sourcePhase:'preparation'});
+ assert.equal(restored.state.rooms[code].positions[key][2].cashoutLocked,true);
+ assert.throws(()=>restored.trade(code,key,{kind:'sell',player:2,rank:1,operation:'post-restart-sell',version:restored.state.rooms[code].version}),/锁定至结算/);
+});
+
+test('later full guesses receive no triple bonus and can be withdrawn before round ten',()=>{
+ for(const cachedFirst of [false,true]){
+  const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user),round=cachedFirst?1:2;
+  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round,liveRound:2,closedThrough:round-1,open:true,sourcePhase:'preparation'});
+  const reply=x.call('全猜 3');let p=x.rooms.state.rooms[code].positions[key][2];
+  assert.equal(p.claim,4600);assert(!p.cashoutLocked);assert(!reply.lines[0].includes('首回合额外'));
+  qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:reply.receiptId});
+  x.call('撤回 3',{messageId:'normal-full-sell'});assert.equal(x.rooms.state.accounts[key].balance,970);
+ }
+});
+
+test('triple promotion applies only to the new first-round full fill and keeps the merged position locked',()=>{
+ const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+ const initial=x.call('竞猜 3 100',{messageId:'initial-regular'});qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:initial.receiptId});
+ const full=x.call('全猜 3',{messageId:'remaining-full'});qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:full.receiptId});
+ x.call('签到');x.call('竞猜 3 200',{messageId:'later-regular'});
+ const p=x.rooms.state.rooms[code].positions[key][2];
+ assert.equal(p.claim,460+12420+920);assert.equal(p.stake,1200);assert.equal(p.cashoutLocked,true);
+});
+
+test('unsafe potential all-in rewards are rejected before any debit or position is saved',()=>{
+ const x=fixture();x.call('注册 小白');x.open();const key=x.web.playKey(x.user);
+ x.rooms.state.accounts[key].balance=1000000000000;
+ const before=structuredClone(x.rooms.state);
+ assert.throws(()=>x.call('全猜 3'),/超过马币余额上限/);assert.deepEqual(x.rooms.state,before);
 });
 
 test('all-in resolves normal low-balance relief before taking the final available amount',()=>{
