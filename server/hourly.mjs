@@ -179,7 +179,7 @@ export class HourlyEvents{
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
     const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
-      ?[`整点竞猜开场 #${r.code} · 奖励倍率额外×1.15\n无需认证，先发 观战注册 昵称 开通QQ钱包。只猜冠军，普通竞猜及减半/撤回第10回合截止，全猜第13回合截止；第二25%、第三10%。\n竞猜 选手编号 马币数 · 全猜 选手编号 · 观战 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
+      ?[`整点竞猜开场 #${r.code} · 奖励倍率额外×1.15\n无需认证，先发 观战注册 昵称 开通QQ钱包。只猜冠军，普通竞猜及减半/撤回第10回合截止，全猜第13回合截止。首回合全猜额外×3并锁定至结算，不能减半或撤回；第二25%、第三10%。\n竞猜 选手编号 马币数 · 全猜 选手编号 · 观战 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
       :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
     if(old){old.lines=lines;old.presentation=this.presentation(r,kind,round);return;}
     data.outbox.push({id,kind,code:r.code,round,lines,presentation:this.presentation(r,kind,round),createdAt:this.rooms.now(),deliveredAt:null});

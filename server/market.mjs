@@ -14,6 +14,6 @@ export function rememberMarket(room){
 export function marketPresentation(rooms,room){
  const current=marketSnapshot(room),history=structuredClone(room.marketHistory??[]);
  if(history.at(-1)?.round===current.round)history[history.length-1]=current;else history.push(current);
- return {kind:'duma-market-v1',code:room.code,round:room.round,status:rooms.availability(room).message,closed:!!room.tradingClosed||room.round>=10,settled:!!room.settled,allInOpen:!!rooms.isOpen(room,true),
+ return {kind:'duma-market-v1',code:room.code,round:room.round,status:rooms.availability(room).message,closed:!!room.tradingClosed||room.round>=10,settled:!!room.settled,allInOpen:!!rooms.isOpen(room,true),allInMultiplier:rooms.allInMultiplier(room),
   players:room.players.map((p,i)=>({index:i,name:p.name,horseTitle:room.horseTitles?.[i]??'',rank:room.ranks[i],active:room.active?.[i]??!room.ranks[i]})),history:history.slice(-100)};
 }
