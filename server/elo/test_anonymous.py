@@ -47,7 +47,9 @@ class AnonymousTests(unittest.TestCase):
    self.assertEqual(first['rows'][0],{'conservative':4300,'uncertainty':200,'technical':4700})
    public=json.dumps([first,second]);self.assertNotIn(A,public);self.assertNotIn('MustNeverReachBrowser',public);self.assertNotIn(pseudonym(A,KEY),public)
    original=copy.deepcopy(primary());self.assertEqual(json.loads(p.read_text()),original)
-   newer=primary();newer['players'][A]['rating']=4900;p.write_text(json.dumps(newer));self.assertEqual(board.page()['scores'][0],4900)
+   newer=primary();newer['players'][A]['rating']=4900
+   replacement=p.with_suffix('.next');replacement.write_text(json.dumps(newer));replacement.replace(p)
+   self.assertEqual(board.page()['scores'][0],4900)
  def test_eligibility_uses_30_games_30_days_and_drops_invalid_scores(self):
   with tempfile.TemporaryDirectory() as directory:
    p=pathlib.Path(directory)/'new.json';data=primary();data['meta']['sourceAt']=40*86400000

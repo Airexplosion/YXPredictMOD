@@ -12,7 +12,7 @@ async function render(){
  heading.append(copy,characters);root.append(heading);
  const state=el('p','正在读取榜单…','anon-state');state.setAttribute('role','status');root.append(state);
  try{
-  const response=await fetch('/api/v1/leaderboard?offset=0&limit=100',{credentials:'omit',referrerPolicy:'no-referrer'});
+  const response=await fetch('/elo/public/leaderboard.json',{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error('榜单暂时无法读取');const data=await response.json();if(mine!==ticket)return;
   if(!Array.isArray(data.rows)||data.rows.some(row=>!['conservative','uncertainty','technical'].every(key=>Number.isFinite(row[key]))))throw Error('榜单格式异常');
   state.remove();

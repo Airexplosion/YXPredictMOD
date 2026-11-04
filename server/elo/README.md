@@ -1,8 +1,14 @@
 # Elo API 与匿名榜
 
-**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 默认展示百家之道第三期，采用换角校正 Elo（`within`）。页面可切换[第一期](https://elo.kaigua.vip/elo/characters/?phase=1)与[第二期](https://elo.kaigua.vip/elo/characters/?phase=2)。北京时间10月15日11:00、10月22日14:00、10月29日14:00分别起算，季前赛计入0局。第一、二期封存。第三期每天北京时间00:15、06:15、12:15、18:15开始重算。总体分等权合并3000–5999与6000及以上两段，玩家数分段列出。
+**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 默认展示百家之道第三期，采用换角校正 Elo（`within`）。页面可切换[第一期](https://elo.kaigua.vip/elo/characters/?phase=1)与[第二期](https://elo.kaigua.vip/elo/characters/?phase=2)。北京时间10月15日11:00、10月22日14:00、10月29日14:00分别起算，季前赛计入0局。第一、二期封存。第三期每10分钟开始重算，按开局和结算时间顺序逐局更新，完整重放可接纳迟到和被更正的身份事实，避免增量重复计分。总体分等权合并3000–5999与6000及以上两段，玩家数分段列出。
 
-正式页只读取同域 `season.json`。来源服务器运行 `season_scores.py`，从本赛季分期索引按字段白名单导出三期的角色分、出场人次和玩家数。网站的 `yx-season-board-feed.timer` 每五分钟通过限定来源地址和只读导出命令的专用 SSH 密钥拉取结果，核对时期、算法和角色名单，再原子发布。无效或过时的代次保留上一份成功快照。
+正式页只读取同域 `season.json`。来源服务器运行 `season_scores.py`，从本赛季分期索引按字段白名单导出三期的角色分、出场人次和玩家数。网站的 `yx-season-board-feed.timer` 每分钟通过限定来源地址和只读导出命令的专用 SSH 密钥拉取结果，核对时期、算法和角色名单，再原子发布。打开的页面每分钟检查新结果，15秒请求超时后允许重试，超过20分钟未生成新结果时提示延迟。无效或过时的代次保留上一份成功快照。
+
+来源服务器的定时器配置在 `systemd/yx-patch-rating-study.timer`，仍运行既有评分服务，CPU、内存限制和版本边界检查保持生效。systemd不会并行启动同一个服务，单次若超过10分钟，不会叠加计算。网站发布只读取已经完成的匿名结果，不发游戏请求。评分代码与每日锁定预测保持原样，仅提高运行频率。
+
+个人榜的网页读取 `/elo/public/leaderboard.json`，由 `public_snapshot.py` 从完整合并评分快照预先生成。只包含前100名的三项数值及汇总时间，无身份和复盘字段，文件小于32KB，由Caddy静态提供，刷新无需在API进程内重新加载十多万人的私有快照。生产部署在 `yx-elo-update.service` 增加 `ExecStartPost=/opt/yx-elo/venv/bin/python /opt/yx-elo/public_snapshot.py --snapshot /var/lib/yx-elo/snapshot.json --output <网页目录>/elo/public/leaderboard.json --lookup-db /var/lib/yx-elo/ratings.sqlite3`，并将该公开目录加入 `ReadWritePaths`，目录由 `yx-elo` 写入、Caddy只读。只在重算成功后发布，采用原子替换，失败保留上次成功结果。首次切换网页前须先成功导出。私有快照与索引仍在原有受限目录，独立UID API响应格式保持不变。开发用的独立Python页面为此URL保留同等匿名输出回退，生产由Caddy静态路由承接。
+
+`query_store.py` 把同一代评分保存为只读SQLite索引。生产API使用 `api.py --lookup-db /var/lib/yx-elo/ratings.sqlite3 --uid-key-file /var/lib/yx-elo/uid-hmac.key`，单个/八人查询按身份主键读取，不全量扫描或缓存私有JSON。旧后缀分片有单独索引，匿名榜也已预计算。每次请求只打开一个只读连接，发布新代次时现有请求仍读原文件，后续请求读新文件，避免换代时阻塞。该数据库0600、不在网页目录，不允许网页下载；UID接口原有能力不扩大。模型和前100名排序不变，未新增昵称搜索。
 
 [副职参考](https://elo.kaigua.vip/elo/characters/reference.html) 单独使用旧版公式，原两分钟汇总定时器继续维护 `live.json`，`window.json` 留存固定快照。旧链接中明确请求固定快照或副职的查询参数会转入该页，原实时角色榜链接打开第三期。
 
@@ -21,7 +27,9 @@
 
 ## 接口
 
-`GET /api/v1/ratings?uid=<24位小写hex>&uid=<另一UID>`：最多8人，返回按原始UID索引的资料字典。缺失者不返回，不能把默认3000当作已收录。MOD一次查询完整八人名单。
+`GET https://elo.kaigua.vip/api/v1/ratings?uid=<24位小写hex>`：传一个UID，只返回这个玩家的资料，不需要拉榜单或分片。结果为 `{ "所查询的UID": { "name": "昵称", "rating": 技术分, "cons": 保守分, "sigma": 不确定性, "games": 计分场数, "dx": 道心场数, "last": 最后计分时间毫秒, ... } }`。尚未收录时返回HTTP200和 `{}`，非法UID返回400，不能把默认3000当作已收录。
+
+`GET /api/v1/ratings?uid=<UID1>&uid=<UID2>`：同一接口可重复传入 `uid`，最多8人，只返回查到的玩家。MOD与赛马服务器现有客户端已经调用这个接口，无需更新客户端即可使用索引加速。
 
 `GET /api/v1/status` 或 `/healthz`：模型、种子时间、源时间、已更新局数、过期状态与覆盖说明。
 
