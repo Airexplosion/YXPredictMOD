@@ -21,7 +21,7 @@ const help=[
   '走势：一张图查看八位角色的奖励倍率、竞猜总额和冠军奖励额度走势。',
   '观战：查看本场；选手 1：查看指定选手的牌阵与仙命，也支持完整昵称。',
   '竞猜 1 200 2 300：一条指令多笔竞猜，可重复选手。',
-  '全猜 3：第1～12回合修炼阶段，将当前竞猜钱包的全部可用马币用于3号选手，不填写金额。首回合额外×3，该选手记录锁定至结算，不能减半、撤回或换目标。',
+  '全猜 3：将当前竞猜钱包的全部可用马币用于3号选手，不填写金额。整点开场消息首次发布确认后两分钟内，跨回合额外×3，期间该选手记录锁定至结算，不能减半、撤回或换目标；之后第13回合前仅在修炼阶段普通全猜。',
   '减半 1：减半；撤回 1：撤回；查单：核对最近扣款回执。',
   '改名 新昵称：修改上榜ID；绑定 SM-…：确认本人网页上的QQ绑定请求。',
   '全部指令均可带/不带“/”，也可先@机器人。只猜冠军，普通竞猜、减半和撤回从第10回合起截止；全猜从第13回合起截止。第一返锁定权益100%、第二25%、第三10%，包含投入。'
@@ -163,7 +163,7 @@ export function qqCommand(web,hourly,user,body){
       const p=result.wallet.positions[order.index];
       lines.push(orders.length>1?`${order.index+1}号 ${view.players[order.index].name}：投入${order.stake}马币，本笔冠军锁定奖励${p.claim-previous}马币。`:`${view.players[index].name}：${kind==='buy'?'投入已确认':kind==='half'?'减半已确认':'撤回已确认'}${p?`，剩余冠军锁定奖励${p.claim}马币`:''}。可用${result.wallet.balance}马币。`);
     }
-    if(allIn)lines.unshift(`全猜已确认：${index+1}号 ${view.players[index].name}，投入全部可用${total}马币。${web.rooms.allInMultiplier(room)===3?'首回合额外×3，该选手竞猜记录已锁定至结算，不能减半、撤回或换目标。':''}`);
+    if(allIn)lines.unshift(`全猜已确认：${index+1}号 ${view.players[index].name}，投入全部可用${total}马币。${web.rooms.allInMultiplier(room)===3?'额外×3，该选手竞猜记录已锁定至结算，不能减半、撤回或换目标。':''}`);
     if(orders.length>1)lines.unshift(`批量竞猜已确认：${orders.length}笔，共投入${total}马币。可用${result.wallet.balance}马币。`);
     const reply={lines,forward:false,receiptId:operation};
     saveReceipt(web,user,operation,requestDigest,reply,room.code);

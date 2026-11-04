@@ -21,6 +21,8 @@ function fixture(save){
  snapshot.builds=Array.from({length:8},(_,i)=>({characterId:1000001+i,characterName:'角色'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:1,realmName:'炼气',talents:[{id:10001,name:'凝气'}],baijia:[],fates:[],resonance:null,selectionRound:0,selectionsKnown:false,cards:null,cardNames:null}));
  return {rooms,web,hourly,info,snapshot,now:()=>now,time:t=>now=t,open:()=>hourly.open(info,snapshot)};
 }
+function finishOpening(x){x.time(x.now()+120000);const end=x.hourly.claim();assert.equal(end.remainingSeconds,0);for(const t of end.targets)x.hourly.ack(end.id,end.lease,t.groupId);}
+
 test('closed horse reveal matches the actual donor for every native model fixture, including ties and AI',()=>{
  const fixtures=JSON.parse(readFileSync(new URL('./observer/fixtures/quotes.json',import.meta.url),'utf8'));
  const counts=new Set();
@@ -34,6 +36,7 @@ test('closed horse reveal matches the actual donor for every native model fixtur
 test('WHITE reveals only after permanent close, without battle assets, once across resync, restart and per-group retry',()=>{
  const x=fixture();x.time(Date.UTC(2026,10,3,6));x.snapshot.horseShuffle=true;const {code}=x.open(),start=x.hourly.claim();
  for(const target of start.targets)x.hourly.ack(start.id,start.lease,target.groupId);
+ finishOpening(x);
  x.snapshot.round=9;x.snapshot.open=false;x.snapshot.sourcePhase='battle';x.snapshot.builds=Array(8).fill(null);
  x.hourly.sync(code,x.snapshot);assert.equal(x.hourly.claim(),null);assert(!JSON.stringify(x.web.watch(x.rooms.state.rooms[code])).includes('shuffleTransfers'));
  x.snapshot.liveRound=10;x.hourly.sync(code,x.snapshot);x.hourly.sync(code,x.snapshot);
@@ -214,7 +217,7 @@ test('actual native round ten permanently closes earlier delayed public rounds, 
  x.snapshot.roundComplete=true;x.hourly.sync(view.code,x.snapshot);x.time(x.now()+45000);x.hourly.sync(view.code,x.snapshot);assert.equal(x.hourly.data().outbox.filter(e=>e.kind==='round').length,1);
 });
 test('round announcement waits for public battle coverage and reports the next preparation state as that round result',()=>{
- const x=fixture(),r=x.open();const start=x.hourly.claim();x.hourly.ack(start.id,start.lease);x.snapshot.round=2;x.snapshot.closedThrough=1;x.snapshot.states=x.snapshot.states.map(()=>({life:80,wins:1,losses:0}));
+ const x=fixture(),r=x.open();const start=x.hourly.claim();x.hourly.ack(start.id,start.lease);finishOpening(x);x.snapshot.round=2;x.snapshot.closedThrough=1;x.snapshot.states=x.snapshot.states.map(()=>({life:80,wins:1,losses:0}));
  x.snapshot.builds.forEach(b=>{b.selectionRound=1;b.selectionsKnown=true;});
  x.hourly.sync(r.code,x.snapshot);assert.equal(x.hourly.claim(),null);x.time(x.now()+60000);assert.equal(x.hourly.claim(),null);
  x.snapshot.battles=Array.from({length:4},(_,i)=>({round:1,first:x.snapshot.players[i*2].uid,second:x.snapshot.players[i*2+1].uid,winner:x.snapshot.players[i*2].uid,
@@ -235,6 +238,7 @@ test('observer liveness reports never refresh quotes; verification pauses immedi
 });
 test('settlement is forwarded once while incomplete final battle reports remain queued',()=>{
  const x=fixture(),v=x.open();let event=x.hourly.claim();x.hourly.ack(event.id,event.lease);
+ finishOpening(x);
  Object.assign(x.snapshot,{round:2,closedThrough:2,ended:true,open:false,ranks:[1,2,3,4,5,6,7,8]});
  const result=x.hourly.sync(v.code,x.snapshot);assert.equal(result.settled,true);assert.equal(result.reportReady,false);
  const accounts=structuredClone(x.rooms.state.accounts),r=x.rooms.state.rooms[v.code],financial=structuredClone({positions:r.positions,payouts:r.payouts,cashflows:r.cashflows});
