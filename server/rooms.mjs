@@ -3,6 +3,7 @@ import { eliminationPlan, intervalReturn, championReturn } from './eliminations.
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {publicBuild} from './public-build.mjs';
 import {rememberMarket} from './market.mjs';
+import {openingAllIn} from './opening-window.mjs';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -199,6 +200,7 @@ export class Rooms {
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules<2 || r.ranks.filter(rank=>rank===0).length>=2);
     r.allInOpen = !r.ended && r.round<13 && r.liveRound<13 && r.closedThrough<r.round && s.roundComplete!==false
       && (s.open||!!r.eventSlot&&s.sourcePhase==='preparation');
+    if(r.openingAllIn?.version===1)r.openingAllInReady=s.sourcePhase==='battle'||s.roundComplete!==false&&(s.open||s.sourcePhase==='preparation');
     if(s.builds){
       this.rememberBuilds(r,r.builds);
       r.builds=r.players.map(p=>publicBuild(s.builds[s.players.findIndex(q=>q.uid===p.uid)],s.round));
@@ -275,19 +277,26 @@ export class Rooms {
   }
   isOpen(r,allIn=false) {
     const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,limit=allIn?13:10;
-    const phaseOpen=allIn?(r.allInOpen??(r.round<10&&r.open)):r.open;
+    const window=allIn?openingAllIn(r,this.now()):null;
+    if(window?.state==='pending')return false;
+    // The announced two-minute offer spans native battles; identity, freshness,
+    // elimination, finalization and the round-thirteen limit still apply.
+    const phaseOpen=window?.state==='open'?(r.openingAllInReady??r.allInOpen):(allIn?(r.allInOpen??(r.round<10&&r.open)):r.open);
     return (!monitor||monitor.state==='live')&&(!monitor||monitor.round<limit)&&phaseOpen
       &&!r.ended&&!r.settled&&(allIn||!r.tradingClosed)&&r.round<limit
       &&(r.liveRound??r.round)<limit&&r.closedThrough<limit
       &&this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000;
   }
   allInMultiplier(r) {
+    const window=openingAllIn(r,this.now());
+    if(window)return window.state==='open'&&!r.ended&&!r.settled?3:1;
     return Math.max(r.round,r.liveRound??r.round,this.sourceHealth.get(r.code)?.round??0)===1?3:1;
   }
   availability(r,allIn=false){
     const monitor=r.eventSlot?this.sourceHealth.get(r.code):null,fresh=this.now()-(this.syncTimes.get(r.code)??-Infinity)<=15000,alive=monitor&&this.now()-monitor.at<=30000;
     if(r.settled)return {state:'settled',message:'本局已结算，马币已到账'};
     if(r.ended)return {state:'ended',message:'本局已结束，正在核对最终战果'};
+    if(allIn&&openingAllIn(r,this.now())?.state==='pending')return {state:'waiting',message:'等待整点开场消息发布确认后开启两分钟三倍全猜'};
     const round=Math.max(r.round,r.liveRound??r.round,r.closedThrough,monitor?.round??0);
     if(allIn&&round>=13)return {state:'closed',message:'第13回合起全猜已截止，等待本局结算'};
     if(!allIn&&(r.tradingClosed||round>=10))return {state:'closed',message:round<13?'普通竞猜已截止，减半和撤回已停止；第13回合前可在群内发送 全猜 选手编号':'竞猜已截止，减半和撤回已停止，等待本局结算'};
@@ -337,6 +346,7 @@ export class Rooms {
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
     requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止操作');
     requireThat(!r.active || r.active[input.player] !== false, '该选手已淘汰或退出，停止操作');
+    if(allIn&&openingAllIn(r,this.now())?.state==='open')requireThat(!r.states?.[input.player]||r.states[input.player].life>0,'该选手已淘汰或退出，停止操作');
     if(r.rules>=2) requireThat((r.actionCounts?.[key]?.[input.player] ?? 0)<512,'该选手本局操作次数已达512次');
     requireThat(['buy', 'half', 'sell', 'switch'].includes(input.kind), '操作无效');
     if (this.championOnly && (input.kind === 'buy' || input.kind === 'switch')) {
@@ -353,7 +363,7 @@ export class Rooms {
       const sell = input.kind === 'sell' || input.kind === 'half' || input.kind === 'switch';
       if (sell) {
         requireThat(p && (r.rules>=2 ? p.claim>0&&!p.resolved : p.stake>0), '没有可出售的竞猜记录');
-        requireThat(!p.cashoutLocked,'首回合全猜已锁定至结算，不能减半、撤回或换目标');
+        requireThat(!p.cashoutLocked,'三倍全猜已锁定至结算，不能减半、撤回或换目标');
         if(r.rules>=2 && input.kind==='switch')requireThat(p.rank!==input.rank,'预测名次相同，请使用增持');
         if(r.rules>=2){
           const removed=input.kind==='half'?Math.floor(p.claim/2):p.claim;

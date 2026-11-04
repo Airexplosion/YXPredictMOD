@@ -13,7 +13,7 @@ function fixture(save){
  const actor=(n='b')=>({subject:n.repeat(64),qqSubject:n.repeat(64),scope:'qq-racing',groupId:RACE_GROUP,name:'未绑定道友',boundAccount:false});
  const user=actor(),call=(text,extra={},who=user)=>qqCommand(web,hourly,who,{text,messageId:'race-message',messageAt:now(),...extra});
  const snapshot={id:'racing-new-group',gameRoomId:'native-race',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'native-'+i,name:'选手'+i})),ranks:Array(8).fill(0),baseRates:Array(64).fill(40000),horseTitles:Array(8).fill('上等马'),states:Array.from({length:8},()=>({life:100,wins:0,losses:0})),builds:Array.from({length:8},()=>({characterId:1000001,characterName:'青松',careerId:1,careerName:'符师',sectId:1,sectName:'剑宗',realmId:1,realmName:'炼气',talents:[],baijia:[],fates:[],resonance:null,selectionRound:0,selectionsKnown:false,cards:null,cardNames:null}))};
- const open=()=>hourly.open({roomId:'native-race',round:1,isPrivate:false,playerCount:8,avgRankScore:6500},snapshot);
+ const open=(announce=true)=>{const view=hourly.open({roomId:'native-race',round:1,isPrivate:false,playerCount:8,avgRankScore:6500},snapshot);if(announce){const start=hourly.claim();for(const t of start.targets)hourly.ack(start.id,start.lease,t.groupId);}return view;};
  const sign=p=>{const payload=Buffer.from(JSON.stringify({...p,expiresAt:now()+60000})).toString('base64url');return payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');};
  return {rooms,web,hourly,user,actor,call,open,snapshot,now,time:n=>clock=n,sign};
 }
@@ -50,6 +50,7 @@ test('coin ranking works with no market, reports an empty list and rejects extra
 test('rounds ten and twelve accept only full-balance guesses and keep both withdrawal commands closed',()=>{
  for(const round of [10,12]){
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
+  x.time(x.now()+120000);
   x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round,liveRound:round,closedThrough:round-1,open:false,sourcePhase:'preparation'});
   let room=x.rooms.state.rooms[code];assert.equal(room.open,false);assert.equal(room.tradingClosed,true);
   assert.equal(x.web.watch(room).allInOpen,true);
@@ -72,6 +73,7 @@ test('rounds ten and twelve accept only full-balance guesses and keep both withd
 test('all-in closes at actual round thirteen and cannot use stale, incomplete or non-preparation status',()=>{
  for(const reason of ['round13','live13','monitor13','battle','unknown','incomplete','offline','verifying']){
   const x=fixture();x.call('注册 小白');const {code}=x.open();
+  x.time(x.now()+120000);
   const s={...x.snapshot,round:12,liveRound:12,closedThrough:11,open:false,sourcePhase:'preparation'};
   if(reason==='round13'){s.round=13;s.liveRound=13;s.closedThrough=12;}
   if(reason==='live13')s.liveRound=13;
@@ -90,6 +92,7 @@ test('all-in closes at actual round thirteen and cannot use stale, incomplete or
 
 test('old saved round twelve state needs a verified fresh preparation snapshot before enabling all-in',()=>{
  const x=fixture();x.call('注册 小白');const {code}=x.open(),room=x.rooms.state.rooms[code];
+ x.time(x.now()+120000);
  room.round=12;room.liveRound=12;room.open=true;room.tradingClosed=true;delete room.allInOpen;
  assert.equal(x.rooms.isOpen(room,true),false);
  x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:12,liveRound:12,closedThrough:11,open:false,sourcePhase:'preparation'});
@@ -118,7 +121,7 @@ test('all-in uses the selected wallet balance once, including amounts above the 
 test('first-round triple claims settle by the locked amount for first, second and third place',()=>{
  for(const rank of [1,2,3]){
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
-  const reply=x.call('全猜 3');assert.match(reply.lines[0],/首回合额外×3/);
+  const reply=x.call('全猜 3');assert.match(reply.lines[0],/额外×3/);
   const room=x.rooms.state.rooms[code],claim=room.positions[key][2].claim;
   assert.equal(claim,13800);
   const available=[1,2,3,4,5,6,7,8].filter(r=>r!==rank),ranks=Array.from({length:8},(_,i)=>i===2?rank:available.shift());
@@ -155,6 +158,7 @@ test('first-round all-in permanently locks that position against halves, sells a
 test('later full guesses receive no triple bonus and can be withdrawn before round ten',()=>{
  for(const cachedFirst of [false,true]){
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user),round=cachedFirst?1:2;
+  x.time(x.now()+120000);
   x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round,liveRound:2,closedThrough:round-1,open:true,sourcePhase:'preparation'});
   const reply=x.call('全猜 3');let p=x.rooms.state.rooms[code].positions[key][2];
   assert.equal(p.claim,4600);assert(!p.cashoutLocked);assert(!reply.lines[0].includes('首回合额外'));
@@ -300,7 +304,7 @@ test('migration sends the exact transition hour to both groups and retains per-g
   assert.equal(!!targets[1].notice,kind!=='round');if(kind!=='round')assert(targets[1].notice.includes(RACE_GROUP));
  }
  assert.deepEqual(raceNoticeTargets('2026110315','start').map(t=>t.groupId),[RACE_GROUP]);
- const x=fixture();x.open();const event=x.hourly.claim();assert.equal(event.targets.length,2);
+ const x=fixture();x.open(false);const event=x.hourly.claim();assert.equal(event.targets.length,2);
  const financial=JSON.stringify(x.rooms.state.accounts);x.hourly.ack(event.id,event.lease,RACE_GROUP);assert.equal(x.rooms.state.hourly.outbox[0].deliveredAt,null);
  x.time(x.now()+60001);const restored=new Rooms(JSON.parse(JSON.stringify(x.rooms.state)),undefined,x.now),h=new HourlyEvents(restored,new PredictionWeb(restored,{bridgeKey,now:x.now}));
  const retry=h.claim();assert.deepEqual(retry.targets.map(t=>t.groupId),[LEGACY_GROUP]);h.ack(retry.id,retry.lease,LEGACY_GROUP);assert(h.data().outbox[0].deliveredAt);assert.equal(JSON.stringify(restored.state.accounts),financial);

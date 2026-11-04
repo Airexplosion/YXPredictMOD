@@ -37,7 +37,7 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
   return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,
-    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,allInOpen:!!view.allInOpen&&!view.ended&&!view.settled&&view.round<13,allInMultiplier:view.allInMultiplier??1,
+    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,allInOpen:!!view.allInOpen&&!view.ended&&!view.settled&&view.round<13,allInMultiplier:view.allInMultiplier??1,openingAllIn:view.openingAllIn??null,
     bettingState:view.availability?.state??(view.open?'open':view.tradingClosed?'closed':'waiting'),settlement:finalReport?view.settlement??null:null,players,
     battles:battles.map(b=>({...b,firstName:view.players[b.first].name,secondName:view.players[b.second].name,firstCharacterId:view.players[b.first].build?.characterId??0,secondCharacterId:view.players[b.second].build?.characterId??0,winnerName:b.winner===null?null:view.players[b.winner].name}))});
 }

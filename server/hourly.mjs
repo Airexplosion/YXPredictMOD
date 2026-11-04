@@ -3,6 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {buildLines,publicPresentation,publicReportReady,publicBuild} from './public-build.mjs';
 import {raceNoticeTargets} from './race-policy.mjs';
 import {shuffleReveal} from './shuffle-reveal.mjs';
+import {openingAllIn,OPENING_ALL_IN_MS} from './opening-window.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -93,6 +94,7 @@ export class HourlyEvents{
       this.rooms.state.accounts[data.hostToken].systemObserver=true;
       ensure(!Object.values(this.rooms.state.rooms).some(r=>!r.ended&&!r.settled&&(r.gameId===snapshot.id||r.gameRoomId===info.roomId)),'该对局已经有房间');
       const view=this.rooms.create(data.hostToken,snapshot,true,true,{slot,bonusBps:EVENT_BONUS_BPS});
+      this.rooms.state.rooms[view.code].openingAllIn={version:1,startedAt:null,endsAt:null};
       data.slots[slot]={code:view.code,gameId:snapshot.id,openedAt:this.rooms.now(),info:structuredClone(info),model:structuredClone(model),participants:{[snapshot.round]:snapshot.players.map((_,i)=>!snapshot.states?.[i]||snapshot.states[i].life>0)},noticeWait:{}};
       this.enqueue('start',this.rooms.state.rooms[view.code]);
       const slots=Object.keys(data.slots).sort();for(const old of slots.slice(0,Math.max(0,slots.length-2160)))delete data.slots[old];
@@ -179,7 +181,7 @@ export class HourlyEvents{
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
     const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
-      ?[`整点竞猜开场 #${r.code} · 奖励倍率额外×1.15\n无需认证，先发 观战注册 昵称 开通QQ钱包。只猜冠军，普通竞猜及减半/撤回第10回合截止，全猜第13回合截止。首回合全猜额外×3并锁定至结算，不能减半或撤回；第二25%、第三10%。\n竞猜 选手编号 马币数 · 全猜 选手编号 · 观战 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
+      ?[`整点竞猜开场 #${r.code} · 奖励倍率额外×1.15\n无需认证，先发 注册 昵称 开通QQ钱包。只猜冠军，普通竞猜及减半/撤回第10回合截止，全猜第13回合截止。开场消息首次发布确认后两分钟内，全猜额外×3并锁定至结算，不能减半、撤回或换目标；剩余1分钟、30秒及结束时提醒，结束后继续回合播报。第二25%、第三10%。\n竞猜 选手编号 马币数 · 全猜 选手编号 · 观战 · 选手 编号 · 帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
       :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
     if(old){old.lines=lines;old.presentation=this.presentation(r,kind,round);return;}
     data.outbox.push({id,kind,code:r.code,round,lines,presentation:this.presentation(r,kind,round),createdAt:this.rooms.now(),deliveredAt:null});
@@ -187,15 +189,24 @@ export class HourlyEvents{
   }
   claim(){
     const queue=this.data().outbox;
+    const now=this.rooms.now(),expired=queue.filter(row=>row.kind==='opening-countdown'&&!row.deliveredAt&&!row.skippedAt&&row.expiresAt!==null&&now>=row.expiresAt&&!(row.leaseUntil>now));
+    if(expired.length)this.rooms.commit(()=>{for(const row of expired)row.skippedAt=now;});
+    const countdowns=queue.filter(row=>row.kind==='opening-countdown'&&!row.deliveredAt&&!row.skippedAt);
     // A missed battle report must not delay the one-time reveal at permanent close.
     const priority=queue.filter(row=>row.kind==='shuffle'&&!row.deliveredAt);
-    for(const row of [...priority,...queue]){
-      if(row.deliveredAt||row.leaseUntil>this.rooms.now())continue;
+    for(const row of [...queue.filter(row=>row.kind==='start'),...countdowns,...priority,...queue]){
+      if(row.deliveredAt||row.skippedAt||row.leaseUntil>this.rooms.now())continue;
       const r=this.rooms.state.rooms[row.code];if(!r)continue;
+      if(row.kind==='opening-countdown'){
+        if(now<row.notBefore)continue;
+      }else if(row.kind!=='start'&&openingAllIn(r,now)){
+        const window=openingAllIn(r,now),end=queue.find(e=>e.code===r.code&&e.kind==='opening-countdown'&&e.remainingSeconds===0);
+        if(window.state!=='ended'||!end?.deliveredAt)continue;
+      }
       if(row.kind==='shuffle'){
         if(!(r.tradingClosed||r.ended||r.settled))continue;
-      }else if(!this.ready(r,row.kind,row.round))continue;
-      return this.rooms.commit(()=>{if(row.kind!=='shuffle')row.presentation=this.presentation(r,row.kind,row.round);row.deliveryTargets??=raceNoticeTargets(r.eventSlot,row.kind);row.deliveredGroups??={};row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone({...row,targets:row.deliveryTargets.filter(t=>!row.deliveredGroups[t.groupId])});});
+      }else if(row.kind!=='opening-countdown'&&!this.ready(r,row.kind,row.round))continue;
+      return this.rooms.commit(()=>{if(!['shuffle','opening-countdown'].includes(row.kind))row.presentation=this.presentation(r,row.kind,row.round);row.deliveryTargets??=raceNoticeTargets(r.eventSlot,row.kind);row.deliveredGroups??={};row.lease=randomBytes(16).toString('hex');row.leaseUntil=this.rooms.now()+60000;return structuredClone({...row,targets:row.deliveryTargets.filter(t=>!row.deliveredGroups[t.groupId])});});
     }
     return null;
   }
@@ -214,6 +225,16 @@ export class HourlyEvents{
       if(groupId===null&&targets.length===1)groupId=targets[0].groupId;
       ensure(targets.some(t=>t.groupId===groupId),'请按目标群分别确认转发');
       row.deliveredGroups??={};row.deliveredGroups[groupId]??=this.rooms.now();
+      if(row.kind==='start'&&r.openingAllIn?.version===1&&r.openingAllIn.startedAt===null){
+        const startedAt=this.rooms.now(),endsAt=startedAt+OPENING_ALL_IN_MS;
+        r.openingAllIn={version:1,startedAt,endsAt};r.version++;
+        for(const remainingSeconds of [60,30,0]){
+          const notBefore=endsAt-remainingSeconds*1000;
+          const message=remainingSeconds===60?'三倍全猜倒计时：剩余1分钟。':remainingSeconds===30?'三倍全猜倒计时：剩余30秒。':'两分钟三倍全猜已结束，接下来继续回合播报。第13回合前仍可在修炼阶段普通全猜，不再额外×3。';
+          this.data().outbox.push({id:`${r.eventSlot}:${r.code}:opening-countdown:${remainingSeconds}`,kind:'opening-countdown',code:r.code,round:r.round,remainingSeconds,notBefore,expiresAt:remainingSeconds===60?endsAt-30000:remainingSeconds===30?endsAt:null,
+            textOnly:true,lines:[message,...(remainingSeconds?['发送 全猜 选手编号 使用全部可用马币，额外×3；该选手记录锁定至结算，不能减半、撤回或换目标。']:[])],createdAt:startedAt,deliveredAt:null});
+        }
+      }
       if(targets.every(t=>row.deliveredGroups[t.groupId]))row.deliveredAt=this.rooms.now();
       return {ok:true,complete:!!row.deliveredAt};
     });
