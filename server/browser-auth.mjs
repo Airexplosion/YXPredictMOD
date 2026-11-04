@@ -61,7 +61,7 @@ export class BrowserAuth{
   this.cookie(res,'yx_race_challenge',token,300);return {command:'绑定 '+code,expiresAt:t+300000,group:'613486881'};
  }
  confirmQq(user,code){
-  ensure(isRaceGroup(user.groupId)&&['qq-racing','qq-prediction'].includes(user.scope),'请在赛马群操作',403);
+  ensure(isRaceGroup(user.groupId)&&['qq-racing','qq-prediction'].includes(user.scope),'请在观战群操作',403);
   ensure(typeof code==='string'&&/^SM-[A-F0-9]{10}$/.test(code.toUpperCase()),'请复制网页显示的完整绑定指令');
   const c=Object.values(this.rooms.state.browserAuth?.challenges??{}).find(c=>c.codeHash===hash(code.toUpperCase())&&c.expires>this.web.now());
   ensure(c&&c.expected===user.qqSubject,'绑定请求不存在或QQ不符，请在网页重新获取');
@@ -78,7 +78,7 @@ export class BrowserAuth{
    if(current)mergeOwners(this.web,current.subject,owner);
    syncQqWallet(this.web,proof);
    const subject=ownerOf(this.rooms.state,this.rooms.state.qqBindings[proof.qqSubject]);
-   const p=this.web.profile({subject}),name=proof.name==='未绑定道友'?'赛马道友':proof.name;
+   const p=this.web.profile({subject}),name=proof.name==='未绑定道友'?'观战道友':proof.name;
    if(!p.name||p.name==='未绑定道友'){this.rooms.state.profiles[subject].name=name;}
    (this.rooms.state.qqRegistrations??={})[proof.qqSubject]??={at:this.web.now(),name:this.web.profile({subject}).name};
    delete this.data().challenges[hash(token)];return this.newSession(res,{subject,name},'qq');

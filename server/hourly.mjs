@@ -23,10 +23,10 @@ export function eligibleLobby(info,minimumRankScore=6000,exclusive=false){
 const rate=n=>(n/10000).toFixed(2)+'倍';
 export function publicSummary(view,{round=view.round,player=null,nativeRanks=null}={}){
   const frame=view.frames?.find(f=>f.round===round+1)??view.frames?.find(f=>f.round===round),players=player===null?view.players.map((_,i)=>i):[player];
-  const lines=[`整点赛马 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 已封盘':''}`];
+  const lines=[`整点竞猜 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?' · 竞猜已截止':''}`];
   const reference=publicPresentation(view,{round,player});
   if(reference.closingWarning)lines.unshift(reference.closingWarning);
-  if(reference.quoteRange)lines.push(`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?' · 已封盘，仅供参考':reference.bettingOpen?' · 修炼阶段可下注':' · 暂停下注，等待修炼'}；以下单确认为准。`);
+  if(reference.quoteRange)lines.push(`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?' · 竞猜已截止，仅供参考':reference.bettingOpen?' · 修炼阶段可竞猜':' · 暂停竞猜，等待修炼'}；以操作确认为准。`);
   for(const i of players){
     const p=view.players[i],state=frame?.states?.[i]??(round===view.round?p.state:null),rank=round>=view.round-1?p.rank:frame?.ranks?.[i]??0;
     const active=frame?(state?state.life>0:rank===0):p.active;
@@ -40,7 +40,7 @@ export function publicSummary(view,{round=view.round,player=null,nativeRanks=nul
     const a=view.players[b.first],z=view.players[b.second];
     lines.push(`${a.name}${b.firstMirror?'（镜像）':''} 对 ${z.name}${b.secondMirror?'（镜像）':''}\n${a.name}：${b.firstNames?.filter(Boolean).join('、')||'公开牌桌待同步'}\n${z.name}：${b.secondNames?.filter(Boolean).join('、')||'公开牌桌待同步'}\n${b.winner===null?'胜负待确认':view.players[b.winner].name+'胜'}`);
   }
-  if(view.settled&&view.settlement){lines.push(view.settlement.closing);for(const r of view.settlement.rows)lines.push(`${r.name}：结算返还${r.payout}马币${r.known?`，出售回收${r.sold}，累计投入${r.invested}，净收益${r.net>0?'+':''}${r.net}`:'；历史流水不完整，净收益待核对'}。`);}
+  if(view.settled&&view.settlement){lines.push(view.settlement.closing);for(const r of view.settlement.rows)lines.push(`${r.name}：结算奖励${r.payout}马币${r.known?`，撤回回收${r.sold}，累计投入${r.invested}，净增减${r.net>0?'+':''}${r.net}`:'；历史流水不完整，净增减待核对'}。`);}
   return lines;
 }
 
@@ -78,18 +78,18 @@ export class HourlyEvents{
     return {ok:true};
   }
   open(info,snapshot,model=null){
-    const search=hourlySearch(this.rooms.now()),slot=search?.slot;ensure(slot,'当前不在整点开盘时段');
+    const search=hourlySearch(this.rooms.now()),slot=search?.slot;ensure(slot,'当前不在整点开场时段');
     const previous=this.data().slots[slot];
     if(previous){ensure(previous.gameId===snapshot?.id,'本整点已经开过一场');return this.web.watch(this.rooms.state.rooms[previous.code]);}
     ensure(this.status().available,'上一场公开观战尚未结束');
     ensure(eligibleLobby(info,search.minimumRankScore,search.minimumRankScoreExclusive),search.minimumRankScoreExclusive?'需要刚开始、原生平均段位分大于5000的公开八人对局':'前5分钟需要刚开始、原生平均段位分达到6000的公开八人对局');
     ensure(snapshot?.gameRoomId===info.roomId&&snapshot.round>=1&&snapshot.round<=2&&!snapshot.ended,'观战对局已不符合整点条件');
-    ensure(Array.isArray(snapshot.baseRates)&&snapshot.baseRates.length===64&&snapshot.players?.every((_,i)=>snapshot.baseRates[i*8]>0),'等待八人冠军倍率就绪');
+    ensure(Array.isArray(snapshot.baseRates)&&snapshot.baseRates.length===64&&snapshot.players?.every((_,i)=>snapshot.baseRates[i*8]>0),'等待八人冠军奖励倍率就绪');
     ensure(model===null||(Array.isArray(model)&&model.length===8&&new Set(model.map(p=>p.uid)).size===8&&model.every(p=>snapshot.players.some(q=>q.uid===p.uid)&&typeof p.found==='boolean'&&typeof p.score==='number'&&Number.isFinite(p.score)&&p.score>=0&&p.score<=10000)),'观战报价模型格式无效');
     ensure(info.nativeRanks===undefined||(Array.isArray(info.nativeRanks)&&info.nativeRanks.length===8&&new Set(info.nativeRanks.map(p=>p?.uid)).size===8&&info.nativeRanks.every(p=>p&&snapshot.players.some(q=>q.uid===p.uid)&&['ladder','daoxin'].includes(p.mode)&&(p.score===null||Number.isSafeInteger(p.score)&&p.score>=0&&p.score<=1000000))),'开局公开段位分格式无效');
     return this.rooms.commit(()=>{
       const data=this.rooms.state.hourly??={slots:{},outbox:[]};
-      data.hostToken??=this.rooms.register('WHITE整点观战').token;
+      data.hostToken??=this.rooms.register('WHITE整点竞猜').token;
       this.rooms.state.accounts[data.hostToken].systemObserver=true;
       ensure(!Object.values(this.rooms.state.rooms).some(r=>!r.ended&&!r.settled&&(r.gameId===snapshot.id||r.gameRoomId===info.roomId)),'该对局已经有房间');
       const view=this.rooms.create(data.hostToken,snapshot,true,true,{slot,bonusBps:EVENT_BONUS_BPS});
@@ -130,7 +130,7 @@ export class HourlyEvents{
         const reveal=shuffleReveal(r);
         if(reveal){
           data.outbox.push({id:`${r.eventSlot}:${r.code}:shuffle:0`,kind:'shuffle',code:r.code,round:reveal.round,
-            lines:['本局封盘 · 马名互换揭晓'],presentation:reveal,createdAt:this.rooms.now(),deliveredAt:null});
+            lines:['本局竞猜截止 · 马名互换揭晓'],presentation:reveal,createdAt:this.rooms.now(),deliveredAt:null});
           slot.shuffleAnnounced=true;
         }
       }
@@ -179,7 +179,7 @@ export class HourlyEvents{
     const data=this.data(),id=`${r.eventSlot}:${r.code}:${kind}:${kind==='round'?round:0}`;
     const old=data.outbox.find(e=>e.id===id);if(old&&(old.deliveredAt||old.leaseUntil>this.rooms.now()))return;
     const view=this.web.watch(r),lines=kind==='start'
-      ?[`整点赛马开盘 #${r.code} · 倍率额外×1.15\n无需认证，先发 赛马注册 昵称 开通QQ钱包。只猜冠军，第10回合封盘；第二25%、第三10%。\n下注 选手编号 马币数 · 赛马 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
+      ?[`整点竞猜开场 #${r.code} · 奖励倍率额外×1.15\n无需认证，先发 观战注册 昵称 开通QQ钱包。只猜冠军，第10回合竞猜截止；第二25%、第三10%。\n竞猜 选手编号 马币数 · 观战 · 选手 编号 · 马币帮助\n指令可省略“/”，也可先@机器人。\nhttps://duma.kaigua.vip/`,...publicSummary(view,{nativeRanks:this.startRanks(r)})]
       :publicSummary(kind==='round'?{...view,settled:false,settlement:null}:view,{round});
     if(old){old.lines=lines;old.presentation=this.presentation(r,kind,round);return;}
     data.outbox.push({id,kind,code:r.code,round,lines,presentation:this.presentation(r,kind,round),createdAt:this.rooms.now(),deliveredAt:null});

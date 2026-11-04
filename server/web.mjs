@@ -91,7 +91,7 @@ export class PredictionWeb {
     } else if(body.action==='trade')this.rooms.commit(()=>{
       this.rooms.trade(r.code,key,body);
       const receipts=this.rooms.state.webOrders??={};
-      if(!receipts[orderId]){ensure(Object.keys(receipts).length<500000,'网页交易记录已满，请联系维护者',503);receipts[orderId]={key,owner:user.subject,requestDigest,at:this.now()};}
+      if(!receipts[orderId]){ensure(Object.keys(receipts).length<500000,'网页操作记录已满，请联系维护者',503);receipts[orderId]={key,owner:user.subject,requestDigest,at:this.now()};}
     });
     else ensure(body.action==='view','操作无效');
     const view=this.rooms.view(r.code,key);

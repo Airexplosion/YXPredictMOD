@@ -17,30 +17,45 @@ function fixture(save){
  const sign=p=>{const payload=Buffer.from(JSON.stringify({...p,expiresAt:now()+60000})).toString('base64url');return payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');};
  return {rooms,web,hourly,user,actor,call,open,snapshot,now,time:n=>clock=n,sign};
 }
+test('quiz aliases preserve canonical receipt digests and never repeat a debit',()=>{
+ for(const [input,canonical]of [['竞猜','下注'],['观战','赛马'],['走势','盘口'],['减半','退半'],['撤回','清仓'],['马币','马币']]){
+  for(const prefix of ['','/'])assert.equal(normalizeRaceCommand(prefix+input+' 1 200'),'/'+canonical+' 1 200');
+ }
+ const x=fixture();x.call('注册 小白');x.open();
+ const first=x.call('/下注 1 100',{messageId:'same-quiz-operation'});
+ const after=structuredClone(x.rooms.state);
+ assert.deepEqual(x.call('竞猜 1 100',{messageId:'same-quiz-operation'}),first);
+ assert.deepEqual(x.rooms.state,after);
+ assert.equal(x.web.me(x.user).playBalance,900);
+ const help=x.call('帮助').lines.join('\n');
+ for(const name of ['竞猜','观战','走势','减半','撤回','马币'])assert(help.includes(name));
+ assert(!/下注|盘口|赛马|封盘|赔率|清仓|退半/.test(help));
+});
+
 test('slash and bare racing commands normalize once and anonymous registration requires an explicit leaderboard ID',()=>{
  for(const text of ['赛马注册','/赛马注册'])assert.equal(normalizeRaceCommand(text),'/赛马注册');
- assert.equal(normalizeRaceCommand(' 赛马注册 小白 '),'/赛马注册 小白');assert.equal(normalizeRaceCommand('普通聊天'),null);
+ assert.equal(normalizeRaceCommand(' 观战注册 小白 '),'/赛马注册 小白');assert.equal(normalizeRaceCommand('普通聊天'),null);
  const x=fixture(),before=structuredClone(x.rooms.state);assert(x.call('赛马注册').lines.some(l=>l.includes('上榜ID')));assert.deepEqual(x.rooms.state,before);
- assert.throws(()=>x.call('下注 1 100'),/先发送/);assert.deepEqual(x.rooms.state,before);
- const r=x.call('赛马注册 小白');assert(r.lines.some(l=>l.includes('注册成功')));for(const word of ['下注','选手','清仓','签到','认证游戏账号'])assert(r.lines.join(' ').includes(word));
+ assert.throws(()=>x.call('竞猜 1 100'),/先发送/);assert.deepEqual(x.rooms.state,before);
+ const r=x.call('观战注册 小白');assert(r.lines.some(l=>l.includes('注册成功')));for(const word of ['竞猜','选手','撤回','签到','认证游戏账号'])assert(r.lines.join(' ').includes(word));
  assert.equal(x.web.me(x.user).playBalance,1000);assert.equal(x.web.leaderboard().items[0].name,'小白');
  for(let i=0;i<4;i++)x.call('/赛马注册');assert.equal(x.web.me(x.user).playBalance,1000);assert.equal(Object.keys(x.rooms.state.accounts).length,1);
 });
 test('a registered unlicensed QQ can buy, sign in and transfer; receipt retries remain atomic',()=>{
- const x=fixture();x.call('赛马注册 小白');x.call('马币签到');assert.equal(x.web.me(x.user).playBalance,1200);x.call('/马币签到');assert.equal(x.web.me(x.user).playBalance,1200);
- const room=x.open(),order={messageId:'unlicensed-bet'};const first=x.call('下注 1 100',order);assert.equal(x.web.me(x.user).playBalance,1100);assert.equal(x.rooms.state.rooms[room.code].positions[x.web.playKey(x.user)][0].claim,460);
+ const x=fixture();x.call('观战注册 小白');x.call('马币签到');assert.equal(x.web.me(x.user).playBalance,1200);x.call('/马币签到');assert.equal(x.web.me(x.user).playBalance,1200);
+ const room=x.open(),order={messageId:'unlicensed-bet'};const first=x.call('竞猜 1 100',order);assert.equal(x.web.me(x.user).playBalance,1100);assert.equal(x.rooms.state.rooms[room.code].positions[x.web.playKey(x.user)][0].claim,460);
  assert.deepEqual(x.call('/下注 1 100',order),first);assert.equal(x.web.me(x.user).playBalance,1100);
  x.call('赛马 查单');qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:first.receiptId});
  const recipient=x.actor('c'),transfer=x.call('马币转账 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'});
  assert.equal(x.web.me(x.user).playBalance,900);assert.equal(x.web.me(recipient).playBalance,1200);assert.deepEqual(x.call('/马币转账 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'}),transfer);
- x.call('赛马注册 收款道友',{},recipient);assert.equal(x.web.me(recipient).playBalance,1200);assert.equal(x.web.me(recipient).name,'收款道友');
+ x.call('观战注册 收款道友',{},recipient);assert.equal(x.web.me(recipient).playBalance,1200);assert.equal(x.web.me(recipient).name,'收款道友');
 });
 test('later game binding retains the registered name, money, grants and old message receipt without double buying',()=>{
- const x=fixture(),uid='1234567890abcdef12345678';x.call('赛马注册 小白');x.call('马币签到');const room=x.open(),reply=x.call('下注 1 100',{messageId:'before-binding'});
+ const x=fixture(),uid='1234567890abcdef12345678';x.call('观战注册 小白');x.call('马币签到');const room=x.open(),reply=x.call('竞猜 1 100',{messageId:'before-binding'});
  const game=x.rooms.register('游戏账户').token;x.rooms.state.accounts[game].uid=uid;
  const bound={...x.user,subject:'d'.repeat(64),boundAccount:true,name:'游戏名',bindingDigest:linkCandidates(x.rooms).digest,gameUidRef:createHmac('sha256',Buffer.from(bridgeKey,'hex')).update('prediction-game-uid:'+uid).digest('hex')};
  syncQqWallet(x.web,bound);const balance=x.web.me(bound).balance;
- assert.equal(x.web.me(bound).name,'小白');assert.deepEqual(x.call('下注 1 100',{messageId:'before-binding'},bound),reply);assert.equal(x.web.me(bound).balance,balance);
+ assert.equal(x.web.me(bound).name,'小白');assert.deepEqual(x.call('竞猜 1 100',{messageId:'before-binding'},bound),reply);assert.equal(x.web.me(bound).balance,balance);
  qqCommand(x.web,x.hourly,bound,{action:'ack',receiptId:reply.receiptId});
  x.snapshot.ended=true;x.snapshot.round=15;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.hourly.sync(room.code,x.snapshot);
  syncQqWallet(x.web,bound);assert.equal(x.web.playKey(bound),game);assert.equal(x.web.me(bound).playBalance,2560);assert.equal(x.web.me(bound).checkIn.claimed,true);
@@ -48,8 +63,8 @@ test('later game binding retains the registered name, money, grants and old mess
 });
 test('registration failure and malformed IDs never create partial accounts or duplicate opening grants',()=>{
  let fail=false;const x=fixture(()=>{if(fail)throw Error('disk failed');});const before=structuredClone(x.rooms.state);
- for(const name of ['x'.repeat(25),'bad'+String.fromCharCode(1)])assert.throws(()=>x.call('赛马注册 '+name));
- assert.deepEqual(x.rooms.state,before);fail=true;assert.throws(()=>x.call('赛马注册 小白'),/disk/);assert.deepEqual(x.rooms.state,before);
+ for(const name of ['x'.repeat(25),'bad'+String.fromCharCode(1)])assert.throws(()=>x.call('观战注册 '+name));
+ assert.deepEqual(x.rooms.state,before);fail=true;assert.throws(()=>x.call('观战注册 小白'),/disk/);assert.deepEqual(x.rooms.state,before);
 });
 test('migration sends the exact transition hour to both groups and retains per-group confirmations on restart',()=>{
  for(const kind of ['start','round','settled']){

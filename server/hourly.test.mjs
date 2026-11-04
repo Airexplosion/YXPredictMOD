@@ -84,7 +84,7 @@ test('fallback opens one fresh 5001-point game per hour; restart and midnight ca
 test('a candidate picked before minute ten cannot open after it, while accepted wagers keep watching and settle normally',()=>{
  const x=fixture(),start=x.now();x.info.avgRankScore=5001;x.time(start+599999);assert.equal(x.hourly.status().available,true);
  const before=structuredClone(x.rooms.state);x.time(start+600000);assert.throws(x.open,/时段/);assert.deepEqual(x.rooms.state,before);
- const y=fixture(),origin=y.now();y.time(origin+300000);const room=y.open(),key=y.rooms.register('持仓者').token;
+ const y=fixture(),origin=y.now();y.time(origin+300000);const room=y.open(),key=y.rooms.register('竞猜记录者').token;
  y.rooms.join(room.code,key,y.snapshot.id);y.rooms.trade(room.code,key,{kind:'buy',player:0,rank:1,stake:100,version:y.rooms.state.rooms[room.code].version,operation:'before-search-deadline'});
  const claim=y.rooms.state.rooms[room.code].positions[key][0].claim;
  y.time(origin+600000);assert.equal(y.hourly.status().available,false);assert.equal(y.hourly.status().active.code,room.code);assert.equal(y.hourly.status().searchPhase,null);
@@ -155,7 +155,7 @@ test('QQ and website use one wallet, duplicate group commands across room change
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,text:'/下注 2 100'}),/内容不一致/);
   const pending=qqCommand(x.web,x.hourly,user,{...command,messageId:'new-message'});assert(pending.lines.some(s=>s.includes('尚未执行')));assert.equal(x.web.me(user).playBalance,900);
   qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:first.receiptId});
- x.snapshot.round=10;x.hourly.sync(r.code,x.snapshot);assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'late-message'}),/封盘/);
+ x.snapshot.round=10;x.hourly.sync(r.code,x.snapshot);assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'late-message'}),/竞猜(?:已)?截止/);
  x.snapshot.round=18;x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.hourly.sync(r.code,x.snapshot);
  assert.equal(x.web.me(user).playBalance,1360);x.hourly.sync(r.code,x.snapshot);assert.equal(x.web.me(user).playBalance,1360);
  x.time(x.now()+3600000);x.snapshot.id='next-game';x.snapshot.gameRoomId='next-native';x.info.roomId='next-native';x.snapshot.ended=false;x.snapshot.round=1;x.snapshot.ranks.fill(0);x.open();
@@ -188,11 +188,11 @@ test('batch save failures preserve every wallet, claim, cashflow and deduplicati
 test('round nine warning leads the first sentence and multi-bets retain the round ten closure',()=>{
  const x=fixture(),v=x.open();x.snapshot.round=9;x.hourly.sync(v.code,x.snapshot);
  const view=x.web.watch(x.rooms.state.rooms[v.code]),presentation=publicPresentation(view,{round:8,noticeType:'round'});
- assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起封盘'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
+ assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起竞猜截止'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
  const reply=qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-nine-batch',messageAt:x.now()});
  qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:reply.receiptId});x.snapshot.round=10;x.hourly.sync(v.code,x.snapshot);
  assert.equal(publicPresentation(x.web.watch(x.rooms.state.rooms[v.code])).closingWarning,null);
- const before=structuredClone(x.rooms.state);assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-ten-batch',messageAt:x.now()}),/封盘/);assert.deepEqual(x.rooms.state,before);
+ const before=structuredClone(x.rooms.state);assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-ten-batch',messageAt:x.now()}),/竞猜(?:已)?截止/);assert.deepEqual(x.rooms.state,before);
 });
 test('notifications are durable, leased, acknowledgement-gated and contain only public information',()=>{
  const x=fixture(),r=x.open();assert.equal(x.hourly.data().outbox.length,1);

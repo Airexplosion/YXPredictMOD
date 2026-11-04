@@ -77,7 +77,7 @@ export function syncQqWallet(web,user){
 }
 
 export function transferQqCoins(web,sender,recipient,amount,operation){
-  ensure(['qq-prediction','qq-racing'].includes(sender.scope),'请先注册赛马再转账',403);
+  ensure(['qq-prediction','qq-racing'].includes(sender.scope),'请先注册观战再转账',403);
   ensure(isRaceGroup(recipient.groupId)&&recipient.groupId===sender.groupId&&['qq-wallet','qq-prediction','qq-racing'].includes(recipient.scope)&&reference(recipient.qqSubject),'收款人身份无效',403);
   ensure(Number.isSafeInteger(amount)&&amount>=1&&amount<=1e12,'转账金额须为1～1000000000000的整数',400);
   ensure(sender.qqSubject!==recipient.qqSubject,'不能给自己转账',400);

@@ -13,7 +13,7 @@ function fixture(save){const rooms=new Rooms(undefined,save),web=new PredictionW
 }
 test('short commands normalize to stable legacy operations so old financial receipts stay valid',()=>{
  for(const [short,long]of [['注册','赛马注册'],['转账','马币转账'],['帮助','马币帮助'],['签到','马币签到'],['改名','赛马改名'],['绑定','赛马绑定'],['余额','马币'],['查单','赛马 查单'],['盘口','盘口']])for(const slash of ['','/'])assert.equal(normalizeRaceCommand(slash+short+' test'),'/'+long+' test');
- for(const s of ['注册啦','转账错误','盘口很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
+ for(const s of ['注册啦','转账错误','走势很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
 });
 test('per-round market history captures actual frozen odds, principal and locked claims without changing quotes',()=>{
  const x=fixture();assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].rates[0],46000);
@@ -25,7 +25,7 @@ test('per-round market history captures actual frozen odds, principal and locked
 test('read-only chart query requires no registration or complete build assets and exposes no identities',()=>{
  const x=fixture(),user={subject:'a'.repeat(64),qqSubject:'a'.repeat(64),scope:'qq-racing',groupId:'613486881',name:'观众'},before=structuredClone(x.rooms.state);
  const result=qqCommand(x.web,x.hourly,user,{text:'盘口'});assert.equal(result.forward,true);assert.equal(result.market.players.length,8);assert.equal(result.market.kind,'duma-market-v1');assert.deepEqual(x.rooms.state,before);
- const json=JSON.stringify(result);for(const secret of [x.key,user.subject,'private-game-uid','private-wallet-name','webOwner'])assert(!json.includes(secret));assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'盘口 1'}),/用法/);
+ const json=JSON.stringify(result);for(const secret of [x.key,user.subject,'private-game-uid','private-wallet-name','webOwner'])assert(!json.includes(secret));assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'走势 1'}),/用法/);
 });
 test('a live legacy room starts from a real current snapshot and never invents past odds',()=>{
  const x=fixture();delete x.r.marketHistory;x.r.round=7;const before=structuredClone(x.rooms.state),view=marketPresentation(x.rooms,x.r);assert.equal(view.history.length,1);assert.equal(view.history[0].round,7);assert.deepEqual(x.rooms.state,before);
