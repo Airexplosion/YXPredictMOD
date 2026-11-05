@@ -1,0 +1,7 @@
+[Unit]
+Description=Observe new patch-only snapshots for the season 11 rating index
+[Path]
+PathChanged=/var/lib/yx-patch-rating-study/20261105/latest.json
+Unit=yx-season11-rating-index.service
+[Install]
+WantedBy=multi-user.target

@@ -18,7 +18,7 @@ from season_scores import mirror
 BASE=pathlib.Path('/opt/yx-elo')
 SOURCE=pathlib.Path(__file__).resolve().parent
 UNIT='yx-character-board-feed'
-CARD='<a class="hub-card" href="elo/characters/"><h2>角色 Elo 强度榜</h2><div class="en">Character rankings</div><p>换角校正 Elo，默认查看第三期，也可对照前两期的角色强度。</p><div class="path">/elo/characters</div></a>'
+CARD='<a class="hub-card" href="elo/characters/"><h2>角色 Elo 强度榜</h2><div class="en">Character rankings</div><p>换角校正 Elo，默认查看第四期，也可对照前三期的角色强度。</p><div class="path">/elo/characters</div></a>'
 
 def season_units(dest):
     units=pathlib.Path('/etc/systemd/system')

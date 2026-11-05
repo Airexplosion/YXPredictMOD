@@ -2,20 +2,26 @@ const assert=require('node:assert/strict');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const url=process.env.CHARACTER_BOARD_URL||'https://elo.kaigua.vip/elo/characters/';
 const origin=new URL(url).origin;
-const starts=[1792033200000,1792648800000,1793253600000];
+const starts=[1792033200000,1792648800000,1793253600000,1793858400000];
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.WEB_TEST_BROWSER||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
  try{
   const page=await browser.newPage({viewport:{width:1440,height:950}}),requests=[],errors=[];
+  if(process.env.CHARACTER_ASSETS){
+   const fs=require('node:fs'),path=require('node:path');
+   for(const file of ['index.html','season.js'])await page.route('**/elo/characters/'+(file==='index.html'?'':file+'*'),r=>r.fulfill({path:path.join(process.env.CHARACTER_ASSETS,file),contentType:file.endsWith('.js')?'application/javascript':'text/html'}));
+   await page.route('**/elo/characters/season.json',r=>r.fulfill({path:process.env.CHARACTER_FEED,contentType:'application/json'}));
+   await page.route('**/elo/characters/?*',r=>r.fulfill({path:path.join(process.env.CHARACTER_ASSETS,'index.html'),contentType:'text/html'}));
+  }
   page.on('request',r=>requests.push(r.url()));page.on('pageerror',e=>errors.push(e.message));
   const got=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/season.json'));
   assert.equal((await page.goto(url)).status(),200);
-  const feed=await (await got).json();assert.equal(feed.model,'within');assert.equal(feed.periods.length,3);
+  const feed=await (await got).json();assert.equal(feed.model,'within');assert.equal(feed.periods.length,4);
   assert(!/"(?:uid|gameId|codeId|roomId|nickname|replay|rows)"\s*:|"[a-f0-9]{16,24}"/i.test(JSON.stringify(feed)));
   const ready=()=>page.locator('#rows tr').first().waitFor();
-  await ready();assert.match(await page.locator('#modeLabel').innerText(),/第三期.*换角校正 Elo/);
-  assert.equal(await page.locator('[data-phase="3"]').getAttribute('aria-pressed'),'true');
-  for(const phase of [3,1,2,3]){
+  await ready();assert.match(await page.locator('#modeLabel').innerText(),/第四期.*换角校正 Elo/);
+  assert.equal(await page.locator('[data-phase="4"]').getAttribute('aria-pressed'),'true');
+  for(const phase of [4,1,2,3,4]){
    const p=feed.periods[phase-1];assert.equal(p.start,starts[phase-1]);assert.equal(p.heroes.length,24);
    await page.locator('[data-phase="'+phase+'"]').click();
    assert.equal(await page.locator('#games').innerText(),p.games.toLocaleString('zh-CN'));
@@ -42,8 +48,10 @@ const starts=[1792033200000,1792648800000,1793253600000];
   await page.locator('#careerLink').click();await ready();assert.match(await page.title(),/旧版/);
   assert.equal(await page.locator('#career').inputValue(),'阵法师');
   await page.goto(url+'?source=window&band=high&career='+encodeURIComponent('阵法师'));await ready();assert.match(page.url(),/reference\.html/);
-  await page.goto(url+'?source=live');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第三期/);
+  await page.goto(url+'?phase=3');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第三期.*已封存/);
+  await page.reload();await ready();assert.equal(await page.locator('[data-phase="3"]').getAttribute('aria-pressed'),'true');
+  await page.goto(url+'?source=live');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第四期/);
   assert(requests.every(s=>new URL(s).origin===origin));assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({defaultPhase:3,model:feed.model,games:feed.periods.map(p=>p.games),heroCount:24,allScoresMatch:true,legacy:true,mobile:true}));
+  console.log(JSON.stringify({defaultPhase:4,model:feed.model,games:feed.periods.map(p=>p.games),heroCount:24,allScoresMatch:true,legacy:true,mobile:true}));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

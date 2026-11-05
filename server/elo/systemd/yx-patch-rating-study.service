@@ -1,0 +1,20 @@
+[Unit]
+Description=Compare ranked strength models within the November 5 balance patch
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/yx-patch-rating-study
+ExecStart=/usr/bin/python3 -B /opt/yx-patch-rating-study/patch_rating_study.py /var/lib/yx-patch-rating-study/20261105
+Nice=18
+CPUQuota=65%
+MemoryMax=1300M
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+UMask=0077
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/yx-patch-rating-study/20261105
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+NoNewPrivileges=yes
+TimeoutStartSec=45min

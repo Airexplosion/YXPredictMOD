@@ -1,10 +1,10 @@
 # Elo API 与匿名榜
 
-**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 默认展示百家之道第三期，采用换角校正 Elo（`within`）。页面可切换[第一期](https://elo.kaigua.vip/elo/characters/?phase=1)与[第二期](https://elo.kaigua.vip/elo/characters/?phase=2)。北京时间10月15日11:00、10月22日14:00、10月29日14:00分别起算，季前赛计入0局。第一、二期封存。第三期每10分钟开始重算，按开局和结算时间顺序逐局更新，完整重放可接纳迟到和被更正的身份事实，避免增量重复计分。总体分等权合并3000–5999与6000及以上两段，玩家数分段列出。
+**[角色 Elo 强度榜](https://elo.kaigua.vip/elo/characters/)** 默认展示百家之道第四期，采用换角校正 Elo（`within`）。页面可切换前三期（`?phase=1`、`2`、`3`）。北京时间10月15日11:00、10月22日14:00、10月29日14:00、11月5日14:00分别起算，季前赛计入0局。前三期封存。第四期仅接纳 `001.0008.0005` 版本，从3000分独立估分，每10分钟开始重算，按开局和结算时间顺序逐局更新，完整重放可接纳迟到和被更正的身份事实，避免增量重复计分。总体分等权合并3000–5999与6000及以上两段，玩家数分段列出。
 
-正式页只读取同域 `season.json`。来源服务器运行 `season_scores.py`，从本赛季分期索引按字段白名单导出三期的角色分、出场人次和玩家数。网站的 `yx-season-board-feed.timer` 每分钟通过限定来源地址和只读导出命令的专用 SSH 密钥拉取结果，核对时期、算法和角色名单，再原子发布。打开的页面每分钟检查新结果，15秒请求超时后允许重试，超过20分钟未生成新结果时提示延迟。无效或过时的代次保留上一份成功快照。
+正式页只读取同域 `season.json`。来源服务器运行 `season_scores.py`，从本赛季分期索引按字段白名单导出四期的角色分、出场人次和玩家数。网站的 `yx-season-board-feed.timer` 每分钟通过限定来源地址和只读导出命令的专用 SSH 密钥拉取结果，核对时期、算法和角色名单，再原子发布。打开的页面每分钟检查新结果，15秒请求超时后允许重试，超过20分钟未生成新结果时提示延迟。无效或过时的代次保留上一份成功快照。
 
-来源服务器的定时器配置在 `systemd/yx-patch-rating-study.timer`，仍运行既有评分服务，CPU、内存限制和版本边界检查保持生效。systemd不会并行启动同一个服务，单次若超过10分钟，不会叠加计算。网站发布只读取已经完成的匿名结果，不发游戏请求。评分代码与每日锁定预测保持原样，仅提高运行频率。
+来源服务器的定时器配置在 `systemd/yx-patch-rating-study.timer`，运行 `study/patch_rating_study.py /var/lib/yx-patch-rating-study/20261105`，CPU、内存限制和版本边界检查保持生效。systemd不会并行启动同一个服务，单次若超过10分钟，不会叠加计算。网站发布只读取已经完成的匿名结果，不发游戏请求。各期目录的 `period.json` 独立指定开局下界、复盘版本和已审核官方公告；版本缓存、预测和报告不跨期复用。新增官方公告仍先保守截断，审核后的准确时间可写入 `reviewed-news-boundaries.json`。11月5日第四期依据官方公告14:00起算，第三期补算至这个时间前后封存为 `season11/phase3-frozen.json`。跨边界旧局及版本不符的对局不进入第四期。角色目录始终完整，无样本时显示待样本，首批样本显示初评。
 
 个人榜的网页读取 `/elo/public/leaderboard.json`，由 `public_snapshot.py` 从完整合并评分快照预先生成。只包含前100名的三项数值及汇总时间，无身份和复盘字段，文件小于32KB，由Caddy静态提供，刷新无需在API进程内重新加载十多万人的私有快照。生产部署在 `yx-elo-update.service` 增加 `ExecStartPost=/opt/yx-elo/venv/bin/python /opt/yx-elo/public_snapshot.py --snapshot /var/lib/yx-elo/snapshot.json --output <网页目录>/elo/public/leaderboard.json --lookup-db /var/lib/yx-elo/ratings.sqlite3`，并将该公开目录加入 `ReadWritePaths`，目录由 `yx-elo` 写入、Caddy只读。只在重算成功后发布，采用原子替换，失败保留上次成功结果。首次切换网页前须先成功导出。私有快照与索引仍在原有受限目录，独立UID API响应格式保持不变。开发用的独立Python页面为此URL保留同等匿名输出回退，生产由Caddy静态路由承接。
 

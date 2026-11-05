@@ -6,8 +6,8 @@ if(params.get("source")==="window"||params.get("career")){
  location.replace("reference.html?"+params.toString());return;
 }
 const titles={overall:"总体",mid:"3000–5999",high:"6000及以上"};
-const periods=["第一期","第二期","第三期"];
-let phase=["1","2","3"].includes(params.get("phase"))?Number(params.get("phase")):3;
+const periods=["第一期","第二期","第三期","第四期"];
+let phase=["1","2","3","4"].includes(params.get("phase"))?Number(params.get("phase")):null;
 let band=Object.hasOwn(titles,params.get("band"))?params.get("band"):"overall";
 let data=null,loading=false;
 const format=new Intl.NumberFormat("zh-CN");
@@ -20,9 +20,14 @@ function sorted(p,b){
  return [...p.heroes].sort((a,h)=>(value(h,b)??-Infinity)-(value(a,b)??-Infinity)||a.name.localeCompare(h.name,"zh-CN"));
 }
 function controls(){
- document.querySelectorAll("[data-phase]").forEach(n=>n.setAttribute("aria-pressed",String(Number(n.dataset.phase)===phase)));
+ const switches=$("periodSwitch");switches.replaceChildren();
+ for(let i=data.periods.length-1;i>=0;i--){
+  const date=new Date(data.periods[i].start+8*3600000);
+  const n=el("button",periods[i]+" · "+(date.getUTCMonth()+1)+"月"+date.getUTCDate()+"日起");n.type="button";
+  n.dataset.phase=i+1;n.setAttribute("aria-pressed",String(i+1===phase));n.onclick=()=>{phase=i+1;render()};switches.append(n);
+ }
  document.querySelectorAll("[data-band]").forEach(n=>n.setAttribute("aria-pressed",String(n.dataset.band===band)));
- const query=new URLSearchParams();if(phase!==3)query.set("phase",phase);if(band!=="overall")query.set("band",band);
+ const query=new URLSearchParams();if(phase!==data.periods.length)query.set("phase",phase);if(band!=="overall")query.set("band",band);
  history.replaceState(null,"",location.pathname+(query.size?"?"+query:""));
 }
 function rows(p){
@@ -44,14 +49,14 @@ function rows(p){
  });$("empty").hidden=body.children.length>0;
 }
 function render(){
- controls();if(!data)return;
+ if(!data)return;controls();
  const p=data.periods[phase-1],ended=p.end!==null;
  $("modeLabel").textContent=periods[phase-1]+" · "+(ended?"已封存":"持续更新")+" · 换角校正 Elo";
  $("period").textContent=clock(p.start)+(ended?" 至 "+clock(p.end):" 起");
  $("coverage").textContent=(ended?"最后计分结算 ":"榜单数据截至 ")+clock(ended?p.settled:p.asOf)+"（北京时间）";
  $("games").textContent=format.format(p.games);$("players").textContent=format.format(p.players);
- $("notes").textContent="首场可核实对局开于 "+clock(p.first)+"，最后计分结算于 "+clock(p.settled)+"。"+
-  (phase===1?"第一期有部分修复提前热更，官方未列出精确分钟。":phase===3&&ended?"已达到下一次版本或公告边界，第三期已封存。":"");
+ $("notes").textContent=(p.games?"首场可核实对局开于 "+clock(p.first)+"，最后计分结算于 "+clock(p.settled)+"。":"本期从3000分独立起算，等待已结算且身份核实完成的对局。")+
+  (phase===1?"第一期有部分修复提前热更，官方未列出精确分钟。":ended?"已达到下一次版本或公告边界，本期已封存。":"");
  $("leads").replaceChildren();
  for(const b of Object.keys(titles)){
   const h=sorted(p,b).find(h=>value(h,b)!==null),btn=el("button","");btn.className="lead";btn.type="button";
@@ -67,16 +72,16 @@ async function refresh(){
   const response=await fetch("season.json",{cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer",signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error("fetch");
   const incoming=await response.json();
-  if(incoming.schema!=="season11-character-elo-v1"||incoming.model!=="within"||incoming.periods?.length!==3)throw Error("schema");
+  if(incoming.schema!=="season11-character-elo-v1"||incoming.model!=="within"||![3,4].includes(incoming.periods?.length))throw Error("schema");
+  if(phase===null||phase>incoming.periods.length)phase=incoming.periods.length;
   data=incoming;render();
  }catch{
   $("status").replaceChildren(document.createTextNode(data?"刷新失败，保留上次评分。 ":"暂时未能读取榜单。 "));
   const btn=el("button","重新读取");btn.onclick=refresh;$("status").append(btn);
  }finally{loading=false}
 }
-document.querySelectorAll("[data-phase]").forEach(n=>n.onclick=()=>{phase=Number(n.dataset.phase);render()});
 document.querySelectorAll("[data-band]").forEach(n=>n.onclick=()=>{band=n.dataset.band;render()});
 $("search").oninput=()=>{if(data)rows(data.periods[phase-1])};
-controls();refresh();setInterval(()=>{if(!document.hidden)refresh()},60000);
+refresh();setInterval(()=>{if(!document.hidden)refresh()},60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
 })();
