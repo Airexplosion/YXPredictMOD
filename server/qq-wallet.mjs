@@ -73,7 +73,7 @@ export function syncQqWallet(web,user){
     }
     bindings[qq]=owner;
     return {me:web.me(identity),created,linked,synced};
-  });
+  },['accounts','profiles','qqBindings','identityAliases','walletEvents']);
 }
 
 export function transferQqCoins(web,sender,recipient,amount,operation){

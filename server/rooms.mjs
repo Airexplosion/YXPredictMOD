@@ -4,6 +4,7 @@ import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {publicBuild} from './public-build.mjs';
 import {rememberMarket} from './market.mjs';
 import {openingAllIn} from './opening-window.mjs';
+import {isDeepStrictEqual} from 'node:util';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 const requireThat = (ok, message, status) => { if (!ok) throw new RoomError(message, status); };
@@ -29,12 +30,14 @@ export class Rooms {
   constructor(state = { accounts: {}, rooms: {} }, save = () => {}, now = Date.now, { championOnly = true } = {}) {
     this.state = state; this.save = save; this.now = now; this.syncTimes = new Map();this.sourceHealth=new Map(); this.championOnly = championOnly; this.revision = 0;
   }
-  commit(fn) {
+  commit(fn,scope=null) {
     if (this.committing) return fn();
-    const before = clone(this.state);
+    const before = scope?new Map(scope.map(key=>[key,Object.hasOwn(this.state,key)?{value:clone(this.state[key])}:null])):clone(this.state);
     this.committing = true;
-    try { const result = fn(); this.save(this.state); this.revision++; return result; }
-    catch (e) { this.state = before; throw e; }
+    try { const result = fn();
+      const changed=!scope||[...before].some(([key,entry])=>entry?!Object.hasOwn(this.state,key)||!isDeepStrictEqual(entry.value,this.state[key]):Object.hasOwn(this.state,key));
+      if(changed){this.save(this.state);this.revision++;}return result; }
+    catch (e) { if(scope){for(const [key,entry]of before)if(entry)this.state[key]=entry.value;else delete this.state[key];}else this.state = before; throw e; }
     finally { this.committing = false; }
   }
   hasPendingBets(key) {
