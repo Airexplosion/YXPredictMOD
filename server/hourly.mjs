@@ -27,14 +27,16 @@ export function publicSummary(view,{round=view.round,player=null,nativeRanks=nul
   const lines=[`整点竞猜 #${view.code} · 第${round}回合${view.settled?' · 已结算':view.tradingClosed?(view.round<13?' · 仅全猜':' · 竞猜已截止'):''}`];
   const reference=publicPresentation(view,{round,player});
   if(reference.closingWarning)lines.unshift(reference.closingWarning);
-  if(reference.quoteRange)lines.push(`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?(view.round<13?(reference.allInOpen?' · 仅全猜可用':' · 全猜等待修炼'):' · 竞猜已截止，仅供参考'):reference.bettingOpen?' · 修炼阶段可竞猜':' · 暂停竞猜，等待修炼'}；以操作确认为准。`);
+  if(reference.quoteRange)lines.push(reference.quoteMode==='history'
+    ?`第${reference.quoteRound}回合历史参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)} · 仅供回顾。`
+    :`第${reference.quoteRound}回合冠军参考区间：${rate(reference.quoteRange.minimumRate)}～${rate(reference.quoteRange.maximumRate)}${view.tradingClosed?(view.round<13?(reference.allInOpen?' · 仅全猜可用':' · 全猜等待修炼'):' · 竞猜已截止，仅供参考'):reference.bettingOpen?' · 修炼阶段可竞猜':' · 暂停竞猜，等待修炼'}；以操作确认为准。`);
   for(const i of players){
     const p=view.players[i],state=frame?.states?.[i]??(round===view.round?p.state:null),rank=round>=view.round-1?p.rank:frame?.ranks?.[i]??0;
     const active=frame?(state?state.life>0:rank===0):p.active;
     const build=view.frames?.find(f=>f.round===round)?.builds?.[i]??(round===view.round?p.build:null);
     const quote=reference.players.find(p=>p.index===i)?.quoteRate??0;
     const native=nativeRanks?.[i],nativeText=native?` · ${native.mode==='daoxin'?'道心':'天梯'}${native.score===null?'分未公开':` ${native.score}分`}`:'';
-    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}${nativeText}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${quote>0?` · 第${reference.quoteRound}回合冠军参考${rate(quote)}`:''}\n${buildLines(build).join('\n')}`);
+    lines.push(`${i+1}号 ${p.name} · ${p.horseTitle||'马匹档位待同步'}${nativeText}\n${state?`命元${state.life} · ${state.wins}胜${state.losses}负`:'公开战况待同步'}${rank?` · 第${rank}名`:!active?' · 已退出':''}${quote>0?` · 第${reference.quoteRound}回合${reference.quoteMode==='history'?'历史':''}冠军参考${rate(quote)}`:''}\n${buildLines(build).join('\n')}`);
   }
   for(const b of view.battles??[]){
     if(b.round!==round||player!==null&&b.first!==player&&b.second!==player)continue;

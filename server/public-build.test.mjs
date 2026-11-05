@@ -5,6 +5,56 @@ import {PredictionWeb} from './web.mjs';
 import {publicBuild,buildLines,publicPresentation,publicReportReady} from './public-build.mjs';
 import {publicSummary} from './hourly.mjs';
 import {settlementReport} from './settlement.mjs';
+test('delayed reports use the exact historical quote round, ignoring later eliminations and future prices',()=>{
+ const x=setup();x.snapshot.round=3;x.snapshot.baseRates.fill(50000);x.rooms.sync(x.code,x.key,x.snapshot);
+ x.snapshot.round=5;x.snapshot.baseRates.fill(90000);x.rooms.sync(x.code,x.key,x.snapshot);
+ const r=x.rooms.state.rooms[x.code],before=structuredClone(x.rooms.state),view=structuredClone(x.web.watch(r));
+ view.players[0].rank=8;view.players[0].active=false;view.players[0].state.life=-5;
+ view.marketHistory.push({round:99,rates:Array(8).fill(575000)});
+ const report=publicPresentation(view,{round:1,noticeType:'round'});
+ assert.equal(report.quoteMode,'history');assert.equal(report.quoteRound,2);assert.equal(report.currentRound,5);
+ assert.equal(report.players[0].rank,0);assert.equal(report.players[0].state.life,90);assert.equal(report.players[0].quoteInactive,false);
+ assert.equal(report.players[0].quoteRate,40000);assert.equal(report.players.filter(p=>p.quoteRate>0).length,8);
+ assert.deepEqual(report.quoteRange,{minimumRate:40000,maximumRate:40000});
+ assert(publicSummary(view,{round:1}).some(line=>line.includes('第2回合历史参考区间')));
+ assert.deepEqual(x.rooms.state,before);
+});
+
+test('settlement cannot zero old report prices, reprice locked claims, credit money or reopen trading',()=>{
+ const x=setup();x.rooms.trade(x.code,x.key,{kind:'buy',player:0,rank:1,stake:100,operation:'before-history-end',version:x.rooms.state.rooms[x.code].version});
+ const claim=x.rooms.state.rooms[x.code].positions[x.key][0].claim;
+ Object.assign(x.snapshot,{round:19,closedThrough:19,ended:true,open:false,ranks:[1,2,3,4,5,6,7,8]});x.rooms.sync(x.code,x.key,x.snapshot);
+ const before=structuredClone(x.rooms.state),view=x.web.watch(x.rooms.state.rooms[x.code]),report=publicPresentation(view,{round:1,noticeType:'round'});
+ assert.equal(report.quoteMode,'history');assert.equal(report.gameEnded,true);assert.equal(report.quoteRound,2);
+ assert(report.players.every(p=>p.quoteRate===40000));assert.equal(report.bettingOpen,false);assert.equal(report.allInOpen,false);
+ const final=publicPresentation(view,{noticeType:'settled'});assert.equal(final.quoteMode,'closed');assert.equal(final.quoteRange,null);assert(final.players.every(p=>p.quoteRate===0));
+ assert.equal(x.rooms.state.rooms[x.code].positions[x.key][0].claim,claim);assert.deepEqual(x.rooms.state,before);
+});
+
+test('a terminal empty history point falls back only to a real earlier quote and labels its actual round',()=>{
+ const x=setup(),view=x.web.watch(x.rooms.state.rooms[x.code]);
+ Object.assign(view,{round:4,ended:true,settled:true,marketHistory:[{round:2,rates:Array(8).fill(30000)},{round:3,rates:Array(8).fill(45000)},{round:4,rates:Array(8).fill(null)},{round:5,rates:Array(8).fill(575000)}]});
+ const report=publicPresentation(view,{round:3,noticeType:'round'});
+ assert.equal(report.quoteMode,'history');assert.equal(report.quoteRound,3);
+ assert(report.players.every(p=>p.quoteRate===45000));assert.deepEqual(report.quoteRange,{minimumRate:45000,maximumRate:45000});
+});
+
+test('missing archived quotes never borrow current or future prices, and explicit exits have a distinct public state',()=>{
+ const x=setup(),view=x.web.watch(x.rooms.state.rooms[x.code]);
+ view.round=5;view.marketHistory=[{round:3,rates:Array(8).fill(70000)},{round:1,rates:Array(7).fill(40000)}];
+ const missing=publicPresentation(view,{round:1,noticeType:'round'});
+ assert.equal(missing.quoteMode,'history');assert.equal(missing.quoteRound,2);assert.equal(missing.quoteRange,null);
+ assert(missing.players.every(p=>p.quoteRate===0));
+ view.round=2;view.players[0].active=false;view.players[0].state.life=90;view.players[0].rank=0;
+ const current=publicPresentation(view);assert.equal(current.quoteMode,'live');assert.equal(current.players[0].quoteInactive,true);assert.equal(current.players[0].quoteRate,0);
+});
+
+test('public quote history is bounded, copied and contains only round and rates',()=>{
+ const x=setup(),r=x.rooms.state.rooms[x.code];r.marketHistory[0].owner='private-wallet-owner';r.marketHistory[0].producerUid='private-player-uid';
+ const view=x.web.watch(r);assert.deepEqual(Object.keys(view.marketHistory[0]).sort(),['rates','round']);
+ assert(!JSON.stringify(view.marketHistory).includes('private-'));
+ view.marketHistory[0].rates[0]=1;assert.equal(r.marketHistory[0].rates[0],40000);
+});
 export const build=(i=0)=>({characterId:1000001+i,characterName:'青松'+i,sectId:1,sectName:'剑宗',careerId:2,careerName:'符师',realmId:3,realmName:'金丹',talents:[{id:10001,name:'筑基 · 凝气'},{id:10002,name:'金丹 · 明心'}],baijia:[{id:1001,name:'百家·清风'}],fates:[{id:21,name:'天衍·静修'}],resonance:{id:4,name:'共鸣·生息'},selectionRound:1,selectionsKnown:true});
 export function setup(save){const rooms=new Rooms(undefined,save),web=new PredictionWeb(rooms),key=rooms.register('观战房主').token;
  const snapshot={id:'public-builds',gameRoomId:'native-builds',round:2,closedThrough:1,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:'public-player-'+i,name:'道友'+i})),states:Array.from({length:8},()=>({life:90,wins:1,losses:0})),ranks:Array(8).fill(0),active:Array(8).fill(true),baseRates:Array(64).fill(40000),builds:Array.from({length:8},(_,i)=>build(i))};
