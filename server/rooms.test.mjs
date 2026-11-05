@@ -219,7 +219,7 @@ test('disk restart preserves account and room, resets trading heartbeat, rejects
     const view=await request({action:'view',code:room.code},user.token);assert.equal(view.balance,900);assert.equal(view.positions[0].stake,100);assert.equal(view.open,false);
   }finally{
     if(server)await new Promise(resolve=>server.close(resolve));
-    for(const name of ['rooms.json','rooms.json.tmp','server.lock']){const file=path.join(directory,name);if(fs.existsSync(file))fs.unlinkSync(file);}fs.rmdirSync(directory);
+    for(const name of ['rooms.json','rooms.json.tmp','rooms.json.sqlite','rooms.json.sqlite-wal','rooms.json.sqlite-shm','server.lock']){const file=path.join(directory,name);if(fs.existsSync(file))fs.unlinkSync(file);}fs.rmdirSync(directory);
   }
 });
 test('retired rank stops new positions while remaining final ranks wait',()=>{

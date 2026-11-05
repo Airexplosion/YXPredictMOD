@@ -9,7 +9,7 @@ import {HourlyEvents} from './hourly.mjs';
 import {serviceAccess,qqCommand} from './qq.mjs';
 import {linkCandidates} from './qq-wallet.mjs';
 import {BrowserAuth} from './browser-auth.mjs';
-import {readState,writeState} from './state-store.mjs';
+import {IncrementalStore} from './incremental-store.mjs';
 
 export function createHandler(rooms, options = {}) {
   const buckets = new Map();
@@ -113,14 +113,13 @@ export function start({ directory = process.env.ROOM_DATA || './room-data', host
   fs.writeFileSync(lock, String(process.pid));
   // A stale PID lock can be reclaimed after a crash; live writers are never replaced.
   const file = path.join(directory, 'rooms.json');
-  let state;
-  try { state = fs.existsSync(file) ? readState(file) : undefined; }
+  let store;
+  try { store = new IncrementalStore(file); }
   catch (e) { fs.closeSync(lock); fs.unlinkSync(lockPath); throw e; }
-  const save = value => writeState(file,value);
-  const rooms = new Rooms(state, save);
+  const rooms = new Rooms(store.state, value=>store.save(value));
   const server = http.createServer(createHandler(rooms));
   server.requestTimeout = 10000; server.headersTimeout = 10000;
-  server.on('close', () => { fs.closeSync(lock); fs.unlinkSync(lockPath); });
+  server.on('close', () => { store.close();fs.closeSync(lock); fs.unlinkSync(lockPath); });
   server.listen(port, host, () => console.log(`Free-points room server on ${host}:${server.address().port}`));
   return server;
 }

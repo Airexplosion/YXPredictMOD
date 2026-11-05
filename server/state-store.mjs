@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {brotliCompressSync,brotliDecompressSync,constants} from 'node:zlib';
+import {readIncrementalState} from './incremental-store.mjs';
 
 const FORMAT='yx-prediction-state-br-v1',MAX_BYTES=256*1024*1024;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -26,9 +27,10 @@ export function decodeState(serialized){
   return JSON.parse(raw.toString('utf8'));
 }
 
-export function readState(file){return decodeState(fs.readFileSync(file));}
+export function readState(file){return fs.existsSync(file+'.sqlite')?readIncrementalState(file+'.sqlite'):decodeState(fs.readFileSync(file));}
 
 export function writeState(file,state,io=fs){
+  if(io===fs&&fs.existsSync(file+'.sqlite'))throw new Error('Incremental ledger exists; use its transaction store');
   // Compression happens before opening the temporary file. Persistence still
   // confirms only after fsync + atomic rename; callers retain their rollback.
   const serialized=encodeState(state),temporary=file+'.tmp',fd=io.openSync(temporary,'w',0o600);
