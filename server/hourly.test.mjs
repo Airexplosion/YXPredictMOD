@@ -124,14 +124,14 @@ test('opening rejects mismatched or malformed native rank annotations before any
  const x=fixture();x.info.nativeRanks=rows();x.info.nativeRanks[0].score=null;x.open();assert(x.hourly.claim().lines.some(s=>s.includes('天梯分未公开')));
 });
 test('one authoritative hourly room, immutable 15% premium, restart deduplication and unchanged standard quotes',()=>{
- const x=fixture(),r=x.open(),code=r.code;assert.equal(r.players[0].quoteRate,19358);assert.equal(r.bonusBps,11500);
+ const x=fixture(),r=x.open(),code=r.code;assert.equal(r.players[0].quoteRate,46000);assert.equal(r.bonusBps,11500);
  assert.equal(x.open().code,code);assert.equal(Object.keys(x.rooms.state.rooms).length,1);
  const restored=new Rooms(structuredClone(x.rooms.state),undefined,x.now),h=new HourlyEvents(restored,new PredictionWeb(restored,{now:x.now}));
  assert.equal(h.open(x.info,x.snapshot).code,code);
  x.time(x.now()+3600000);assert.throws(x.open,/上一场/);
  const key=x.rooms.register('普通房主').token,normal=x.rooms.create(key,{...x.snapshot,id:'another',gameRoomId:'another-native'});
- assert.equal(normal.quoteRates[0],19358);assert.equal(normal.bonusBps,10000);
- x.snapshot.round=2;x.snapshot.baseRates.fill(500000);x.hourly.sync(code,x.snapshot);assert.equal(x.rooms.state.rooms[code].quoteRates[0],19358);
+ assert.equal(normal.quoteRates[0],40000);assert.equal(normal.bonusBps,10000);
+ x.snapshot.round=2;x.snapshot.baseRates.fill(500000);x.hourly.sync(code,x.snapshot);assert.equal(x.rooms.state.rooms[code].quoteRates[0],58074);
 });
 test('6000 inclusive applies to new openings; an existing lower-score game continues with its original claims',()=>{
  const x=fixture(),r=x.open();x.hourly.data().slots[x.rooms.state.rooms[r.code].eventSlot].info.avgRankScore=3500;
@@ -147,28 +147,28 @@ test('ordinary website rooms never prevent an hourly opening; their holdings and
  assert.equal(x.rooms.websiteRoom().code,ordinary.code);assert.equal(x.hourly.status().available,true);
  const event=x.open();assert.equal(x.rooms.websiteRoom().code,event.code);assert.equal(x.web.listRooms().total,1);assert.equal(x.hourly.status().available,false);
  assert.deepEqual(x.rooms.state.rooms[ordinary.code],before);assert.equal(x.rooms.state.accounts[key].balance,balance);
- assert(x.rooms.list(key).rooms.some(r=>r.code===ordinary.code));assert.equal(x.rooms.view(ordinary.code,key).positions[0].claim,193);
+ assert(x.rooms.list(key).rooms.some(r=>r.code===ordinary.code));assert.equal(x.rooms.view(ordinary.code,key).positions[0].claim,400);
 });
 test('QQ and website use one wallet, duplicate group commands across room changes cannot wager again; expiry does not cancel a locked payout',()=>{
  const x=fixture(),r=x.open();x.web.openAccount(user);const accounts=Object.keys(x.rooms.state.accounts).length;
  const command={text:'/竞猜 1 100',messageId:'one-message',messageAt:x.now()};
  const first=qqCommand(x.web,x.hourly,user,command);assert.equal(x.web.me(user).playBalance,900);assert.equal(Object.keys(x.rooms.state.accounts).length,accounts);
- const key=x.web.playKey(user);assert.equal(x.rooms.state.rooms[r.code].positions[key][0].claim,193);
+ const key=x.web.playKey(user);assert.equal(x.rooms.state.rooms[r.code].positions[key][0].claim,460);
  assert.deepEqual(qqCommand(x.web,x.hourly,user,command),first);assert.equal(x.web.me(user).playBalance,900);
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,text:'/竞猜 2 100'}),/内容不一致/);
   const pending=qqCommand(x.web,x.hourly,user,{...command,messageId:'new-message'});assert(pending.lines.some(s=>s.includes('尚未执行')));assert.equal(x.web.me(user).playBalance,900);
   qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:first.receiptId});
  x.snapshot.round=10;x.hourly.sync(r.code,x.snapshot);assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'late-message'}),/竞猜(?:已)?截止/);
  x.snapshot.round=18;x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.hourly.sync(r.code,x.snapshot);
- assert.equal(x.web.me(user).playBalance,1093);x.hourly.sync(r.code,x.snapshot);assert.equal(x.web.me(user).playBalance,1093);
+ assert.equal(x.web.me(user).playBalance,1360);x.hourly.sync(r.code,x.snapshot);assert.equal(x.web.me(user).playBalance,1360);
  x.time(x.now()+3600000);x.snapshot.id='next-game';x.snapshot.gameRoomId='next-native';x.info.roomId='next-native';x.snapshot.ended=false;x.snapshot.round=1;x.snapshot.ranks.fill(0);x.open();
- assert.deepEqual(qqCommand(x.web,x.hourly,user,command),first);assert.equal(x.web.me(user).playBalance,1093);
+ assert.deepEqual(qqCommand(x.web,x.hourly,user,command),first);assert.equal(x.web.me(user).playBalance,1360);
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'stale-message'}),/消息已过期/);
 });
 test('one QQ command buys multiple ordered legs including the same horse twice, and retries never debit again',()=>{
  const x=fixture(),v=x.open(),body={text:'/竞猜 1 200 2 300 1 200',messageId:'batch-001',messageAt:x.now()};
  const reply=qqCommand(x.web,x.hourly,user,body),key=x.web.playKey(user),r=x.rooms.state.rooms[v.code];
- assert.equal(x.web.me(user).playBalance,300);assert.equal(r.positions[key][0].claim,774);assert.equal(r.positions[key][1].claim,580);
+ assert.equal(x.web.me(user).playBalance,300);assert.equal(r.positions[key][0].claim,1840);assert.equal(r.positions[key][1].claim,1380);
  assert.equal(r.cashflows[key].invested,700);assert.equal(r.actionCounts[key][0],2);assert.equal(r.actionCounts[key][1],1);assert.equal(Object.keys(r.receipts).length,3);
  assert(reply.lines[0].includes('3笔，共投入700'));const before=structuredClone(x.rooms.state);
  assert.deepEqual(qqCommand(x.web,x.hourly,user,body),reply);assert.deepEqual(x.rooms.state,before);
