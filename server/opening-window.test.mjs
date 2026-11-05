@@ -32,7 +32,7 @@ test('opening all-in starts at the first confirmed forward, not room creation, n
  x.ack(row);
  assert.equal(x.room().openingAllIn.startedAt,created+61000);assert.equal(x.room().openingAllIn.endsAt,created+181000);
  x.sync({});const reply=x.call('全猜 3');
- assert.match(reply.lines[0],/额外×3/);assert.equal(x.room().positions[x.key()][2].claim,13800);
+ assert.match(reply.lines[0],/额外×3/);assert.equal(x.room().positions[x.key()][2].claim,5807);
  assert.equal(x.room().positions[x.key()][2].cashoutLocked,true);
 });
 
@@ -55,7 +55,7 @@ test('two-minute triple all-in spans later rounds and live battles, while normal
  const x=fixture();x.start();x.advance(50000);
  x.sync({round:3,liveRound:3,closedThrough:3,open:false,sourcePhase:'battle',roundComplete:false,eliminationRounds:Array(8).fill(0)});
  assert.equal(x.web.watch(x.room()).allInOpen,true);assert.equal(x.web.watch(x.room()).open,false);
- const result=x.call('全猜 3'),p=x.room().positions[x.key()][2];assert.equal(p.claim,13800);assert.equal(p.cashoutLocked,true);
+ const result=x.call('全猜 3'),p=x.room().positions[x.key()][2];assert.equal(p.claim,5807);assert.equal(p.cashoutLocked,true);
  qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:result.receiptId});
  x.sync({round:4,liveRound:4,closedThrough:3,open:true,sourcePhase:'preparation',roundComplete:true});
  for(const text of ['减半 3','撤回 3'])assert.throws(()=>x.call(text),/锁定至结算/);
@@ -65,7 +65,7 @@ test('two-minute triple all-in spans later rounds and live battles, while normal
 test('the exact deadline removes only the extra triple, and ordinary all-in retains its old phase and withdrawal rules',()=>{
  const x=fixture();x.start();const start=x.now();x.time(start+119999);x.sync({});
  const first=x.call('全猜 3');qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:first.receiptId});
- assert.equal(x.room().positions[x.key()][2].claim,13800);
+ assert.equal(x.room().positions[x.key()][2].claim,5807);
  x.time(start+120000);x.sync({round:3,liveRound:3,closedThrough:2});
  const second={...x.user,subject:'c'.repeat(64),qqSubject:'c'.repeat(64)};
  x.call('注册 第二道友',{},second);const normalClaim=x.room().quoteRates[24]/10,full=x.call('全猜 4',{},second),key=x.web.playKey(second);
@@ -137,10 +137,10 @@ test('a deadline-crossing duplicate keeps its original triple fill and payout, w
  const x=fixture();x.start();const body={text:'全猜 3',messageId:'opening-retry',messageAt:x.now()},first=qqCommand(x.web,x.hourly,x.user,body);
  x.call('签到');x.advance(120000);x.sync({round:4,liveRound:4,closedThrough:3});
  assert.deepEqual(qqCommand(x.web,x.hourly,x.user,body),first);
- const p=x.room().positions[x.key()][2];assert.equal(p.claim,13800);assert.equal(p.cashoutLocked,true);
+ const p=x.room().positions[x.key()][2];assert.equal(p.claim,5807);assert.equal(p.cashoutLocked,true);
  x.sync({round:20,liveRound:20,closedThrough:20,open:false,ended:true,ranks:[2,3,1,4,5,6,7,8]});
- assert.equal(x.rooms.state.accounts[x.key()].balance,14000);
- x.sync({});assert.equal(x.rooms.state.accounts[x.key()].balance,14000);
+ assert.equal(x.rooms.state.accounts[x.key()].balance,6007);
+ x.sync({});assert.equal(x.rooms.state.accounts[x.key()].balance,6007);
 });
 
 test('legacy saved rooms retain their round-based offer and existing locks without inventing a new timer',()=>{

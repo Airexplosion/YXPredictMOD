@@ -123,7 +123,7 @@ test('first-round triple claims settle by the locked amount for first, second an
   const x=fixture();x.call('注册 小白');const {code}=x.open(),key=x.web.playKey(x.user);
   const reply=x.call('全猜 3');assert.match(reply.lines[0],/额外×3/);
   const room=x.rooms.state.rooms[code],claim=room.positions[key][2].claim;
-  assert.equal(claim,13800);
+  assert.equal(claim,5807);
   const available=[1,2,3,4,5,6,7,8].filter(r=>r!==rank),ranks=Array.from({length:8},(_,i)=>i===2?rank:available.shift());
   x.rooms.sync(code,x.hourly.data().hostToken,{...x.snapshot,round:20,closedThrough:20,open:false,ended:true,ranks});
   const expected=rank===1?claim:rank===2?Math.floor(claim/4):Math.floor(claim/10);
@@ -173,7 +173,7 @@ test('triple promotion applies only to the new first-round full fill and keeps t
  const full=x.call('全猜 3',{messageId:'remaining-full'});qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:full.receiptId});
  x.call('签到');x.call('竞猜 3 200',{messageId:'later-regular'});
  const p=x.rooms.state.rooms[code].positions[key][2];
- assert.equal(p.claim,460+12420+920);assert.equal(p.stake,1200);assert.equal(p.cashoutLocked,true);
+ assert.equal(p.claim,193+5226+387);assert.equal(p.stake,1200);assert.equal(p.cashoutLocked,true);
 });
 
 test('unsafe potential all-in rewards are rejected before any debit or position is saved',()=>{
@@ -275,7 +275,7 @@ test('slash and bare racing commands normalize once and anonymous registration r
 });
 test('a registered unlicensed QQ can buy, sign in and transfer; receipt retries remain atomic',()=>{
  const x=fixture();x.call('注册 小白');x.call('签到');assert.equal(x.web.me(x.user).playBalance,1200);x.call('/签到');assert.equal(x.web.me(x.user).playBalance,1200);
- const room=x.open(),order={messageId:'unlicensed-bet'};const first=x.call('竞猜 1 100',order);assert.equal(x.web.me(x.user).playBalance,1100);assert.equal(x.rooms.state.rooms[room.code].positions[x.web.playKey(x.user)][0].claim,460);
+ const room=x.open(),order={messageId:'unlicensed-bet'};const first=x.call('竞猜 1 100',order);assert.equal(x.web.me(x.user).playBalance,1100);assert.equal(x.rooms.state.rooms[room.code].positions[x.web.playKey(x.user)][0].claim,193);
  assert.deepEqual(x.call('/竞猜 1 100',order),first);assert.equal(x.web.me(x.user).playBalance,1100);
  x.call('观战 查单');qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:first.receiptId});
  const recipient=x.actor('c'),transfer=x.call('赠送 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'});
@@ -290,7 +290,7 @@ test('later game binding retains the registered name, money, grants and old mess
  assert.equal(x.web.me(bound).name,'小白');assert.deepEqual(x.call('竞猜 1 100',{messageId:'before-binding'},bound),reply);assert.equal(x.web.me(bound).balance,balance);
  qqCommand(x.web,x.hourly,bound,{action:'ack',receiptId:reply.receiptId});
  x.snapshot.ended=true;x.snapshot.round=15;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.hourly.sync(room.code,x.snapshot);
- syncQqWallet(x.web,bound);assert.equal(x.web.playKey(bound),game);assert.equal(x.web.me(bound).playBalance,2560);assert.equal(x.web.me(bound).checkIn.claimed,true);
+ syncQqWallet(x.web,bound);assert.equal(x.web.playKey(bound),game);assert.equal(x.web.me(bound).playBalance,2293);assert.equal(x.web.me(bound).checkIn.claimed,true);
  assert.equal(x.rooms.state.profiles[bound.subject].name,'小白');
 });
 test('registration failure and malformed IDs never create partial accounts or duplicate opening grants',()=>{

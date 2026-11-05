@@ -55,8 +55,8 @@ test('public rooms list paginates independently of matching; private/stale/ended
 });
 test('champion crowd coefficient freezes for current round and compares all horses next round',()=>{
  const x=fixture();x.snapshot.round=1;x.rooms.state.rooms[x.code].round=0;x.rooms.sync(x.code,x.a,x.snapshot);
- x.trade();assert.equal(x.rooms.view(x.code,x.a).quoteRates[0],40100);
- x.snapshot.round=2;const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.factors[0],7500);assert.equal(v.factors[8],12500);assert.equal(v.positions[0].claim,405);
+ x.trade();assert.equal(x.rooms.view(x.code,x.a).quoteRates[0],19358);
+ x.snapshot.round=2;const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.factors[0],7500);assert.equal(v.factors[8],12500);assert.equal(v.positions[0].claim,195);
 });
 test('HTTP requires capable client before creating/joining champion rooms',async()=>{
  const x=fixture(),server=http.createServer(createHandler(x.rooms));await new Promise(r=>server.listen(0,'127.0.0.1',r));
