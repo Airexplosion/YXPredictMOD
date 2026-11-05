@@ -107,3 +107,22 @@ test('changing amount or logging out while a fresh quote is loading prevents sub
   d.resolve();await flush();assert.equal(x.orders().length,0);assert.equal(x.balance(),1000);assert.equal(x.storage.size,0);
  }
 });
+
+
+test('website separates this order podium estimates from already locked rewards and hides estimates at cutoff',async()=>{
+ const x=await fixture();
+ assert.equal(x.get('bet-return').textContent,'400 马币');
+ assert.match(x.get('bet-partial').textContent,/第二 100 \/ 第三 40/);
+ await x.click();assert.match(x.get('held-claim').textContent,/锁定冠军奖励 400/);
+ x.sync({round:10});await x.poll();
+ assert.equal(x.get('bet-return').textContent,'—');assert.equal(x.get('bet-partial').textContent,'');
+ assert.match(x.get('held-claim').textContent,/锁定冠军奖励 400/);
+ assert.match(x.get('watch-rule').textContent,/全猜第13回合截止/);
+});
+
+test('website opening status distinguishes pending confirmation, live triple window and ordinary phase',async()=>{
+ const x=await fixture(),room=x.rooms.state.rooms[x.code];
+ room.openingAllIn={version:1,startedAt:null,endsAt:null};await x.poll();assert.match(x.get('watch-rule').textContent,/等待开场发布/);
+ room.openingAllIn={version:1,startedAt:100000,endsAt:220000};await x.poll();assert.match(x.get('watch-rule').textContent,/三倍全猜开放/);
+ room.openingAllIn={version:1,startedAt:-20000,endsAt:100000};await x.poll();assert.match(x.get('watch-rule').textContent,/全猜第13回合截止/);
+});
