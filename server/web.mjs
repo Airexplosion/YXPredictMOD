@@ -59,7 +59,8 @@ export class PredictionWeb {
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,availability:this.rooms.availability(r),open:this.rooms.isOpen(r),allInOpen:this.rooms.isOpen(r,true),allInMultiplier:this.rooms.allInMultiplier(r),openingAllIn:openingAllIn(r,this.rooms.now()),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
           horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],exitRound:r.observerWithdrawals?.[i]??(r.eliminationRounds?.[i]>0?r.eliminationRounds[i]:null),state:r.states?.[i]??null,build:clonePublic(r.builds?.[i]??null),baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),
-      horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),buildHistory:clonePublic(r.buildHistory??[]),battles:clonePublic(r.battles??[]),settlement:settlementReport(this.rooms,r)};
+      horseShuffle:r.horseShuffle??false,tradingClosed:r.tradingClosed??false,frames:clonePublic(r.frames??[]),buildHistory:clonePublic(r.buildHistory??[]),battles:clonePublic(r.battles??[]),
+      marketHistory:(r.marketHistory??[]).slice(-100).map(p=>({round:p.round,rates:Array.isArray(p.rates)?p.rates.slice(0,8):[]})),settlement:settlementReport(this.rooms,r)};
   }
   listRooms(page=0) {
     ensure(Number.isSafeInteger(page)&&page>=0&&page<=166,'房间页码无效');

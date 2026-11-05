@@ -21,8 +21,15 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
   const available=(view.battles??[]).filter(b=>b.round<=round&&(player===null||b.first===player||b.second===player));
   const battleRound=available.some(b=>b.round===round)?round:Math.max(0,...available.map(b=>b.round));
   const battles=available.filter(b=>b.round===battleRound);
-  const eligibleQuote=p=>!view.ended&&!view.settled&&!p.rank&&p.active!==false&&!(p.state&&p.state.life<=0)&&integer(p.quoteRate,1,575000);
-  const quoted=view.players.filter(eligibleQuote).map(p=>p.quoteRate);
+  const gameEnded=!!view.ended||!!view.settled,historical=(noticeType==='round'||round<view.round)&&(gameEnded||round+1<view.round);
+  const targetQuoteRound=Math.min(round+1,view.round);
+  // Delayed reports must never apply today's elimination/settlement to old
+  // prices. A terminal all-null point can fall back only to an earlier record.
+  const recorded=historical?(view.marketHistory??[]).filter(p=>integer(p.round,1,targetQuoteRound)&&Array.isArray(p.rates)&&p.rates.length===8&&p.rates.some(n=>integer(n,1,575000))).sort((a,b)=>b.round-a.round)[0]:null;
+  const quoteRound=historical?(recorded?.round??targetQuoteRound):view.round,quoteMode=historical?'history':gameEnded?'closed':'live';
+  const eligibleQuote=p=>!gameEnded&&!p.rank&&p.active!==false&&!(p.state&&p.state.life<=0)&&integer(p.quoteRate,1,575000);
+  const playerQuote=(p,index)=>historical?(integer(recorded?.rates[index],1,575000)?recorded.rates[index]:0):eligibleQuote(p)?p.quoteRate:0;
+  const quoted=view.players.map(playerQuote).filter(n=>n>0);
   const quoteRange=quoted.length?{minimumRate:Math.min(...quoted),maximumRate:Math.max(...quoted)}:null;
   const closingWarning=view.ended||view.settled?null:view.round===12?'提醒：下回合（第13回合）起全猜截止，这是最后一个可全猜回合。':view.round===9&&!view.tradingClosed?'提醒：下回合（第10回合）起普通竞猜、减半和撤回截止；全猜可用至第12回合。':null;
   const players=(player===null?view.players.map((_,i)=>i):[player]).map(index=>{
@@ -33,11 +40,11 @@ export function publicPresentation(view,{round=view.round,player=null,noticeType
     const board=buildBoard&&(!battleBoard||buildBoard.round>battleBoard.round)?buildBoard:battleBoard;
     const eliminatedRound=integer(p.exitRound,0,100000)?p.exitRound:p.state&&p.state.life<=0?p.state.wins+p.state.losses:null;
     return {index,name:p.name,horseTitle:p.horseTitle,rank:round===view.round?p.rank:after?.ranks?.[index]??frame?.ranks?.[index]??0,
-      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:eligibleQuote(p)?p.quoteRate:0,build,board,showBoard:noticeType==='query'||eliminatedRound===null||round<=eliminatedRound};
+      state:after?.states?.[index]??frame?.states?.[index]??(round===view.round?p.state:null),quoteRate:playerQuote(p,index),quoteInactive:!historical&&(p.active===false||!!p.rank||!!p.state&&p.state.life<=0),build,board,showBoard:noticeType==='query'||eliminatedRound===null||round<=eliminatedRound};
   });
   const finalReport=view.settled&&(noticeType==='settled'||noticeType==='query'&&round===view.round);
   return structuredClone({kind:'duma-public-v1',noticeType,code:view.code,round,settled:finalReport,tradingClosed:view.tradingClosed,
-    quoteRound:view.round,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,allInOpen:!!view.allInOpen&&!view.ended&&!view.settled&&view.round<13,allInMultiplier:view.allInMultiplier??1,openingAllIn:view.openingAllIn??null,
+    quoteRound,quoteMode,currentRound:view.round,gameEnded,quoteRange,closingWarning,bettingOpen:!!view.open&&!view.tradingClosed&&view.round<10&&!view.ended&&!view.settled,allInOpen:!!view.allInOpen&&!view.ended&&!view.settled&&view.round<13,allInMultiplier:view.allInMultiplier??1,openingAllIn:view.openingAllIn??null,
     bettingState:view.availability?.state??(view.open?'open':view.tradingClosed?'closed':'waiting'),settlement:finalReport?view.settlement??null:null,players,
     battles:battles.map(b=>({...b,firstName:view.players[b.first].name,secondName:view.players[b.second].name,firstCharacterId:view.players[b.first].build?.characterId??0,secondCharacterId:view.players[b.second].build?.characterId??0,winnerName:b.winner===null?null:view.players[b.winner].name}))});
 }
