@@ -1,9 +1,9 @@
 {
-  "version": "0.8.3",
-  "tag": "v0.8.3",
-  "title": "v0.8.3 - 天机赛马与QQ免认证注册",
-  "artifact": "dist/天机赛马-0.8.3.zip",
-  "assetName": "tianji-saima-0.8.3.zip",
-  "sha256": "90c756bd8637aaa74598d76810eddafeee99368270056e53c813c61013654639",
-  "notes": ".github/releases/v0.8.3.md"
+  "version": "0.8.4",
+  "tag": "v0.8.4",
+  "title": "v0.8.4 - 新版游戏兼容与卡牌仙命素材同步",
+  "artifact": "dist/天机赛马-0.8.4.zip",
+  "assetName": "tianji-saima-0.8.4.zip",
+  "sha256": "bc5d492c971b163ec3ae4809c6568fcb898d541e8d07783670f9ddd0a7ff2489",
+  "notes": ".github/releases/v0.8.4.md"
 }
