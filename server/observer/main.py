@@ -45,16 +45,33 @@ def find_candidate(reader,backend):
 
 class Backend:
     def __init__(self,url,key):self.url=url.rstrip('/');self.key=key;self.http=requests.Session()
-    def call(self,action,timeout=(2,5),**body):
-        r=self.http.post(self.url+'/ops/hourly',json={'action':action,**body},headers={'Authorization':'Bearer '+self.key},timeout=timeout,allow_redirects=False)
-        if not r.ok:
-            try:reason=r.json().get('error','')
-            except ValueError:reason=''
-            reason=reason if isinstance(reason,str)and len(reason)<=160 and not any(ord(c)<32 for c in reason)else ''
-            raise SyncError(r.status_code,reason or '后台未确认同步')
-        data=r.json()
-        if data.get('ok')is not True:raise LobbyError('Prediction service did not confirm '+action)
-        return data['data']
+    def reset(self):
+        self.http.close();self.http=requests.Session()
+    def call(self,action,timeout=(2,8),**body):
+        # A failed keep-alive must not poison a days-long observer session.
+        # Only read-only status may retry here: a timed-out write may be saved.
+        attempts=2 if action=='status'else 1
+        for attempt in range(attempts):
+            started=time.monotonic()
+            try:
+                r=self.http.post(self.url+'/ops/hourly',json={'action':action,**body},headers={'Authorization':'Bearer '+self.key},timeout=timeout,allow_redirects=False)
+                if not r.ok:
+                    try:reason=r.json().get('error','')
+                    except (ValueError,AttributeError):reason=''
+                    reason=reason if isinstance(reason,str)and len(reason)<=160 and not any(ord(c)<32 for c in reason)else ''
+                    raise SyncError(r.status_code,reason or '后台未确认同步')
+                try:
+                    data=r.json()
+                    if not isinstance(data,dict)or data.get('ok')is not True or not isinstance(data.get('data'),dict):raise ValueError()
+                except ValueError:raise SyncError(502,'后台响应格式无效')from None
+                if attempt:LOG.info('Prediction backend %s recovered on a fresh connection',action)
+                if time.monotonic()-started>=3:LOG.warning('Prediction backend %s confirmed slowly (%.1fs)',action,time.monotonic()-started)
+                return data['data']
+            except (requests.RequestException,SyncError)as error:
+                if isinstance(error,SyncError)and error.status<500:raise
+                self.reset()
+                LOG.warning('Prediction backend %s failed (%s, %.1fs); connection renewed',action,type(error).__name__,time.monotonic()-started)
+                if attempt+1==attempts:raise
 
 class SyncError(LobbyError):
     def __init__(self,status,reason):self.status=status;self.reason=reason;super().__init__('Prediction service rejected sync ('+str(status)+'): '+reason)
@@ -84,6 +101,21 @@ def push_frame(backend,code,snapshot,info,model):
         LOG.warning('Sync pending in existing spectator session (%s)',str(error)if isinstance(error,SyncError)else type(error).__name__)
         source_state(backend,code,snapshot['id'],'verifying',snapshot.get('liveRound',snapshot['round']))
         return None
+
+class FramePublisher:
+    """Send every changed native frame; coalesce identical polls with a heartbeat."""
+    def __init__(self,backend,clock=time.monotonic):
+        self.backend=backend;self.clock=clock;self.confirmed=None;self.confirmed_at=None
+    def push(self,code,snapshot,info,model):
+        signature=(code,json.dumps(snapshot,sort_keys=True,separators=(',',':')))
+        now=self.clock()
+        # The room's freshness cutoff is 15s. Eight seconds leaves room for
+        # another poll; a changed phase, quote, table or rank bypasses this gate.
+        if code and signature==self.confirmed and now-self.confirmed_at<8:return None
+        view=push_frame(self.backend,code,snapshot,info,model)
+        if view is not None:
+            self.confirmed=(view['code'],signature[1]);self.confirmed_at=self.clock()
+        return view
 
 def ratings_for(roster):
     uids=[p['userInfo']['uid'] for p in roster if not p['isAI']]
@@ -204,7 +236,7 @@ def observe(config,backend,status):
             except ValueError:
                 native_ranks=None;LOG.warning('Native public match scores did not match the verified roster; using public lobby ladder scores')
             info={**info,'nativeRanks':native_ranks if native_ranks is not None else lobby_ranks(roster)}
-        code=active['code']if active else None;live_round=info['round'];last_meta=0;meta_ready=False;started=time.monotonic();last_status=started;settled_at=None
+        code=active['code']if active else None;live_round=info['round'];last_meta=0;meta_ready=False;started=time.monotonic();last_status=started;settled_at=None;publisher=FramePublisher(backend)
         LOG.info('Public spectator connected (%s; %s)',mode,'recovering'if code else'candidate')
         while not STOP:
             if time.monotonic()-last_meta>=4:
@@ -233,7 +265,7 @@ def observe(config,backend,status):
             if code is None:
                 # Fresh metadata + observed round must both still satisfy opening rules.
                 if live_round>2 or projection.round>2:LOG.info('Candidate passed opening window');return
-            view=push_frame(backend,code,snapshot,info,model)
+            view=publisher.push(code,snapshot,info,model)
             if view is not None:
                 if code is None:code=view['code'];LOG.info('Hourly market opened')
                 if view.get('settled'):

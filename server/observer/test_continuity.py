@@ -1,13 +1,52 @@
 import pathlib,sys,unittest
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 import requests
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from main import Backend,SyncError,upload_snapshot,push_frame,SnapshotBuilder,select_candidate,find_candidate,public_focus_targets,collect_public_battles
+from main import Backend,SyncError,upload_snapshot,push_frame,FramePublisher,SnapshotBuilder,select_candidate,find_candidate,public_focus_targets,collect_public_battles
 from public_lobby import PublicLobby,LobbyError
 from projection import PublicProjection
 from test_projection import ROSTER,UIDS,status,player,number,blob,string_field,encoded
 
 class ContinuityTests(unittest.TestCase):
+    def test_status_renews_broken_connection_and_retries_once_without_logging_secrets(self):
+        b=Backend('https://test.invalid','never-output-key');old=Mock();b.http=old
+        old.post.side_effect=requests.ReadTimeout('never-output-key')
+        fresh=Mock();fresh.post.return_value=Mock(ok=True,json=lambda:{'ok':True,'data':{'active':None}})
+        with patch('main.requests.Session',return_value=fresh),self.assertLogs('duma-observer')as logs:
+            self.assertEqual(b.call('status'),{'active':None})
+        old.close.assert_called_once();self.assertEqual(old.post.call_count,1);self.assertEqual(fresh.post.call_count,1)
+        self.assertNotIn('never-output-key',' '.join(logs.output));self.assertIn('status',' '.join(logs.output))
+    def test_timed_out_write_is_never_retried_and_next_frame_uses_new_connection(self):
+        b=Backend('https://test.invalid','key');old=Mock();b.http=old;old.post.side_effect=requests.ReadTimeout()
+        fresh=Mock();fresh.post.return_value=Mock(ok=True,json=lambda:{'ok':True,'data':{'code':'123456'}})
+        with patch('main.requests.Session',return_value=fresh):
+            with self.assertRaises(requests.ReadTimeout):b.call('sync',snapshot={'round':2})
+        self.assertEqual(old.post.call_count,1);fresh.post.assert_not_called()
+        self.assertEqual(b.call('sync',snapshot={'round':3}),{'code':'123456'})
+    def test_invalid_gateway_json_renews_connection_and_status_retry_is_bounded(self):
+        b=Backend('https://test.invalid','key');old=Mock();b.http=old
+        old.post.return_value=Mock(ok=True,json=Mock(side_effect=ValueError('private upstream body')))
+        fresh=Mock();fresh.post.return_value=Mock(ok=False,status_code=502,json=lambda:['invalid'])
+        with patch('main.requests.Session',return_value=fresh),self.assertRaises(SyncError)as error:b.call('status')
+        self.assertEqual(old.post.call_count,1);self.assertEqual(fresh.post.call_count,1)
+        self.assertNotIn('private upstream body',str(error.exception))
+    def test_changed_frames_are_immediate_and_identical_frames_keep_an_eight_second_heartbeat(self):
+        b=Mock();b.call.return_value={'code':'123456'};clock=Mock(return_value=0);p=FramePublisher(b,clock)
+        s={'id':'public-game','round':1,'open':True,'builds':[]}
+        self.assertEqual(p.push(None,s,{},[])['code'],'123456')
+        clock.return_value=2;self.assertIsNone(p.push('123456',dict(reversed(list(s.items()))),{},[]))
+        self.assertEqual(b.call.call_count,1)
+        clock.return_value=8;p.push('123456',s,{},[]);self.assertEqual(b.call.call_count,2)
+        for change in ({'open':False},{'round':2},{'builds':[{'public':'new'}]}):
+            clock.return_value+=.1;s={**s,**change};p.push('123456',s,{},[])
+        self.assertEqual(b.call.call_count,5)
+    def test_failed_frame_is_not_confirmed_or_suppressed_and_room_change_is_never_coalesced(self):
+        b=Mock();clock=Mock(return_value=0);p=FramePublisher(b,clock);s={'id':'public-game','round':1}
+        b.call.side_effect=[requests.ReadTimeout(),{'ok':True},{'code':'123456'},{'code':'654321'}]
+        self.assertIsNone(p.push('123456',s,{},[]));self.assertEqual(p.push('123456',s,{},[])['code'],'123456')
+        self.assertEqual(p.push('654321',s,{},[])['code'],'654321')
+        self.assertEqual(b.call.call_count,4)
+
     def test_only_live_portraits_are_polled_and_completed_tables_do_not_consume_sweep_slots(self):
         p=PublicProjection(ROSTER);p.accept_ordinary(encoded(status(4)))
         p.players[UIDS[0]].update(life=-3,wins=2,losses=2)
