@@ -17,7 +17,7 @@ const help=[
   '马币排行：按当前可用马币余额列出前十名，已投入的马币不计入可用余额。',
   '帮助：查看全部指令。',
   '签到：每天领200马币，与网站共用记录，北京时间0点刷新。',
-  '转账 @某人 200：扣自己的200马币给对方；收款人未开户自动开通。',
+  '赠送 @某人 200：从自己的余额赠送200马币给对方；对方未开户自动开通。',
   '走势：一张图查看八位角色的奖励倍率、竞猜总额和冠军奖励额度走势。',
   '观战：查看本场；选手 1：查看指定选手的牌阵与仙命，也支持完整昵称。',
   '竞猜 1 200 2 300：一条指令多笔竞猜，可重复选手。',
@@ -49,7 +49,7 @@ export function qqCommand(web,hourly,user,body){
   const [publicCommand,...args]=body.text.trim().split(/\s+/);
   // Private dispatch/receipt names preserve existing operation digests. The
   // public allowlist above rejects retired spellings before any wallet access.
-  const legacyNames={'/注册':'/赛马注册','/绑定':'/赛马绑定','/改名':'/赛马改名','/帮助':'/马币帮助','/签到':'/马币签到','/转账':'/马币转账','/查单':'/赛马','/观战':'/赛马','/竞猜':'/下注','/减半':'/退半','/撤回':'/清仓','/走势':'/盘口'};
+  const legacyNames={'/注册':'/赛马注册','/绑定':'/赛马绑定','/改名':'/赛马改名','/帮助':'/马币帮助','/签到':'/马币签到','/赠送':'/马币转账','/查单':'/赛马','/观战':'/赛马','/竞猜':'/下注','/减半':'/退半','/撤回':'/清仓','/走势':'/盘口'};
   const command=legacyNames[publicCommand]??publicCommand;
   if(publicCommand==='/查单')args.unshift('查单');
   if(command==='/赛马绑定'){
@@ -75,7 +75,7 @@ export function qqCommand(web,hourly,user,body){
       if(!previous||given){profile.name=name;profile.renamedAt=web.now();}
       (web.rooms.state.qqRegistrations??={})[user.qqSubject]={at:previous?.at??web.now(),name:profile.name};
       const me=web.me({...user,subject:owner});
-      return {lines:[`${previous?'你已注册观战':'观战注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可普通竞猜，第1～12回合可全猜；第10回合起减半和撤回截止。参与时锁定奖励额度，最终第一返100%、第二25%、第三10%，返还包含投入。','减半/撤回按当前估值回收并扣3%；余额 查看马币，签到 每天领200，转账 @某人 200 转账。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算竞猜记录会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
+      return {lines:[`${previous?'你已注册观战':'观战注册成功'}，上榜ID：${me.name}。可用${me.playBalance}马币。${opened.created?'首次开户已赠1000马币。':'沿用已有钱包，不重复赠送开户马币。'}`,instructions,'只猜冠军：第1～9回合可普通竞猜，第1～12回合可全猜；第10回合起减半和撤回截止。参与时锁定奖励额度，最终第一返100%、第二25%、第三10%，返还包含投入。','减半/撤回按当前估值回收并扣3%；余额 查看马币，签到 每天领200，赠送 @某人 200 赠送。','所有指令都可省略“/”，也可先@机器人。之后认证游戏账号，再发 马币 即会核对并同步余额；未结算竞猜记录会保留，结算后再同步。','https://duma.kaigua.vip/'],forward:false};
     });
   }
   if(command==='/赛马改名'){
@@ -112,10 +112,10 @@ export function qqCommand(web,hourly,user,body){
     });
   }
   if(command==='/马币转账'){
-    ensure(args.length===1&&/^[1-9][0-9]{0,12}$/.test(args[0]),'用法：转账 @某人 正整数金额');
+    ensure(args.length===1&&/^[1-9][0-9]{0,12}$/.test(args[0]),'用法：赠送 @某人 正整数金额');
     return web.rooms.commit(()=>{
       const result=transferQqCoins(web,user,recipient,Number(args[0]),operation);
-      const reply={lines:[`转账成功：${result.amount}马币已到账。${result.recipientCreated?'已为收款人自动开通马币账户。':''}你的可用余额${result.balance}马币。`],forward:false,receiptId:operation};
+      const reply={lines:[`赠送成功：${result.amount}马币已到账。${result.recipientCreated?'已为收款人自动开通马币账户。':''}你的可用余额${result.balance}马币。`],forward:false,receiptId:operation};
       saveReceipt(web,user,operation,requestDigest,reply);return reply;
     });
   }

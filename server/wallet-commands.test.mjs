@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash} from 'node:crypto';
 import {Rooms} from './rooms.mjs';
 import {PredictionWeb} from './web.mjs';
 import {HourlyEvents} from './hourly.mjs';
@@ -14,19 +14,24 @@ function walletFixture(save){
  let clock=Date.UTC(2026,10,2,15,59,59);const now=()=>clock,rooms=new Rooms(undefined,save,now),web=new PredictionWeb(rooms,{bridgeKey,now}),hourly=new HourlyEvents(rooms,web);
  const actor=(n,active=true)=>({subject:(active?'b':n).repeat(64),qqSubject:n.repeat(64),scope:active?'qq-prediction':'qq-wallet',groupId,name:'测试道友',bindingDigest:linkCandidates(rooms).digest});
  const sender=()=>actor('c'),receiver=()=>actor('d',false),sign=user=>{const payload=Buffer.from(JSON.stringify({...user,expiresAt:user.expiresAt??now()+60000})).toString('base64url');return payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');};
- const transfer=(amount='200',messageId='transfer-1',recipient=receiver())=>qqCommand(web,hourly,sender(),{text:'/转账 '+amount,messageId,messageAt:now(),recipientTicket:sign(recipient)});
+ const transfer=(amount='200',messageId='transfer-1',recipient=receiver())=>qqCommand(web,hourly,sender(),{text:'/赠送 '+amount,messageId,messageAt:now(),recipientTicket:sign(recipient)});
  const ack=reply=>qqCommand(web,hourly,sender(),{action:'ack',receiptId:reply.receiptId});
  return {rooms,web,hourly,now,time:n=>clock=n,sender,receiver,sign,transfer,ack};
 }
 
 test('coin help lists balance, shared check-in, mentions, multi-bets and receipts without creating a wallet or needing a market',()=>{
  const x=walletFixture(),before=structuredClone(x.rooms.state),reply=qqCommand(x.web,x.hourly,x.receiver(),{text:'/帮助'});
- for(const text of ['余额','帮助','签到','转账','竞猜','减半','撤回','查单','注册','走势'])assert(reply.lines.some(line=>line.includes(text)));
- assert.equal(reply.forward,false);assert.deepEqual(x.rooms.state,before);for(const text of ['/帮助','/签到','/转账 200'])assert(isPredictionCommand(text));assert(!isPredictionCommand('/转账错误'));
+ for(const text of ['余额','帮助','签到','赠送','竞猜','减半','撤回','查单','注册','走势'])assert(reply.lines.some(line=>line.includes(text)));
+ assert.equal(reply.forward,false);assert.deepEqual(x.rooms.state,before);for(const text of ['/帮助','/签到','/赠送 200'])assert(isPredictionCommand(text));assert(!isPredictionCommand('/赠送错误'));
 });
 test('the same transfer retried through the new short alias returns its old receipt without another debit',()=>{
  const x=walletFixture(),first=x.transfer('200','short-alias-retry');
- const retry=qqCommand(x.web,x.hourly,x.sender(),{text:'转账 200',messageId:'short-alias-retry',messageAt:x.now(),recipientTicket:x.sign(x.receiver())});
+ assert(first.lines[0].startsWith('赠送成功：'));
+ assert.equal(x.rooms.state.qqReceipts[first.receiptId].requestDigest,createHash('sha256').update(JSON.stringify(['/马币转账 200',x.receiver().qqSubject])).digest('hex'));
+ const before=structuredClone(x.rooms.state);
+ assert.throws(()=>qqCommand(x.web,x.hourly,x.sender(),{text:'转账 200',messageId:'short-alias-retry',messageAt:x.now(),recipientTicket:x.sign(x.receiver())}),/无法识别/);
+ assert.deepEqual(x.rooms.state,before);
+ const retry=qqCommand(x.web,x.hourly,x.sender(),{text:'赠送 200',messageId:'short-alias-retry',messageAt:x.now(),recipientTicket:x.sign(x.receiver())});
  assert.deepEqual(retry,first);assert.equal(x.web.me(x.sender()).playBalance,800);assert.equal(x.web.me(x.receiver()).playBalance,1200);
 });
 
@@ -44,7 +49,7 @@ test('group and website check-in share the same Beijing day in either order, inc
 
 test('wallet-only or expired identities cannot sign in or send transfers, and malformed sign-in never auto-opens',()=>{
  const x=walletFixture(),before=structuredClone(x.rooms.state);
- for(const text of ['/签到','/转账 200'])assert.throws(()=>qqCommand(x.web,x.hourly,x.receiver(),{text}),/认证/);
+ for(const text of ['/签到','/赠送 200'])assert.throws(()=>qqCommand(x.web,x.hourly,x.receiver(),{text}),/认证/);
  assert.throws(()=>qqCommand(x.web,x.hourly,x.sender(),{text:'/签到 extra'}),/用法/);assert.deepEqual(x.rooms.state,before);
 });
 
@@ -53,7 +58,7 @@ test('a transfer debits once, auto-opens the recipient, keeps both net winnings 
  assert.equal(x.web.me(x.sender()).net,0);assert.equal(x.web.me(x.receiver()).net,0);const before=structuredClone(x.rooms.state);
  for(let i=0;i<4;i++)assert.deepEqual(x.transfer(),reply);assert.deepEqual(x.rooms.state,before);
  assert.equal(Object.values(x.rooms.state.walletEvents).filter(e=>e.kind==='qq-transfer').length,1);
- const restored=new Rooms(structuredClone(before),undefined,x.now),web=new PredictionWeb(restored,{bridgeKey,now:x.now});assert.deepEqual(qqCommand(web,new HourlyEvents(restored,web),x.sender(),{text:'/转账 200',messageId:'transfer-1',messageAt:x.now(),recipientTicket:x.sign(x.receiver())}),reply);
+ const restored=new Rooms(structuredClone(before),undefined,x.now),web=new PredictionWeb(restored,{bridgeKey,now:x.now});assert.deepEqual(qqCommand(web,new HourlyEvents(restored,web),x.sender(),{text:'/赠送 200',messageId:'transfer-1',messageAt:x.now(),recipientTicket:x.sign(x.receiver())}),reply);
  assert.equal(web.me(x.sender()).playBalance,800);assert.equal(web.me(x.receiver()).playBalance,1200);
 });
 
@@ -70,7 +75,7 @@ test('invalid amounts, insufficient money, a forged recipient, same-account tran
  }
  const x=walletFixture();assert.throws(()=>x.transfer('1','same-qq',x.sender()),/自己/);assert.equal(Object.keys(x.rooms.state.accounts).length,0);
  assert.throws(()=>x.transfer('1','same-owner',{...x.sender(),qqSubject:'e'.repeat(64)}),/同一账户/);assert.equal(Object.keys(x.rooms.state.accounts).length,0);
- assert.throws(()=>qqCommand(x.web,x.hourly,x.sender(),{text:'/转账 1',messageId:'forged',messageAt:x.now(),recipientTicket:'forged'}),/凭据/);
+ assert.throws(()=>qqCommand(x.web,x.hourly,x.sender(),{text:'/赠送 1',messageId:'forged',messageAt:x.now(),recipientTicket:'forged'}),/凭据/);
  syncQqWallet(x.web,x.receiver());x.rooms.state.accounts[x.web.playKey(x.receiver())].balance=1e12;const before=structuredClone(x.rooms.state);assert.throws(()=>x.transfer('1'),/上限/);assert.deepEqual(x.rooms.state,before);
 });
 
@@ -92,7 +97,7 @@ test('real HTTP concurrent transfer retries debit once; concurrent website/group
  const base='http://127.0.0.1:'+server.address().port,headers={'content-type':'application/json',authorization:'Bearer '+botKey,'x-prediction-identity':x.sign(x.sender())};
  const post=(path,body,h=headers)=>fetch(base+path,{method:'POST',headers:h,body:JSON.stringify(body)});
  try{
-  const body={text:'/转账 200',messageId:'parallel-transfer',messageAt:x.now(),recipientTicket:x.sign(x.receiver())};
+  const body={text:'/赠送 200',messageId:'parallel-transfer',messageAt:x.now(),recipientTicket:x.sign(x.receiver())};
   const replies=await Promise.all(Array.from({length:12},()=>post('/bot/command',body)));assert(replies.every(r=>r.status===200));
   const data=await Promise.all(replies.map(r=>r.json()));assert(data.every(r=>JSON.stringify(r.data)===JSON.stringify(data[0].data)));
   assert.equal(x.web.me(x.sender()).playBalance,800);assert.equal(x.web.me(x.receiver()).playBalance,1200);

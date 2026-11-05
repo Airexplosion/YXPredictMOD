@@ -12,8 +12,8 @@ function fixture(save){const rooms=new Rooms(undefined,save),web=new PredictionW
  const trade=(kind,operation,stake=100)=>rooms.trade(code,key,{kind,operation,stake,player:0,rank:1,version:r.version});return {rooms,web,hourly,key,code,r,snapshot,trade};
 }
 test('short commands normalize to public quiz names',()=>{
- for(const [short,long]of [['注册','注册'],['转账','转账'],['帮助','帮助'],['签到','签到'],['改名','改名'],['绑定','绑定'],['余额','马币'],['查单','查单'],['走势','走势']])for(const slash of ['','/'])assert.equal(normalizeRaceCommand(slash+short+' test'),'/'+long+' test');
- for(const s of ['注册啦','转账错误','走势很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
+ for(const [short,long]of [['注册','注册'],['赠送','赠送'],['帮助','帮助'],['签到','签到'],['改名','改名'],['绑定','绑定'],['余额','马币'],['查单','查单'],['走势','走势']])for(const slash of ['','/'])assert.equal(normalizeRaceCommand(slash+short+' test'),'/'+long+' test');
+ for(const s of ['注册啦','赠送错误','走势很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
 });
 test('per-round market history captures actual frozen odds, principal and locked claims without changing quotes',()=>{
  const x=fixture();assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].rates[0],46000);
