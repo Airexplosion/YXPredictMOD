@@ -7,6 +7,8 @@ import {HourlyEvents} from './hourly.mjs';
 import {qqCommand} from './qq.mjs';
 import {linkCandidates,syncQqWallet} from './qq-wallet.mjs';
 import {normalizeRaceCommand,raceNoticeTargets,RACE_GROUP,LEGACY_GROUP,TRANSITION_SLOT} from './race-policy.mjs';
+import {COVERAGE_RELIEF} from './coverage-relief.mjs';
+import {mergeOwners} from './identity-links.mjs';
 const bridgeKey='a'.repeat(64);
 function fixture(save){
  let clock=Date.UTC(2026,10,3,6),now=()=>clock;const rooms=new Rooms(undefined,save,now),web=new PredictionWeb(rooms,{bridgeKey,now}),hourly=new HourlyEvents(rooms,web);
@@ -308,4 +310,40 @@ test('migration sends the exact transition hour to both groups and retains per-g
  const financial=JSON.stringify(x.rooms.state.accounts);x.hourly.ack(event.id,event.lease,RACE_GROUP);assert.equal(x.rooms.state.hourly.outbox[0].deliveredAt,null);
  x.time(x.now()+60001);const restored=new Rooms(JSON.parse(JSON.stringify(x.rooms.state)),undefined,x.now),h=new HourlyEvents(restored,new PredictionWeb(restored,{bridgeKey,now:x.now}));
  const retry=h.claim();assert.deepEqual(retry.targets.map(t=>t.groupId),[LEGACY_GROUP]);h.ack(retry.id,retry.lease,LEGACY_GROUP);assert(h.data().outbox[0].deliveredAt);assert.equal(JSON.stringify(restored.state.accounts),financial);
+});
+
+function reliefFixture(save){
+ const x=fixture(save);x.call('注册 示例');const key=x.web.playKey(x.user);
+ x.rooms.state.compensationCampaigns={[COVERAGE_RELIEF]:{amount:10000,eligibleKeys:[key],claims:{}}};
+ return {...x,key};
+}
+test('one-time compensation accepts both spellings, grants once and does not inflate prediction profit',()=>{
+ const x=reliefFixture(),net=x.web.me(x.user).net;
+ assert.equal(normalizeRaceCommand(' /领取补偿 '),'/领取补偿');
+ assert.match(x.call('领取补偿').lines[0],/10000马币已到账/);
+ assert.equal(x.web.me(x.user).playBalance,11000);assert.equal(x.web.me(x.user).net,net);
+ const before=structuredClone(x.rooms.state);
+ assert.match(x.call('/领取补偿',{messageId:'new-attempt'}).lines[0],/已经领取/);
+ assert.deepEqual(x.rooms.state,before);
+ const rooms=new Rooms(structuredClone(before),undefined,x.now),web=new PredictionWeb(rooms,{bridgeKey,now:x.now});
+ assert.match(qqCommand(web,new HourlyEvents(rooms,web),x.user,{text:'领取补偿'}).lines[0],/已经领取/);
+ assert.equal(web.me(x.user).playBalance,11000);
+});
+test('spectators, malformed claims, missing campaigns and persistence errors never issue compensation',()=>{
+ let fail=false;const x=reliefFixture(()=>{if(fail)throw Error('disk failure');});
+ x.rooms.state.compensationCampaigns[COVERAGE_RELIEF].eligibleKeys=[];let before=structuredClone(x.rooms.state);
+ assert.throws(()=>x.call('领取补偿'),/未查到/);assert.deepEqual(x.rooms.state,before);
+ x.rooms.state.compensationCampaigns[COVERAGE_RELIEF].eligibleKeys=[x.key];before=structuredClone(x.rooms.state);
+ assert.throws(()=>x.call('领取补偿 2'),/用法/);assert.deepEqual(x.rooms.state,before);
+ fail=true;assert.throws(()=>x.call('领取补偿'),/disk failure/);assert.deepEqual(x.rooms.state,before);fail=false;
+ delete x.rooms.state.compensationCampaigns;assert.throws(()=>x.call('领取补偿'),/尚未开放/);
+});
+test('binding identities and switching wallets cannot reset compensation eligibility or claim history',()=>{
+ const x=reliefFixture();x.call('领取补偿');const target='d'.repeat(64);
+ mergeOwners(x.web,x.user.subject,target);
+ const extra=x.rooms.register('游戏钱包').token;x.rooms.state.accounts[extra].webOwner=target;
+ x.rooms.state.profiles[target].playAccount=extra;
+ const user={...x.user,subject:target,boundAccount:true,bindingDigest:linkCandidates(x.rooms).digest};const total=x.web.me(user).balance;
+ assert.match(x.call('领取补偿',{},user).lines[0],/已经领取/);
+ assert.equal(x.web.me(user).balance,total);assert.equal(x.web.me(user).net,0);
 });

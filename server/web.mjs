@@ -152,7 +152,7 @@ export class PredictionWeb {
   }
   aggregate(owner,accounts,stats) {
     let balance=0,net=0,games=0,wins=0;
-    for(const [key,a]of accounts){const s=stats.get(key);balance+=a.balance;net+=a.balance+s.held-1000-50*(a.reliefCount??0)-(a.checkInGranted??0)-(a.transferIn??0)+(a.transferOut??0);games+=s.games;wins+=s.wins;}
+    for(const [key,a]of accounts){const s=stats.get(key);balance+=a.balance;net+=a.balance+s.held-1000-50*(a.reliefCount??0)-(a.checkInGranted??0)-(a.compensationGranted??0)-(a.transferIn??0)+(a.transferOut??0);games+=s.games;wins+=s.wins;}
     return {id:digest(owner).slice(0,16),name:this.rooms.state.profiles?.[owner]?.name??accounts[0]?.[1].name??'观众',balance,net,games,wins,accounts:accounts.length};
   }
   me(user) {

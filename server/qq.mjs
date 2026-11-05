@@ -5,6 +5,7 @@ import {publicPresentation} from './public-build.mjs';
 import {syncQqWallet,transferQqCoins} from './qq-wallet.mjs';
 import {isRaceGroup,normalizeRaceCommand} from './race-policy.mjs';
 import {marketPresentation} from './market.mjs';
+import {claimCoverageRelief} from './coverage-relief.mjs';
 
 export function serviceAccess(header,key){
   if(typeof key!=='string'||key.length<32)throw new RoomError('此服务入口尚未启用',503);
@@ -16,6 +17,7 @@ const help=[
   '余额（或马币）：查询现有马币。',
   '马币排行：按当前可用马币余额列出前十名，已投入的马币不计入可用余额。',
   '帮助：查看全部指令。',
+  '领取补偿：本次低倍率受影响对局的实际竞猜参与者，可领取10000马币，每人仅一次。',
   '签到：每天领200马币，与网站共用记录，北京时间0点刷新。',
   '赠送 @某人 200：从自己的余额赠送200马币给对方；对方未开户自动开通。',
   '走势：一张图查看八位角色的奖励倍率、竞猜总额和冠军奖励额度走势。',
@@ -83,6 +85,12 @@ export function qqCommand(web,hourly,user,body){
     return web.rooms.commit(()=>{syncQqWallet(web,user);const identity={...user,subject:web.rooms.state.qqBindings?.[user.qqSubject]??user.subject},me=web.rename(identity,args.join(' '));if(web.rooms.state.qqRegistrations?.[user.qqSubject])web.rooms.state.qqRegistrations[user.qqSubject].name=me.name;return {lines:['上榜ID已修改为：'+me.name],forward:false};});
   }
   const unconfirmed=Object.entries(web.rooms.state.qqReceipts??{}).find(([,r])=>ownsReceipt(user,r)&&!r.acknowledged);
+  if(command==='/领取补偿'){
+    ensure(registered,'请先发送“注册 昵称”，再领取补偿');
+    ensure(args.length===0,'用法：领取补偿');
+    const result=claimCoverageRelief(web,user);
+    return {lines:[result.duplicate?'本次10000马币补偿已经领取，每人只能领取一次。':'补偿领取成功：10000马币已到账，当前可用'+result.balance+'马币。'],forward:false};
+  }
   if(command==='/赛马'&&args[0]==='查单'){
     const own=Object.entries(web.rooms.state.qqReceipts??{}).filter(([,r])=>ownsReceipt(user,r)).sort((a,b)=>b[1].at-a[1].at)[0];
     return own?{...own[1].result,receiptId:own[0]}:{lines:['暂无已确认的群内扣款记录。'],forward:false};
