@@ -39,14 +39,19 @@ function saveReceipt(web,user,operation,requestDigest,reply,code=null){
 
 export function qqCommand(web,hourly,user,body){
   body={...body,text:normalizeRaceCommand(body.text)};
-  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/马币帮助','/马币排行'].includes(body.text)),'请从观战群发起命令；旧钱包凭据只能查询，参与竞猜请重新注册，无需游戏认证',403);
+  ensure(isRaceGroup(user.groupId)&&(user.scope==='qq-prediction'||user.scope==='qq-racing'||user.scope==='qq-wallet'&&['/马币','/帮助','/马币排行'].includes(body.text)),'请从观战群发起命令；旧钱包凭据只能查询，参与竞猜请重新注册，无需游戏认证',403);
   if(body.action==='ack'){
     ensure(['qq-prediction','qq-racing'].includes(user.scope),'旧钱包凭据只能查询',403);
     const receipt=web.rooms.state.qqReceipts?.[body.receiptId];ensure(receipt&&ownsReceipt(user,receipt),'操作回执不属于当前账号',403);
     return web.rooms.commit(()=>{receipt.acknowledged=true;return {acknowledged:true};});
   }
   ensure(isPredictionCommand(body.text),'无法识别观战命令');
-  const [command,...args]=body.text.trim().split(/\s+/);
+  const [publicCommand,...args]=body.text.trim().split(/\s+/);
+  // Private dispatch/receipt names preserve existing operation digests. The
+  // public allowlist above rejects retired spellings before any wallet access.
+  const legacyNames={'/注册':'/赛马注册','/绑定':'/赛马绑定','/改名':'/赛马改名','/帮助':'/马币帮助','/签到':'/马币签到','/转账':'/马币转账','/查单':'/赛马','/观战':'/赛马','/竞猜':'/下注','/减半':'/退半','/撤回':'/清仓','/走势':'/盘口'};
+  const command=legacyNames[publicCommand]??publicCommand;
+  if(publicCommand==='/查单')args.unshift('查单');
   if(command==='/赛马绑定'){
     ensure(web.browserAuth,'网页绑定服务正在更新',503);ensure(args.length===1,'用法：绑定 网页显示的SM码');
     web.browserAuth.confirmQq(user,args[0]);return {lines:['QQ身份已确认，请返回你刚才打开的观战网页完成登录或绑定。'],forward:false};
@@ -91,7 +96,8 @@ export function qqCommand(web,hourly,user,body){
   if(['/下注','/全猜','/退半','/清仓','/马币转账'].includes(command)){
     ensure(typeof body.messageId==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(body.messageId),'群消息标识无效');
     operation='qq-'+createHash('sha256').update((user.scope==='qq-racing'?user.qqSubject:user.subject)+':'+user.groupId+':'+body.messageId).digest('hex');
-    requestDigest=createHash('sha256').update(recipient?JSON.stringify([body.text.trim(),recipient.qqSubject]):body.text.trim()).digest('hex');
+    const receiptText=command+body.text.slice(publicCommand.length);
+    requestDigest=createHash('sha256').update(recipient?JSON.stringify([receiptText,recipient.qqSubject]):receiptText).digest('hex');
     const legacy='qq-'+createHash('sha256').update(user.subject+':'+user.groupId+':'+body.messageId).digest('hex'),receipt=web.rooms.state.qqReceipts?.[operation]??web.rooms.state.qqReceipts?.[legacy];
     if(receipt){ensure(receipt.requestDigest===requestDigest,'重复消息的内容不一致',409);return receipt.result;}
     if(unconfirmed)return {...unconfirmed[1].result,receiptId:unconfirmed[0],lines:[...unconfirmed[1].result.lines,'这是上一笔的回执；本条新命令尚未执行。核对后可重新发送新命令。']};

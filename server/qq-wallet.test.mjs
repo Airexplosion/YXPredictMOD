@@ -16,7 +16,7 @@ test('unbound QQ can open once through /马币 without a market, while wagering 
  const x=fixture(),first=qqCommand(x.web,x.hourly,pre,{text:'/马币'});assert(first.lines[0].includes('已自动开通'));assert(first.lines[0].includes('可用1000'));
  const key=x.web.playKey(pre);for(let i=0;i<3;i++)qqCommand(x.web,x.hourly,pre,{text:'/马币'});
  assert.equal(Object.keys(x.rooms.state.accounts).length,1);assert.equal(x.rooms.state.accounts[key].balance,1000);
- for(const text of ['/下注 1 100','/退半 1','/清仓 1','/选手 1','/赌马'])assert.throws(()=>qqCommand(x.web,x.hourly,pre,{text}),/认证/);
+ for(const text of ['/竞猜 1 100','/减半 1','/撤回 1','/选手 1','/观战'])assert.throws(()=>qqCommand(x.web,x.hourly,pre,{text}),/认证/);
  assert.throws(()=>qqCommand(x.web,x.hourly,pre,{action:'ack',receiptId:'fake'}));
  assert.throws(()=>qqCommand(x.web,x.hourly,{...pre,boundAccount:true},{text:'/马币',action:'ack',receiptId:'fake'}),/旧钱包凭据/);
 });
@@ -37,7 +37,7 @@ test('an expired but still bound QQ synchronizes its wallet without gaining wage
  const proof={...licensed(x),boundAccount:true,scope:'qq-wallet'};syncQqWallet(x.web,proof);
  assert.equal(x.web.playKey(proof),game);assert.equal(x.rooms.state.profiles[subject].rewardAccount,game);assert.equal(x.rooms.state.profiles[subject].lastCheckInDay,day);
  assert.equal(x.rooms.state.accounts[old].balance,0);assert.equal(x.rooms.state.accounts[game].balance,2200);
- assert.throws(()=>qqCommand(x.web,x.hourly,proof,{text:'/下注 1 100'}),/认证/);assert.equal(syncQqWallet(x.web,proof).me.playBalance,2200);
+ assert.throws(()=>qqCommand(x.web,x.hourly,proof,{text:'/竞猜 1 100'}),/认证/);assert.equal(syncQqWallet(x.web,proof).me.playBalance,2200);
 });
 test('a licensed QQ with an existing UID wallet never receives a second opening grant',()=>{
  const x=fixture(),game=x.rooms.register('旧账户').token;x.rooms.state.accounts[game].uid=uid;x.rooms.state.accounts[game].balance=37;
@@ -67,7 +67,7 @@ test('candidate listing requires bot credentials; wallet-only signed proofs cann
   const list=await(await post('/bot/accounts',{action:'candidates'})).json();assert.deepEqual(list.data.uids,[]);assert(!JSON.stringify(list).includes('token'));
   const proofHeaders={...headers,'x-prediction-identity':ticket};assert.equal((await post('/bot/command',{text:'/马币'},proofHeaders)).status,200);
   const parallel=await Promise.all(Array.from({length:12},()=>post('/bot/command',{text:'/马币'},proofHeaders)));assert(parallel.every(r=>r.status===200));assert.equal(x.web.me(pre).playBalance,1000);
-  assert.equal((await post('/bot/command',{text:'/下注 1 100'},proofHeaders)).status,403);
+  assert.equal((await post('/bot/command',{text:'/竞猜 1 100'},proofHeaders)).status,403);
   const webHeaders={...proofHeaders,'x-prediction-client':'1'};for(const path of ['/web/play','/web/check-in','/web/profile','/web/bind'])assert.equal((await post(path,{action:'openAccount'},webHeaders)).status,403);
   assert.equal((await fetch(base+'/web/me',{headers:proofHeaders})).status,403);assert.equal(Object.keys(x.rooms.state.accounts).length,1);
  }finally{await new Promise(r=>server.close(r));}
