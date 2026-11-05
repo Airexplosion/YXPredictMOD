@@ -11,8 +11,8 @@ function fixture(save){const rooms=new Rooms(undefined,save),web=new PredictionW
  const code=rooms.create(key,snapshot,true,true,{slot:'2026110317',bonusBps:11500}).code,r=rooms.state.rooms[code];
  const trade=(kind,operation,stake=100)=>rooms.trade(code,key,{kind,operation,stake,player:0,rank:1,version:r.version});return {rooms,web,hourly,key,code,r,snapshot,trade};
 }
-test('short commands normalize to stable legacy operations so old financial receipts stay valid',()=>{
- for(const [short,long]of [['注册','赛马注册'],['转账','马币转账'],['帮助','马币帮助'],['签到','马币签到'],['改名','赛马改名'],['绑定','赛马绑定'],['余额','马币'],['查单','赛马 查单'],['盘口','盘口']])for(const slash of ['','/'])assert.equal(normalizeRaceCommand(slash+short+' test'),'/'+long+' test');
+test('short commands normalize to public quiz names',()=>{
+ for(const [short,long]of [['注册','注册'],['转账','转账'],['帮助','帮助'],['签到','签到'],['改名','改名'],['绑定','绑定'],['余额','马币'],['查单','查单'],['走势','走势']])for(const slash of ['','/'])assert.equal(normalizeRaceCommand(slash+short+' test'),'/'+long+' test');
  for(const s of ['注册啦','转账错误','走势很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
 });
 test('per-round market history captures actual frozen odds, principal and locked claims without changing quotes',()=>{
@@ -24,7 +24,7 @@ test('per-round market history captures actual frozen odds, principal and locked
 });
 test('read-only chart query requires no registration or complete build assets and exposes no identities',()=>{
  const x=fixture(),user={subject:'a'.repeat(64),qqSubject:'a'.repeat(64),scope:'qq-racing',groupId:'613486881',name:'观众'},before=structuredClone(x.rooms.state);
- const result=qqCommand(x.web,x.hourly,user,{text:'盘口'});assert.equal(result.forward,true);assert.equal(result.market.players.length,8);assert.equal(result.market.kind,'duma-market-v1');assert.deepEqual(x.rooms.state,before);
+ const result=qqCommand(x.web,x.hourly,user,{text:'走势'});assert.equal(result.forward,true);assert.equal(result.market.players.length,8);assert.equal(result.market.kind,'duma-market-v1');assert.deepEqual(x.rooms.state,before);
  const json=JSON.stringify(result);for(const secret of [x.key,user.subject,'private-game-uid','private-wallet-name','webOwner'])assert(!json.includes(secret));assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'走势 1'}),/用法/);
 });
 test('a live legacy room starts from a real current snapshot and never invents past odds',()=>{

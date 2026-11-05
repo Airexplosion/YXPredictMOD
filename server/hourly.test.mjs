@@ -151,11 +151,11 @@ test('ordinary website rooms never prevent an hourly opening; their holdings and
 });
 test('QQ and website use one wallet, duplicate group commands across room changes cannot wager again; expiry does not cancel a locked payout',()=>{
  const x=fixture(),r=x.open();x.web.openAccount(user);const accounts=Object.keys(x.rooms.state.accounts).length;
- const command={text:'/下注 1 100',messageId:'one-message',messageAt:x.now()};
+ const command={text:'/竞猜 1 100',messageId:'one-message',messageAt:x.now()};
  const first=qqCommand(x.web,x.hourly,user,command);assert.equal(x.web.me(user).playBalance,900);assert.equal(Object.keys(x.rooms.state.accounts).length,accounts);
  const key=x.web.playKey(user);assert.equal(x.rooms.state.rooms[r.code].positions[key][0].claim,460);
  assert.deepEqual(qqCommand(x.web,x.hourly,user,command),first);assert.equal(x.web.me(user).playBalance,900);
- assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,text:'/下注 2 100'}),/内容不一致/);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,text:'/竞猜 2 100'}),/内容不一致/);
   const pending=qqCommand(x.web,x.hourly,user,{...command,messageId:'new-message'});assert(pending.lines.some(s=>s.includes('尚未执行')));assert.equal(x.web.me(user).playBalance,900);
   qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:first.receiptId});
  x.snapshot.round=10;x.hourly.sync(r.code,x.snapshot);assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'late-message'}),/竞猜(?:已)?截止/);
@@ -166,36 +166,36 @@ test('QQ and website use one wallet, duplicate group commands across room change
  assert.throws(()=>qqCommand(x.web,x.hourly,user,{...command,messageId:'stale-message'}),/消息已过期/);
 });
 test('one QQ command buys multiple ordered legs including the same horse twice, and retries never debit again',()=>{
- const x=fixture(),v=x.open(),body={text:'/下注 1 200 2 300 1 200',messageId:'batch-001',messageAt:x.now()};
+ const x=fixture(),v=x.open(),body={text:'/竞猜 1 200 2 300 1 200',messageId:'batch-001',messageAt:x.now()};
  const reply=qqCommand(x.web,x.hourly,user,body),key=x.web.playKey(user),r=x.rooms.state.rooms[v.code];
  assert.equal(x.web.me(user).playBalance,300);assert.equal(r.positions[key][0].claim,1840);assert.equal(r.positions[key][1].claim,1380);
  assert.equal(r.cashflows[key].invested,700);assert.equal(r.actionCounts[key][0],2);assert.equal(r.actionCounts[key][1],1);assert.equal(Object.keys(r.receipts).length,3);
  assert(reply.lines[0].includes('3笔，共投入700'));const before=structuredClone(x.rooms.state);
  assert.deepEqual(qqCommand(x.web,x.hourly,user,body),reply);assert.deepEqual(x.rooms.state,before);
- assert.throws(()=>qqCommand(x.web,x.hourly,user,{...body,text:'/下注 1 200 2 300 1 201'}),/内容不一致/);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{...body,text:'/竞猜 1 200 2 300 1 201'}),/内容不一致/);
  const restored=new Rooms(structuredClone(x.rooms.state),undefined,x.now),web=new PredictionWeb(restored,{now:x.now}),hourly=new HourlyEvents(restored,web);
  assert.deepEqual(qqCommand(web,hourly,user,body),reply);assert.equal(web.me(user).playBalance,300);
 });
 test('insufficient funds, malformed batches or a later eliminated horse roll back all legs and automatic wallet opening',()=>{
- for(const text of ['/下注 1 700 2 400','/下注 1 200 2','/下注 1 200 2 NaN','/下注 '+Array(33).fill('1 1').join(' ')]){
+ for(const text of ['/竞猜 1 700 2 400','/竞猜 1 200 2','/竞猜 1 200 2 NaN','/竞猜 '+Array(33).fill('1 1').join(' ')]){
   const x=fixture();x.open();const before=structuredClone(x.rooms.state);
   assert.throws(()=>qqCommand(x.web,x.hourly,user,{text,messageId:'bad-batch',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
  }
  const x=fixture(),v=x.open();x.snapshot.active[1]=false;x.hourly.sync(v.code,x.snapshot);const before=structuredClone(x.rooms.state);
- assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 200 2 300',messageId:'inactive-batch',messageAt:x.now()}),/淘汰|退出/);assert.deepEqual(x.rooms.state,before);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/竞猜 1 200 2 300',messageId:'inactive-batch',messageAt:x.now()}),/淘汰|退出/);assert.deepEqual(x.rooms.state,before);
 });
 test('batch save failures preserve every wallet, claim, cashflow and deduplication receipt',()=>{
  let fail=false;const x=fixture(()=>{if(fail)throw Error('disk failure')});x.open();const before=structuredClone(x.rooms.state);fail=true;
- assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 200 2 300 1 200',messageId:'disk-batch',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/竞猜 1 200 2 300 1 200',messageId:'disk-batch',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
 });
 test('round nine warning leads the first sentence and multi-bets retain the round ten closure',()=>{
  const x=fixture(),v=x.open();x.snapshot.round=9;x.hourly.sync(v.code,x.snapshot);
  const view=x.web.watch(x.rooms.state.rooms[v.code]),presentation=publicPresentation(view,{round:8,noticeType:'round'});
  assert(publicSummary(view,{round:8})[0].startsWith('提醒：下回合（第10回合）起普通竞猜、减半和撤回截止'));assert.equal(presentation.closingWarning,publicSummary(view,{round:8})[0]);
- const reply=qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-nine-batch',messageAt:x.now()});
+ const reply=qqCommand(x.web,x.hourly,user,{text:'/竞猜 1 10 2 20',messageId:'round-nine-batch',messageAt:x.now()});
  qqCommand(x.web,x.hourly,user,{action:'ack',receiptId:reply.receiptId});x.snapshot.round=10;x.hourly.sync(v.code,x.snapshot);
  assert.equal(publicPresentation(x.web.watch(x.rooms.state.rooms[v.code])).closingWarning,null);
- const before=structuredClone(x.rooms.state);assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 10 2 20',messageId:'round-ten-batch',messageAt:x.now()}),/竞猜(?:已)?截止/);assert.deepEqual(x.rooms.state,before);
+ const before=structuredClone(x.rooms.state);assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/竞猜 1 10 2 20',messageId:'round-ten-batch',messageAt:x.now()}),/竞猜(?:已)?截止/);assert.deepEqual(x.rooms.state,before);
 });
 test('notifications are durable, leased, acknowledgement-gated and contain only public information',()=>{
  const x=fixture(),r=x.open();assert.equal(x.hourly.data().outbox.length,1);
@@ -249,15 +249,15 @@ test('settlement is forwarded once while incomplete final battle reports remain 
 });
 test('failed saving rolls back wallet, global QQ receipt, joining, account creation and event outbox together',()=>{
  let fail=false;const x=fixture(()=>{if(fail)throw new Error('disk unavailable')});const r=x.open(),before=structuredClone(x.rooms.state);fail=true;
- assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/下注 1 100',messageId:'first-command',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
+ assert.throws(()=>qqCommand(x.web,x.hourly,user,{text:'/竞猜 1 100',messageId:'first-command',messageAt:x.now()}));assert.deepEqual(x.rooms.state,before);
  x.snapshot.closedThrough=1;assert.throws(()=>x.hourly.sync(r.code,x.snapshot));assert.deepEqual(x.rooms.state,before);
 });
 test('bot scope, dedicated service keys, exited players and invalid amounts fail closed',()=>{
  const x=fixture();x.open();assert.throws(()=>serviceAccess(undefined,''));assert.throws(()=>serviceAccess('Bearer '+'x'.repeat(32),'y'.repeat(32)));
  serviceAccess('Bearer '+'x'.repeat(32),'x'.repeat(32));
- const body={text:'/下注 1 100',messageId:'invalid-test',messageAt:x.now()};
+ const body={text:'/竞猜 1 100',messageId:'invalid-test',messageAt:x.now()};
  assert.throws(()=>qqCommand(x.web,x.hourly,{...user,scope:undefined},body));assert.throws(()=>qqCommand(x.web,x.hourly,{...user,groupId:'other'},body));
- for(const amount of ['-1','0','1.2','NaN','10001','1e3'])assert.throws(()=>qqCommand(x.web,x.hourly,user,{...body,text:'/下注 1 '+amount}));
+ for(const amount of ['-1','0','1.2','NaN','10001','1e3'])assert.throws(()=>qqCommand(x.web,x.hourly,user,{...body,text:'/竞猜 1 '+amount}));
  const r=x.rooms.websiteRoom();x.snapshot.active[0]=false;x.hourly.sync(r.code,x.snapshot);assert.throws(()=>qqCommand(x.web,x.hourly,user,body),/退出/);
 });
 test('real HTTP separates observer, bot and normal clients, and rejects expired or ordinary web tickets',async()=>{
@@ -271,7 +271,7 @@ test('real HTTP separates observer, bot and normal clients, and rejects expired 
   assert.equal((await post('/ops/hourly',{action:'status'})).status,401);
   assert.equal((await post('/ops/hourly',{action:'status'},{authorization:'Bearer '+botKey})).status,401);
   assert.equal((await post('/ops/hourly',{action:'open',info:x.info,snapshot:x.snapshot},{authorization:'Bearer '+observerKey})).status,200);
-  const body={text:'/下注 1 100',messageId:'http-qq-message',messageAt:x.now()};
+  const body={text:'/竞猜 1 100',messageId:'http-qq-message',messageAt:x.now()};
   for(const p of [{...user,expiresAt:x.now()-1},{...user,scope:undefined,expiresAt:x.now()+10000}])assert([401,403].includes((await post('/bot/command',body,{authorization:'Bearer '+botKey,'x-prediction-identity':proof(p)})).status));
   const ticket=proof({...user,expiresAt:x.now()+10000});assert.equal((await post('/bot/command',body,{authorization:'Bearer '+botKey,'x-prediction-identity':ticket})).status,200);
   assert.equal(x.web.me(user).playBalance,900);
@@ -284,7 +284,7 @@ test('concurrent HTTP retries of a multi-bet QQ message create one atomic receip
  const x=fixture();x.open();const botKey='b'.repeat(32),bridgeKey='a'.repeat(64),server=http.createServer(createHandler(x.rooms,{botKey,bridgeKey,now:x.now}));
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const payload=Buffer.from(JSON.stringify({...user,expiresAt:x.now()+60000})).toString('base64url'),proof=payload+'.'+createHmac('sha256',Buffer.from(bridgeKey,'hex')).update(payload).digest('base64url');
- const body={text:'/下注 1 200 2 300 1 200',messageId:'http-batch-once',messageAt:x.now()},url='http://127.0.0.1:'+server.address().port+'/bot/command';
+ const body={text:'/竞猜 1 200 2 300 1 200',messageId:'http-batch-once',messageAt:x.now()},url='http://127.0.0.1:'+server.address().port+'/bot/command';
  try{
   const responses=await Promise.all(Array.from({length:8},()=>fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+botKey,'x-prediction-identity':proof},body:JSON.stringify(body)})));
   assert(responses.every(r=>r.status===200));const replies=await Promise.all(responses.map(r=>r.json()));assert(replies.every(r=>JSON.stringify(r.data)===JSON.stringify(replies[0].data)));
