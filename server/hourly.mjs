@@ -4,6 +4,7 @@ import {buildLines,publicPresentation,publicReportReady,publicBuild} from './pub
 import {raceNoticeTargets} from './race-policy.mjs';
 import {shuffleReveal} from './shuffle-reveal.mjs';
 import {openingAllIn,OPENING_ALL_IN_MS} from './opening-window.mjs';
+import {rememberMarket} from './market.mjs';
 
 export const EVENT_BONUS_BPS=11500;
 const ensure=(ok,message,status=409)=>{if(!ok)throw new RoomError(message,status)};
@@ -97,6 +98,8 @@ export class HourlyEvents{
       ensure(!Object.values(this.rooms.state.rooms).some(r=>!r.ended&&!r.settled&&(r.gameId===snapshot.id||r.gameRoomId===info.roomId)),'该对局已经有房间');
       const view=this.rooms.create(data.hostToken,snapshot,true,true,{slot,bonusBps:EVENT_BONUS_BPS});
       this.rooms.state.rooms[view.code].openingAllIn={version:1,startedAt:null,endsAt:null};
+      this.rooms.refreshCoverage(this.rooms.state.rooms[view.code]);
+      rememberMarket(this.rooms.state.rooms[view.code]);
       data.slots[slot]={code:view.code,gameId:snapshot.id,openedAt:this.rooms.now(),info:structuredClone(info),model:structuredClone(model),participants:{[snapshot.round]:snapshot.players.map((_,i)=>!snapshot.states?.[i]||snapshot.states[i].life>0)},noticeWait:{}};
       this.enqueue('start',this.rooms.state.rooms[view.code]);
       const slots=Object.keys(data.slots).sort();for(const old of slots.slice(0,Math.max(0,slots.length-2160)))delete data.slots[old];

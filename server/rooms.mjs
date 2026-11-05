@@ -4,6 +4,7 @@ import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {publicBuild} from './public-build.mjs';
 import {rememberMarket} from './market.mjs';
 import {openingAllIn} from './opening-window.mjs';
+import {capCoverage} from './coverage.mjs';
 import {isDeepStrictEqual} from 'node:util';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -134,6 +135,7 @@ export class Rooms {
       let code; do { code = String(100000 + randomBytes(4).readUInt32BE() % 900000); } while (this.state.rooms[code]);
       this.state.rooms[code] = { code, host: key, members: [key], gameId: s.id, players: clone(s.players), round: 0,
         closedThrough: 0, open: false, ended: false, settled: false, cashflowVersion:1,cashflows:{},horseShuffle:s.horseShuffle??false, eventSlot:event?.slot??null, bonusBps:event?.bonusBps??10000, allowMatch: isPublic && allowMatch, isPublic, active: Array(8).fill(true), rules: s.baseRates ? (this.championOnly ? 3 : 2) : 1, ranks: Array(8).fill(0), positions: {}, version: 0, receipts: {}, payouts: {} };
+      if(this.state.rooms[code].rules===3)this.state.rooms[code].coverageVersion=1;
       this.apply(this.state.rooms[code], s); this.syncTimes.set(code, this.now());
       const featured=this.websiteRoom();
       if(isPublic&&(event||!featured||featured.ended||featured.settled))this.state.websiteRoomCode=code;
@@ -218,7 +220,7 @@ export class Rooms {
     }
     if(s.battles)this.applyBattles(r,s.battles);
     if(r.rules>=2 && (s.eliminationRounds || r.eliminationRounds)) {
-      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; r.allInOpen=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.allInOpen,r.ended,r.settled,r.ranks,r.active]))r.version++;rememberMarket(r);return; }
+      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; r.allInOpen=false; this.refreshCoverage(r); if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.allInOpen,r.ended,r.settled,r.ranks,r.active]))r.version++;rememberMarket(r);return; }
       const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
       const dead = ranks.map((rank,i)=>!!rank || rounds[i]>0 || r.ranks[i]>0);
       let plan;
@@ -234,10 +236,23 @@ export class Rooms {
     const known = r.ranks.filter(Boolean); requireThat(new Set(known).size === known.length, '名次重复');
     if(r.rules>=2 && known.length<8) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
     if(r.rules>=2 && known.length>=7){r.open=false;r.allInOpen=false;}
+    this.refreshCoverage(r);
     if(r.rules>=2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
     if (before !== JSON.stringify([r.round, r.closedThrough, r.open, r.allInOpen, r.ended, r.settled, r.ranks, r.active])) r.version++;
     rememberMarket(r);
+  }
+  refreshCoverage(r){
+    if(r.coverageVersion!==1||r.rules!==3)return;
+    const raw=r.baseRates.map((base,at)=>eventQuote(base,r.factors[at],r.bonusBps??10000));
+    const eligible=r.players.map((_,i)=>i).filter(i=>!r.ranks[i]&&r.active[i]!==false&&raw[i*8]>0);
+    const window=openingAllIn(r,this.now());
+    const multiplier=window?(window.state==='ended'?1:3):(r.round===1?3:1);
+    if(eligible.length>=2){
+      const capped=capCoverage(eligible.map(i=>raw[i*8]),multiplier);
+      eligible.forEach((i,n)=>{raw[i*8]=capped[n];});
+    }
+    if(JSON.stringify(raw)!==JSON.stringify(r.quoteRates)){r.quoteRates=raw;r.version++;}
   }
   rememberBuilds(r,builds){
     if(!builds)return;
@@ -412,6 +427,13 @@ export class Rooms {
         }
         p.stake+=input.stake;
         if(r.rules>=2)p.claim+=claim;
+        if(r.coverageVersion===1){
+          const eligible=r.players.map((_,i)=>i).filter(i=>!r.ranks[i]&&r.active[i]!==false);
+          const claims=eligible.map(i=>positions[i]?.resolved?0:positions[i]?.claim??0).sort((a,b)=>a-b);
+          const cost=eligible.reduce((sum,i)=>sum+(positions[i]?.resolved?0:positions[i]?.stake??0),0);
+          const minimum=(claims[0]??0)+Math.floor((claims[1]??0)/4)+Math.floor((claims[2]??0)/10);
+          requireThat(cost===0||minimum<cost,'本次组合已覆盖所有可能结果并形成保底返还，请减少覆盖选手；本次未扣款');
+        }
       }
       if(r.rules>=2){const counts=(r.actionCounts??={})[key]??=Array(8).fill(0);counts[input.player]++;}
       requireThat(Object.keys(r.receipts).length < (r.rules>=2?131072:20000), '本房间操作次数已满');

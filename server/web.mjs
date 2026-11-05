@@ -55,7 +55,7 @@ export class PredictionWeb {
     const fresh=this.rooms.now()-(this.rooms.syncTimes.get(r.code)??-Infinity)<=15000;
     const totals=Array(8).fill(0);
     for(const positions of Object.values(r.positions))for(let i=0;i<8;i++)if(positions[i])totals[i]+=positions[i].stake;
-    return {code:r.code,hostName:this.rooms.observerName(r,r.host),round:r.round,version:r.version,rules:r.rules??1,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,
+    return {code:r.code,hostName:this.rooms.observerName(r,r.host),round:r.round,version:r.version,rules:r.rules??1,eventSlot:r.eventSlot??null,bonusBps:r.bonusBps??10000,coverageVersion:r.coverageVersion??0,
       members:r.members.length,isPublic:this.rooms.publicRoom(r),fresh,availability:this.rooms.availability(r),open:this.rooms.isOpen(r),allInOpen:this.rooms.isOpen(r,true),allInMultiplier:this.rooms.allInMultiplier(r),openingAllIn:openingAllIn(r,this.rooms.now()),ended:r.ended,settled:r.settled,
       updatedAt:this.rooms.syncTimes.get(r.code)??null,players:r.players.map((p,i)=>({name:p.name,rank:r.ranks[i],active:r.active?.[i]??!r.ranks[i],
           horseTitle:r.horseTitles?.[i]??'',rankMinimum:r.rankMinimum?.[i]??r.ranks[i],rankMaximum:r.rankMaximum?.[i]??r.ranks[i],exitRound:r.observerWithdrawals?.[i]??(r.eliminationRounds?.[i]>0?r.eliminationRounds[i]:null),state:r.states?.[i]??null,build:clonePublic(r.builds?.[i]??null),baseRate:r.baseRates?.[i*8]??0,quoteRate:r.quoteRates?.[i*8]??0,factor:r.factors?.[i*8]??10000,total:totals[i]})),

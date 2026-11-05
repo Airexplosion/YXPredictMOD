@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import {Rooms} from './rooms.mjs';
 import {cashout,eventQuote,sale} from './odds.mjs';
 
-function fixture({bonus=10000,base=50000,save}={}){
+function fixture({bonus=10000,base=50000,save,legacy=false}={}){
   const rooms=new Rooms(undefined,save,()=>100000);
   const a=rooms.register('甲').token,b=rooms.register('乙').token;
   rooms.state.accounts[a].balance=rooms.state.accounts[b].balance=100000;
   const snapshot={id:'personal-cashout',round:1,closedThrough:0,open:true,ended:false,
     players:Array.from({length:8},(_,i)=>({uid:'p'+i,name:'角色'+i})),ranks:Array(8).fill(0),baseRates:Array(64).fill(base)};
   const code=rooms.create(a,snapshot,true,true,bonus===11500?{slot:'2026110201',bonusBps:bonus}:null).code;
+  if(legacy){delete rooms.state.rooms[code].coverageVersion;rooms.state.rooms[code].quoteRates=rooms.state.rooms[code].baseRates.slice();}
   rooms.join(code,b,snapshot.id);
   let sequence=0;
   const view=(key=a)=>rooms.view(code,key);
@@ -20,7 +21,7 @@ function fixture({bonus=10000,base=50000,save}={}){
 
 test('10000 own-only wager cannot profit from lowering its next-round public odds',()=>{
   const x=fixture();x.trade(x.a,'buy',0,10000);
-  assert.equal(x.view().positions[0].claim,50000);
+  assert.equal(x.view().positions[0].claim,19358);
   x.next();assert.equal(x.view().quoteRates[0],37500);
   x.trade(x.a,'sell');
   assert.equal(x.view().balance,99700);assert.equal(x.view().positions[0],null);
@@ -52,7 +53,7 @@ test('entry units retain others frozen effect; exit uses their latest frozen eff
   const x=fixture();x.trade(x.b,'buy',0,10000);x.next();
   x.trade();assert.deepEqual(x.view().positions[0].saleBasis,{legacyClaim:0,units:375});
   x.trade(x.b,'sell',0);x.trade(x.a,'sell');assert.equal(x.view().balance,99997);
-  const y=fixture();y.trade(y.b,'buy',0,10000);y.next();y.trade();y.trade(y.b,'sell');
+  const y=fixture({legacy:true});y.trade(y.b,'buy',0,10000);y.next();y.trade();y.trade(y.b,'sell');
   y.next();y.trade(y.a,'sell');assert.equal(y.view().balance,99900+sale(375,50000,false));
 });
 
@@ -61,17 +62,17 @@ test('partial sells keep the frozen own book through same-round buys and repeate
   const book=structuredClone(x.rooms.state.rooms[x.code].saleBook);
   x.trade(x.a,'half');x.trade(x.a,'buy',1,1000);x.trade(x.a,'half');x.trade(x.a,'sell');
   assert.deepEqual(x.rooms.state.rooms[x.code].saleBook,book);
-  assert.equal(x.rooms.state.rooms[x.code].cashflows[x.a].sold,9700);
-  x.trade(x.a,'sell',1);assert.equal(x.view().balance,99670);
+  assert.equal(x.rooms.state.rooms[x.code].cashflows[x.a].sold,9699);
+  x.trade(x.a,'sell',1);assert.equal(x.view().balance,99669);
 });
 
 test('multiple public fill prices retain exact payout rights but normalize liquidation independently',()=>{
   const x=fixture();x.trade();x.next();x.trade();
-  const p=x.view().positions[0];assert.equal(p.claim,875);assert.equal(p.saleBasis.units,1000);
+  const p=x.view().positions[0];assert.equal(p.claim,568);assert.equal(p.saleBasis.units,1000);
   x.trade(x.a,'half');const remaining=x.view().positions[0];
-  assert.equal(remaining.claim,438);assert.equal(remaining.saleBasis.units,501);
-  x.trade(x.a,'sell');assert.equal(x.rooms.state.rooms[x.code].cashflows[x.a].sold,193);
-  assert.equal(x.view().balance,99993);
+  assert.equal(remaining.claim,284);assert.equal(remaining.saleBasis.units,500);
+  x.trade(x.a,'sell');assert.equal(x.rooms.state.rooms[x.code].cashflows[x.a].sold,194);
+  assert.equal(x.view().balance,99994);
 });
 
 test('only public-state base price changes still generate normal market gains or losses',()=>{
@@ -100,7 +101,7 @@ test('self-neutral prices use the same floors, min/max clamps and hourly premium
 });
 
 test('legacy holdings keep original sale terms and adding new bets cannot inherit that policy',()=>{
-  const x=fixture();x.trade(x.a,'buy',0,10000);
+  const x=fixture({legacy:true});x.trade(x.a,'buy',0,10000);
   let r=x.rooms.state.rooms[x.code];delete r.positions[x.a][0].saleBasis;delete r.saleBook;
   x.next();x.trade(x.a,'buy',0,10000);
   let p=x.view().positions[0];assert.deepEqual(p.saleBasis,{legacyClaim:50000,units:50000});assert.equal(p.claim,87500);
@@ -108,12 +109,12 @@ test('legacy holdings keep original sale terms and adding new bets cannot inheri
   assert.deepEqual(p.saleBasis,{legacyClaim:25000,units:25000});
   x.trade(x.a,'sell');
   assert.equal(x.rooms.state.rooms[x.code].cashflows[x.a].sold,2*(sale(25000,37500,false)+sale(25000,50000,false)));
-  const y=fixture();y.trade(y.a,'buy',0,10000);delete y.rooms.state.rooms[y.code].positions[y.a][0].saleBasis;
+  const y=fixture({legacy:true});y.trade(y.a,'buy',0,10000);delete y.rooms.state.rooms[y.code].positions[y.a][0].saleBasis;
   y.next();y.trade(y.a,'sell');assert.equal(y.view().balance,102933);
 });
 
 test('old same-round rooms seed a private book once without rewriting quotes, claims or balances',()=>{
-  const x=fixture();x.trade();let r=x.rooms.state.rooms[x.code];delete r.saleBook;delete r.positions[x.a][0].saleBasis;
+  const x=fixture({legacy:true});x.trade();let r=x.rooms.state.rooms[x.code];delete r.saleBook;delete r.positions[x.a][0].saleBasis;
   const original={quoteRates:structuredClone(r.quoteRates),claim:r.positions[x.a][0].claim,balance:x.view().balance};
   assert.equal(r.saleBook,undefined);
   x.rooms.sync(x.code,x.a,x.snapshot);r=x.rooms.state.rooms[x.code];

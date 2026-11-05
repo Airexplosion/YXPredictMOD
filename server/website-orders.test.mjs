@@ -59,7 +59,7 @@ test('website requires another click for a changed quote and never silently exec
  await x.click();assert.equal(x.orders().length,0);assert.equal(x.balance(),1000);
  assert.match(x.get('bet-reason').textContent,/核对后再次确认/);assert.equal(x.storage.size,0);
  await x.click();assert.equal(x.orders().length,1);assert.equal(x.balance(),900);
- const key=x.web.playKey(x.user);assert.equal(x.rooms.state.rooms[x.code].positions[key][0].claim,700);
+ const key=x.web.playKey(x.user);assert.equal(x.rooms.state.rooms[x.code].positions[key][0].claim,580);
 });
 
 test('website detects an independently changed position before allowing another purchase',async()=>{
