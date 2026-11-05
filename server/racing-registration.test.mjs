@@ -278,8 +278,8 @@ test('a registered unlicensed QQ can buy, sign in and transfer; receipt retries 
  const room=x.open(),order={messageId:'unlicensed-bet'};const first=x.call('竞猜 1 100',order);assert.equal(x.web.me(x.user).playBalance,1100);assert.equal(x.rooms.state.rooms[room.code].positions[x.web.playKey(x.user)][0].claim,460);
  assert.deepEqual(x.call('/竞猜 1 100',order),first);assert.equal(x.web.me(x.user).playBalance,1100);
  x.call('观战 查单');qqCommand(x.web,x.hourly,x.user,{action:'ack',receiptId:first.receiptId});
- const recipient=x.actor('c'),transfer=x.call('转账 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'});
- assert.equal(x.web.me(x.user).playBalance,900);assert.equal(x.web.me(recipient).playBalance,1200);assert.deepEqual(x.call('/转账 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'}),transfer);
+ const recipient=x.actor('c'),transfer=x.call('赠送 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'});
+ assert.equal(x.web.me(x.user).playBalance,900);assert.equal(x.web.me(recipient).playBalance,1200);assert.deepEqual(x.call('/赠送 200',{recipientTicket:x.sign(recipient),messageId:'registered-transfer'}),transfer);
  x.call('注册 收款道友',{},recipient);assert.equal(x.web.me(recipient).playBalance,1200);assert.equal(x.web.me(recipient).name,'收款道友');
 });
 test('later game binding retains the registered name, money, grants and old message receipt without double buying',()=>{
