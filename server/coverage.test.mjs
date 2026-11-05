@@ -43,23 +43,25 @@ test('calibration covers two to eight survivors, optional triple, and integer al
   }
 });
 
-test('eight different wallets using triple fills cannot guarantee a profit; promises survive updates and restart',()=>{
+test('ordinary coverage is capped while independent triple promotion survives updates and restart',()=>{
   const x=fixture(),keys=[];
+  assert.equal(x.room().quoteRates[0],58074);
+  assert(coverageReturn(x.room().quoteRates.filter((_,i)=>i%8===0))<1);
   for(let i=0;i<8;i++){
     const key=x.rooms.register('wallet'+i).token;keys.push(key);x.rooms.join(x.code,key,x.snapshot.id);
     x.trade(i,1000,key,true);
   }
   const claims=keys.map((k,i)=>x.room().positions[k][i].claim);
-  assert(claims.every(c=>c===5807));
+  assert(claims.every(c=>c===17422));
   for(let a=0;a<8;a++)for(let b=0;b<8;b++)for(let c=0;c<8;c++)if(a!==b&&b!==c&&a!==c)
-    assert(claims[a]+Math.floor(claims[b]/4)+Math.floor(claims[c]/10)<8000);
+    assert(claims[a]+Math.floor(claims[b]/4)+Math.floor(claims[c]/10)>8000);
   x.snapshot.round=2;x.snapshot.baseRates.fill(500000);x.rooms.sync(x.code,x.key,x.snapshot);
   assert(coverageReturn(x.room().quoteRates.filter((_,i)=>i%8===0))<=0.98);
   assert.deepEqual(keys.map((k,i)=>x.room().positions[k][i].claim),claims);
   const restored=new Rooms(structuredClone(x.rooms.state),undefined,()=>100000);
   const settled={...x.snapshot,round:18,ended:true,ranks:[1,2,3,4,5,6,7,8]};
   restored.sync(x.code,x.key,settled);
-  assert.equal(keys.reduce((sum,k)=>sum+restored.state.accounts[k].balance,0),5807+1451+580);
+  assert.equal(keys.reduce((sum,k)=>sum+restored.state.accounts[k].balance,0),17422+4355+1742);
 });
 
 test('same-round base updates, repeated syncs, roster order and survivor changes retain capped quotes',()=>{
@@ -91,4 +93,15 @@ test('old saved rooms retain quotes and locked claims after sync',()=>{
   x.trade(0);const before=structuredClone(x.room().positions);
   x.rooms.sync(x.code,x.key,x.snapshot);
   assert.equal(x.room().quoteRates[0],70000);assert.deepEqual(x.room().positions,before);
+});
+
+test('removing the triple reserve raises only future quotes, preserving existing low-price claims and locks',()=>{
+  const x=fixture();x.room().quoteRates.fill(19358);
+  x.trade(0,100000,x.key,true);
+  const before=structuredClone(x.room().positions[x.key]);
+  x.rooms.sync(x.code,x.key,x.snapshot);
+  assert.equal(x.room().quoteRates[0],58074);
+  assert.deepEqual(x.room().positions[x.key],before);
+  assert.equal(x.room().positions[x.key][0].cashoutLocked,true);
+  assert.equal(x.rooms.state.accounts[x.key].balance,0);
 });

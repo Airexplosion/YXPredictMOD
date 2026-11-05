@@ -81,10 +81,10 @@ test('ranking excludes grants and committed capital, recognizes realized payouts
  x.rooms.trade(code,x.key,{kind:'buy',player:0,rank:1,stake:100,version:x.rooms.view(code,x.key).version,operation:'web-profit-buy'});
  assert.equal(x.web.me(x.user).balance,900);assert.equal(x.web.me(x.user).net,0);
  s.ended=true;s.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(code,x.key,s);
- assert.equal(x.web.me(x.user).net,93);assert.equal(x.web.me(x.user).games,1);
+ assert.equal(x.web.me(x.user).net,300);assert.equal(x.web.me(x.user).games,1);
  x.rooms.commit(()=>{x.rooms.state.accounts[x.key].balance+=50;x.rooms.state.accounts[x.key].reliefCount=1;});
- assert.equal(x.web.me(x.user).net,93);
- const board=x.web.leaderboard();assert.equal(board.items[0].net,93);const json=JSON.stringify(board);
+ assert.equal(x.web.me(x.user).net,300);
+ const board=x.web.leaderboard();assert.equal(board.items[0].net,300);const json=JSON.stringify(board);
  for(const secret of [x.key,subject,'uid-private','webOwner','balance','accounts'])assert.equal(json.includes(secret),false,secret);
 });
 test('web HTTP serves CSP assets, public ranking, authenticated profile and same-origin binding',async()=>{

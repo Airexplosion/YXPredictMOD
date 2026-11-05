@@ -246,10 +246,9 @@ export class Rooms {
     if(r.coverageVersion!==1||r.rules!==3)return;
     const raw=r.baseRates.map((base,at)=>eventQuote(base,r.factors[at],r.bonusBps??10000));
     const eligible=r.players.map((_,i)=>i).filter(i=>!r.ranks[i]&&r.active[i]!==false&&raw[i*8]>0);
-    const window=openingAllIn(r,this.now());
-    const multiplier=window?(window.state==='ended'?1:3):(r.round===1?3:1);
+    // The opening triple is an independent promotion, not a reserve in ordinary quotes.
     if(eligible.length>=2){
-      const capped=capCoverage(eligible.map(i=>raw[i*8]),multiplier);
+      const capped=capCoverage(eligible.map(i=>raw[i*8]));
       eligible.forEach((i,n)=>{raw[i*8]=capped[n];});
     }
     if(JSON.stringify(raw)!==JSON.stringify(r.quoteRates)){r.quoteRates=raw;r.version++;}

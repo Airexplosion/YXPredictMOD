@@ -16,10 +16,10 @@ test('short commands normalize to public quiz names',()=>{
  for(const s of ['注册啦','赠送错误','走势很好看','帮助一下','hello'])assert.equal(normalizeRaceCommand(s),null);
 });
 test('per-round market history captures actual frozen odds, principal and locked claims without changing quotes',()=>{
- const x=fixture();assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].rates[0],19358);
- x.trade('buy','market-buy-1');assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].pools[0],100);assert.equal(x.r.marketHistory[0].prizes[0],193);assert.equal(x.r.marketHistory[0].rates[0],19358);
+ const x=fixture();assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].rates[0],46000);
+ x.trade('buy','market-buy-1');assert.equal(x.r.marketHistory.length,1);assert.equal(x.r.marketHistory[0].pools[0],100);assert.equal(x.r.marketHistory[0].prizes[0],460);assert.equal(x.r.marketHistory[0].rates[0],46000);
  x.snapshot.round=2;x.rooms.sync(x.code,x.key,x.snapshot);assert.equal(x.r.marketHistory.length,2);assert(x.r.marketHistory[1].rates[0]<46000);const locked=x.r.marketHistory[0];
- x.trade('half','market-half-1');assert.equal(x.r.marketHistory[1].pools[0],51);assert.equal(x.r.marketHistory[1].prizes[0],97);assert.equal(locked.pools[0],100);
+ x.trade('half','market-half-1');assert.equal(x.r.marketHistory[1].pools[0],50);assert.equal(x.r.marketHistory[1].prizes[0],230);assert.equal(locked.pools[0],100);
  const reloaded=new Rooms(structuredClone(x.rooms.state));assert.deepEqual(reloaded.state.rooms[x.code].marketHistory,x.r.marketHistory);
 });
 test('read-only chart query requires no registration or complete build assets and exposes no identities',()=>{
