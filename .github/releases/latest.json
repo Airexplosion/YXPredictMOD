@@ -1,9 +1,9 @@
 {
-  "version": "0.8.4",
-  "tag": "v0.8.4",
-  "title": "v0.8.4 - 新版游戏兼容与卡牌仙命素材同步",
-  "artifact": "dist/天机赛马-0.8.4.zip",
-  "assetName": "tianji-saima-0.8.4.zip",
-  "sha256": "bc5d492c971b163ec3ae4809c6568fcb898d541e8d07783670f9ddd0a7ff2489",
-  "notes": ".github/releases/v0.8.4.md"
+  "version": "0.8.5",
+  "tag": "v0.8.5",
+  "title": "v0.8.5 - Elo查询超时、空槽与响应限制修复",
+  "artifact": "dist/天机赛马-0.8.5.zip",
+  "assetName": "tianji-saima-0.8.5.zip",
+  "sha256": "2618324e2357066c563792a32df7539afdcacd4ed6258be9d4369da05c35da7d",
+  "notes": ".github/releases/v0.8.5.md"
 }
