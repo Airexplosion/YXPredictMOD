@@ -1,7 +1,7 @@
 /* Browser spectating uses the room engine; no game client or game credentials here. */
 (()=>{
 const P=window.Prediction,$=id=>document.getElementById(id);
-let page=0,room=null,wallet=null,selected=0,joined=false,visible='hall',polling=false,busy=false,pending=null,roundChoice='live';
+let page=0,room=null,wallet=null,selected=0,joined=false,visible='hall',polling=false,busy=false,pending=null,roundChoice='live',viewEpoch=0,tradeMessage='';
 try{pending=JSON.parse(sessionStorage.getItem('prediction-pending-order')||'null')}catch{}
 const fmt=n=>Number(n).toLocaleString('zh-CN'),rate=n=>(n/10000).toFixed(2)+'×';
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
@@ -27,12 +27,13 @@ async function rooms(auto=false){
  }catch(e){P.note(e.message);$('rooms-count').textContent='读取失败，请刷新'}finally{$('rooms-refresh').disabled=false}
 }
 async function enter(code){
- if(busy)return;joined=false;wallet=null;selected=0;roundChoice='live';
+ if(busy)return;viewEpoch++;tradeMessage='';joined=false;wallet=null;selected=0;roundChoice='live';
  try{room=await P.api('/web/room?code='+encodeURIComponent(code));P.tab('watch');draw();if(window.predictionMe?.linked)await join()}
  catch(e){if(window.predictionMe?.linked){try{const data=await P.api('/web/play',{privateRequest:true,body:{action:'join',code}});accept(data);P.tab('watch');return}catch(inner){P.note(inner.message);return}}P.note(e.message);if(!window.predictionMe)void P.openLogin()}
 }
 function accept(data){room=data.room;wallet=data.wallet;joined=true;if(data.me)P.renderMe(data.me);draw()}
 async function join(){
+ viewEpoch++;
  if(!window.predictionMe){await P.openLogin();return}
  if(!window.predictionMe.linked){const opened=await P.api('/web/play',{privateRequest:true,body:{action:'openAccount'}});P.renderMe(opened.me)}
  if(!room)return;try{accept(await P.api('/web/play',{privateRequest:true,body:{action:'join',code:room.code}}))}catch(e){P.note(e.message)}
@@ -93,28 +94,56 @@ function drawBet(){
  $('bet-return').textContent=fmt(claim)+' 马币';$('bet-partial').textContent=fmt(Math.floor(claim/4))+' / '+fmt(Math.floor(claim/10));
  $('held-position').textContent=position?fmt(position.stake)+' 马币':'暂无投入';$('held-claim').textContent=position?(wallet?.forfeited?'已离场放弃，不再返还':'锁定冠军奖励 '+fmt(position.claim??0)+' 马币'+(position.resolved?' · 已结算':position.cashoutLocked?' · 已锁定至结算':'')):'';
  let reason=wallet?.forfeited?'已离场放弃本局竞猜记录，仅可查看，不再返还。':!room.open?(room.availability?.message??(room.settled?'本局已结算，返还已进入账户。':room.ended?'本局已结束，等待最终战果确认。':(room.round>=10||room.tradingClosed)?'第10回合起竞猜已截止，等待本局结算。':!room.fresh?'机器人同步正在恢复，已暂停操作。':'等待下一修炼阶段开放操作。')):!p.active||p.rank?'这位选手已退出或确定名次，无法继续投入。':room.rules!==3?'旧房间仅保留原有竞猜记录，请加入新的冠军预测房间。':'';
- if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=reason;$('bet-retry').hidden=!pending||!window.predictionMe;
+ if(pending)reason='上笔操作尚待确认，请先确认结果，避免重复投入。';$('bet-reason').textContent=tradeMessage&&reason&&tradeMessage!==reason?tradeMessage+' · '+reason:tradeMessage||reason;$('bet-retry').hidden=!pending||!window.predictionMe;
  $('bet-buy').disabled=busy||!!reason||!Number.isSafeInteger(amount)||amount<1||amount>10000||amount>(wallet?.balance??0);
  $('bet-half').disabled=$('bet-sell').disabled=busy||!!reason||!position||position.resolved||position.cashoutLocked;
 }
+function orderContext(r,w,player){
+ const p=r.players[player],position=w?.positions[player];
+ return JSON.stringify([r.code,r.round,r.rules,p.quoteRate,p.baseRate,p.factor,p.active,p.rank,position?.rank,position?.stake,position?.claim,position?.cashoutLocked,position?.resolved,!!w?.forfeited]);
+}
+const selectedWallet=me=>me?.wallets?.find(w=>w.selected)?.id;
 async function trade(kind,retry=false){
  if(busy||!joined)return;
- let order=pending;
+ let order=pending,submitted=retry;
  if(retry){if(!order||!window.predictionMe){P.note('请用发起该笔操作的账户登录');return}}
- else{if(pending){P.note('请先确认上一笔操作');return}order={owner:window.predictionMe.id,action:'trade',code:room.code,kind,rank:1,player:selected,stake:Number($('bet-amount').value),version:room.version,operation:crypto.randomUUID()};setPending(order)}
- busy=true;drawBet();try{const {owner,...body}=order;const data=await P.api('/web/play',{privateRequest:true,body});setPending(null);accept(data);P.note('操作已确认，余额已更新')}
- catch(e){if([400,409].includes(e.status)){setPending(null);P.note(e.message+'，本笔未成交');void poll()}else P.note(e.message+'。请点击“确认上一笔操作”核对结果。')}
+ else if(pending){P.note('请先确认上一笔操作');return}
+ const player=selected,stake=Number($('bet-amount').value),ownerAtStart=window.predictionMe?.id,accountAtStart=selectedWallet(window.predictionMe),code=room.code,context=orderContext(room,wallet,player),epoch=++viewEpoch;
+ busy=true;tradeMessage='';drawBet();try{
+  if(!retry){
+   // Read immediately before submitting. An unrelated join/trade may advance
+   // the room revision without changing this user's reviewed quote or position.
+   const fresh=await P.api('/web/play',{privateRequest:true,body:{action:'view',code}});
+   if(epoch!==viewEpoch||window.predictionMe?.id!==ownerAtStart||room?.code!==code){tradeMessage='账户或房间已切换，请重新确认。';return}
+   const changed=context!==orderContext(fresh.room,fresh.wallet,player)||fresh.me.id!==ownerAtStart||selectedWallet(fresh.me)!==accountAtStart||selected!==player||kind==='buy'&&Number($('bet-amount').value)!==stake;
+   accept(fresh);
+   if(changed){tradeMessage='报价、投入或持仓已更新，请核对后再次确认；本次尚未提交。';P.note(tradeMessage);return}
+   if(!fresh.room.open||fresh.wallet.forfeited){tradeMessage=fresh.room.availability?.message||'当前无法操作，请查看最新对局状态。';P.note(tradeMessage);return}
+   if(kind==='buy'&&(!Number.isSafeInteger(stake)||stake<1||stake>10000||stake>fresh.wallet.balance)){tradeMessage='每笔投入须为1～10000整数，且不能超过可用马币；本次尚未提交。';P.note(tradeMessage);return}
+   order={owner:ownerAtStart,action:'trade',code,kind,rank:1,player,stake,version:fresh.room.version,operation:crypto.randomUUID()};setPending(order);
+  }
+  const {owner,...body}=order;submitted=true;const data=await P.api('/web/play',{privateRequest:true,body});setPending(null);
+  if(epoch===viewEpoch&&window.predictionMe?.id===ownerAtStart&&room?.code===code)accept(data);
+  tradeMessage='操作已确认，余额已更新。';P.note(tradeMessage)
+ }
+ catch(e){
+  if(!submitted)tradeMessage=e.message+'，本次尚未提交。';
+  else if([400,409].includes(e.status)){setPending(null);tradeMessage=e.message+'，本笔未成交。'}
+  else tradeMessage=e.message+'。请点击“确认上一笔操作”核对结果。';
+  P.note(tradeMessage);
+ }
  finally{busy=false;draw()}
 }
 async function poll(){
  if(polling||document.hidden||busy)return;polling=true;
- try{if(visible==='hall')await rooms();else if(visible==='watch'&&room){if(joined)accept(await P.api('/web/play',{privateRequest:true,body:{action:'view',code:room.code}}));else{room=await P.api('/web/room?code='+room.code);draw()}}}catch(e){if(room){room.fresh=false;room.open=false;draw()}P.note(e.message)}finally{polling=false}
+ const epoch=viewEpoch,code=room?.code;
+ try{if(visible==='hall')await rooms();else if(visible==='watch'&&room){const data=joined?await P.api('/web/play',{privateRequest:true,body:{action:'view',code}}):await P.api('/web/room?code='+code);if(busy||epoch!==viewEpoch||room?.code!==code||visible!=='watch')return;if(joined)accept(data);else{room=data;draw()}}}catch(e){if(epoch!==viewEpoch)return;if(room){room.fresh=false;room.open=false;draw()}P.note(e.message)}finally{polling=false}
 }
  $('rooms-refresh').onclick=()=>void rooms();$('rooms-prev').onclick=()=>{if(page){page--;void rooms()}};$('rooms-next').onclick=()=>{page++;void rooms()};
  $('watch-back').onclick=()=>{P.tab('hall');void rooms()};$('watch-join').onclick=()=>void join();
  $('battle-round').onchange=()=>{roundChoice=$('battle-round').value;drawBattles()};$('bet-amount').oninput=()=>{stakes[selected]=$('bet-amount').value;const input=document.querySelector('.row-stake[data-player="'+selected+'"]');if(input)input.value=stakes[selected];drawBet()};$('bet-buy').onclick=()=>void trade('buy');$('bet-half').onclick=()=>void trade('half');$('bet-sell').onclick=()=>void trade('sell');$('bet-retry').onclick=()=>void trade('',true);
  for(const b of document.querySelectorAll('[data-stake]'))b.onclick=()=>{$('bet-amount').value=b.dataset.stake==='half'?Math.max(1,Math.floor((wallet?.balance??0)/2)):b.dataset.stake;drawBet()};
  window.addEventListener('prediction-tab',e=>{visible=e.detail;if(visible==='hall')void rooms()});
- window.addEventListener('prediction-wallet',()=>{joined=false;wallet=null;if(room){P.tab('watch');void join()}});window.addEventListener('prediction-login',()=>{if(room){P.tab('watch');void join()}});window.addEventListener('prediction-logout',()=>{joined=false;wallet=null;if(room)draw()});
+ window.addEventListener('prediction-wallet',()=>{viewEpoch++;tradeMessage='';joined=false;wallet=null;if(room){P.tab('watch');void join()}});window.addEventListener('prediction-login',()=>{viewEpoch++;tradeMessage='';if(room){P.tab('watch');void join()}});window.addEventListener('prediction-logout',()=>{viewEpoch++;tradeMessage='';joined=false;wallet=null;if(room)draw()});
  for(const [button,panel]of [['toggle-chart','chart-panel'],['toggle-battles','battle-panel']])$(button).onclick=()=>{$(panel).hidden=!$(panel).hidden;$(button).setAttribute('aria-expanded',String(!$(panel).hidden));if(!$(panel).hidden)$(panel).scrollIntoView({behavior:'smooth',block:'nearest'})};setInterval(()=>void poll(),4000);void (async()=>{await window.predictionReady;await rooms(true)})();
 })();
