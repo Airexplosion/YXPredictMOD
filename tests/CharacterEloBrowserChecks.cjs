@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const url=process.env.CHARACTER_BOARD_URL||'https://elo.kaigua.vip/elo/characters/';
 const origin=new URL(url).origin;
-const starts=[1792033200000,1792648800000,1793253600000,1793858400000];
+const starts=[1792033200000,1792648800000,1793253600000,1793858400000,1794463200000];
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.WEB_TEST_BROWSER||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
  try{
@@ -16,12 +16,12 @@ const starts=[1792033200000,1792648800000,1793253600000,1793858400000];
   page.on('request',r=>requests.push(r.url()));page.on('pageerror',e=>errors.push(e.message));
   const got=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/season.json'));
   assert.equal((await page.goto(url)).status(),200);
-  const feed=await (await got).json();assert.equal(feed.model,'within');assert.equal(feed.periods.length,4);
+  const feed=await (await got).json();assert.equal(feed.model,'within');assert.equal(feed.periods.length,5);
   assert(!/"(?:uid|gameId|codeId|roomId|nickname|replay|rows)"\s*:|"[a-f0-9]{16,24}"/i.test(JSON.stringify(feed)));
   const ready=()=>page.locator('#rows tr').first().waitFor();
-  await ready();assert.match(await page.locator('#modeLabel').innerText(),/第四期.*换角校正 Elo/);
-  assert.equal(await page.locator('[data-phase="4"]').getAttribute('aria-pressed'),'true');
-  for(const phase of [4,1,2,3,4]){
+  await ready();assert.match(await page.locator('#modeLabel').innerText(),/第五期.*换角校正 Elo/);
+  assert.equal(await page.locator('[data-phase="5"]').getAttribute('aria-pressed'),'true');
+  for(const phase of [5,1,2,3,4,5]){
    const p=feed.periods[phase-1];assert.equal(p.start,starts[phase-1]);assert.equal(p.heroes.length,24);
    await page.locator('[data-phase="'+phase+'"]').click();
    assert.equal(await page.locator('#games').innerText(),p.games.toLocaleString('zh-CN'));
@@ -50,8 +50,8 @@ const starts=[1792033200000,1792648800000,1793253600000,1793858400000];
   await page.goto(url+'?source=window&band=high&career='+encodeURIComponent('阵法师'));await ready();assert.match(page.url(),/reference\.html/);
   await page.goto(url+'?phase=3');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第三期.*已封存/);
   await page.reload();await ready();assert.equal(await page.locator('[data-phase="3"]').getAttribute('aria-pressed'),'true');
-  await page.goto(url+'?source=live');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第四期/);
+  await page.goto(url+'?source=live');await ready();assert.match(await page.locator('#modeLabel').innerText(),/第五期/);
   assert(requests.every(s=>new URL(s).origin===origin));assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({defaultPhase:4,model:feed.model,games:feed.periods.map(p=>p.games),heroCount:24,allScoresMatch:true,legacy:true,mobile:true}));
+  console.log(JSON.stringify({defaultPhase:5,model:feed.model,games:feed.periods.map(p=>p.games),heroCount:24,allScoresMatch:true,legacy:true,mobile:true}));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

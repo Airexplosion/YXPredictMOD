@@ -26,9 +26,22 @@ class SeasonScoreTests(unittest.TestCase):
 
     def test_fourth_period_keeps_history_and_excludes_private_fields(self):
         index,cats=self.fourth();board=public_board(index,cats);validate(board,set(cats.values()))
-        self.assertEqual([p["start"] for p in board["periods"]],list(STARTS))
+        self.assertEqual([p["start"] for p in board["periods"]],list(STARTS[:4]))
         self.assertEqual(board["periods"][2]["end"],STARTS[3])
         self.assertNotIn("secret",str(board))
+
+    def test_fifth_preserves_three_archives_and_rejects_old_version(self):
+        index,cats=self.fourth();before=public_board(index,cats)
+        scope=copy.deepcopy(index["liveScope"]);scope["stopAt"]=STARTS[4]
+        index["closedPatches"].append(dict(start=STARTS[3],scope=scope,players=index["livePlayers"],scores=copy.deepcopy(index["chosenLiveScores"])))
+        index["currentArchive"]={"start":STARTS[4]}
+        index["liveScope"].update(version="001.0008.0006",strictStart=STARTS[4],firstBegin=STARTS[4]+1,latestEnd=STARTS[4]+2,asOf=STARTS[4]+3)
+        board=public_board(index,cats);validate(board,set(cats.values()))
+        self.assertEqual(board["periods"][:3],before["periods"][:3])
+        self.assertEqual([p["start"] for p in board["periods"]],list(STARTS))
+        self.assertNotIn("secret",str(board))
+        index["liveScope"]["version"]="001.0008.0005"
+        with self.assertRaises(ValueError):public_board(index,cats)
 
     def test_new_period_can_wait_for_first_verified_match(self):
         index,cats=self.fourth()
@@ -43,9 +56,17 @@ class SeasonScoreTests(unittest.TestCase):
         index,cats=self.fourth()
         for edit in (lambda x:x["liveScope"].update(version="001.0008.0004"),
                      lambda x:x.update(closedPatches=[]),
-                     lambda x:x["closedPatches"][0]["scope"].update(stopAt=STARTS[3]-1)):
+                     lambda x:x["closedPatches"][0]["scope"].update(stopAt=STARTS[3]+1)):
             changed=copy.deepcopy(index);edit(changed)
             with self.assertRaises(ValueError):public_board(changed,cats)
+
+    def test_early_version_transition_preserves_official_window(self):
+        index,cats=self.fourth();patch=index["closedPatches"][0]
+        patch["scope"]["stopAt"]=STARTS[3]-1000
+        board=public_board(index,cats);validate(board,set(cats.values()))
+        self.assertEqual(board["periods"][2]["end"],STARTS[3])
+        patch["scope"]["latestEnd"]=patch["scope"]["stopAt"]
+        with self.assertRaises(ValueError):public_board(index,cats)
 
     def test_allowlisted_eras_exclude_internal_fields(self):
         index,cats=self.fixture()

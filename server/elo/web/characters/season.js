@@ -6,8 +6,8 @@ if(params.get("source")==="window"||params.get("career")){
  location.replace("reference.html?"+params.toString());return;
 }
 const titles={overall:"总体",mid:"3000–5999",high:"6000及以上"};
-const periods=["第一期","第二期","第三期","第四期"];
-let phase=["1","2","3","4"].includes(params.get("phase"))?Number(params.get("phase")):null;
+const periods=["第一期","第二期","第三期","第四期","第五期"];
+let phase=["1","2","3","4","5"].includes(params.get("phase"))?Number(params.get("phase")):null;
 let band=Object.hasOwn(titles,params.get("band"))?params.get("band"):"overall";
 let data=null,loading=false;
 const format=new Intl.NumberFormat("zh-CN");
@@ -72,7 +72,7 @@ async function refresh(){
   const response=await fetch("season.json",{cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer",signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error("fetch");
   const incoming=await response.json();
-  if(incoming.schema!=="season11-character-elo-v1"||incoming.model!=="within"||![3,4].includes(incoming.periods?.length))throw Error("schema");
+  if(incoming.schema!=="season11-character-elo-v1"||incoming.model!=="within"||![3,4,5].includes(incoming.periods?.length))throw Error("schema");
   if(phase===null||phase>incoming.periods.length)phase=incoming.periods.length;
   data=incoming;render();
  }catch{

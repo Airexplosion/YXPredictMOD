@@ -94,4 +94,14 @@ class PeriodTests(unittest.TestCase):
         old["scope"]["latestEnd"]=STARTS[3]
         with self.assertRaises(ValueError):build_index(base,old,new)
 
+    def test_fifth_index_requires_both_archives_in_order(self):
+        base=dict(earlierPatchDataUsed=0,eras=[dict(start=s) for s in STARTS[:3]],selection={"model":"within"})
+        scores={b:{"within":[]} for b in ("mid","high")}
+        archives=[dict(scope=dict(version=v,strictStart=STARTS[i+2],stopAt=STARTS[i+3],latestEnd=STARTS[i+3]-1),players=1,heroScores=scores)
+                  for i,v in enumerate(["001.0008.0004","001.0008.0005"])]
+        live=dict(scope=dict(version="001.0008.0006",strictStart=STARTS[4]),players=1,heroScores=scores)
+        self.assertEqual(build_index(base,archives,live)["currentArchive"]["start"],STARTS[4])
+        with self.assertRaises(ValueError):build_index(base,archives[::-1],live)
+        with self.assertRaises(ValueError):build_index(base,archives[:1],live)
+
 if __name__=="__main__":unittest.main()

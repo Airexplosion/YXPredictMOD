@@ -8,8 +8,8 @@ import subprocess
 import sys
 import tempfile
 
-STARTS = (1792033200000, 1792648800000, 1793253600000, 1793858400000)
-VERSIONS = {STARTS[2]: "001.0008.0004", STARTS[3]: "001.0008.0005"}
+STARTS = (1792033200000, 1792648800000, 1793253600000, 1793858400000, 1794463200000)
+VERSIONS = {STARTS[2]: "001.0008.0004", STARTS[3]: "001.0008.0005", STARTS[4]: "001.0008.0006"}
 BANDS = ("mid", "high")
 MODEL = "within"
 SCHEMA = "season11-character-elo-v1"
@@ -53,9 +53,13 @@ def public_board(index, catalog):
     if [p["start"] for p in closed]!=list(STARTS[2:STARTS.index(current)]):
         raise ValueError("Missing closed balance period")
     for patch in closed:
-        if patch["scope"]["stopAt"]!=STARTS[STARTS.index(patch["start"])+1]:
+        boundary=STARTS[STARTS.index(patch["start"])+1]
+        if not patch["start"]<patch["scope"]["stopAt"]<=boundary:
             raise ValueError("Historical patch boundary mismatch")
-        periods.append(patch_period(patch["start"],patch["scope"],patch["scores"],patch["players"],catalog))
+        period=patch_period(patch["start"],patch["scope"],patch["scores"],patch["players"],catalog)
+        if period["settled"]>=patch["scope"]["stopAt"]:raise ValueError("Cross-version historical match")
+        period["end"]=boundary
+        periods.append(period)
     periods.append(patch_period(current,index["liveScope"],index["chosenLiveScores"],index["livePlayers"],catalog))
     return dict(schema=SCHEMA,model=MODEL,periods=periods)
 
@@ -76,7 +80,7 @@ def patch_period(start,scope,scores,players,catalog):
                 asOf=scope["asOf"], games=scope["games"], players=players, heroes=heroes)
 
 def validate(d, names):
-    if set(d) != {"schema","model","periods"} or d["schema"] != SCHEMA or d["model"] != MODEL or len(d["periods"]) not in (3,4):
+    if set(d) != {"schema","model","periods"} or d["schema"] != SCHEMA or d["model"] != MODEL or len(d["periods"]) not in (3,4,5):
         raise ValueError("Unexpected public board schema")
     if not names or any(not re.fullmatch(r"[\u3400-\u9fff·]{1,18}", n) for n in names):
         raise ValueError("Unrecognized character name")
