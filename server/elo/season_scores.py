@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -16,6 +17,7 @@ SCHEMA = "season11-character-elo-v1"
 INDEX = Path("/var/lib/yx-patch-rating-study/season11/latest.json")
 NAMES = Path("/root/yx-replay/character-elo-v1/characters.json")
 SSH_DIR = Path("/etc/yx-character-board")
+SOURCE_HOST = os.environ.get("YX_CHARACTER_SOURCE_HOST", "154.9.252.167")
 
 def count(v):
     if type(v) is not int or v < 0:
@@ -116,7 +118,7 @@ def mirror(folder):
     # The remote key is bound to export only this anonymous feed.
     command = ["/usr/bin/ssh","-F","/dev/null","-T","-i",str(SSH_DIR/"source_key"),
                "-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes",
-               "-o","UserKnownHostsFile="+str(SSH_DIR/"known_hosts"),"-o","ConnectTimeout=8","root@154.9.252.167"]
+               "-o","UserKnownHostsFile="+str(SSH_DIR/"known_hosts"),"-o","ConnectTimeout=8","root@"+SOURCE_HOST]
     raw = subprocess.run(command,capture_output=True,timeout=25,check=True).stdout
     if len(raw) > 160000:
         raise ValueError("Oversized season feed")

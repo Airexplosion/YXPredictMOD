@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 import time
 
 
@@ -63,4 +64,5 @@ def export(database):
 if __name__ == '__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--database',required=True)
-    print(json.dumps(export(parser.parse_args().database),ensure_ascii=False,separators=(',',':')))
+    json.dump(export(parser.parse_args().database),sys.stdout,ensure_ascii=False,separators=(',',':'))
+    sys.stdout.write('\n')
