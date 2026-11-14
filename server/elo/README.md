@@ -43,6 +43,8 @@
 
 `source-command` 是服务器私有配置，不接收网页参数。源库和采集程序不因本服务而启动、停止或更新。种子导入应先核对上述 SHA256，并使用禁止 `find_class` 的 data-only pickle 读取器；不要对未知文件直接执行 `pickle.load`。
 
+数据量较大或磁盘较慢时，可用 `--source-timeout 900` 调整只读导出的等待时间（默认180秒，允许1至3600秒），并相应设置 systemd 的任务总超时。导出超时仍保留上一完整快照，不发布部分结果。
+
 采集库与网页合并部署时，可用 `YX_CHARACTER_SOURCE_HOST=127.0.0.1` 指定角色榜的本机只读导出；需要预先固定本机 SSH 主机密钥，并把专用公钥限制到对应导出命令。个人 Elo 的来源仍由私有 `source-command` 配置。事实导出通过 `json.dump` 流式写出，避免另建整份 JSON 字符串，减小大数据量时的内存峰值。
 
 验证：`python -m unittest discover -s server/elo -p 'test_*.py'`。原模型与 API 参考：[原项目说明](https://github.com/raymondwrw/yxp-card-stats/tree/main/pipeline/elo)、[OpenSkill 官方文档](https://openskill.me/en/v6.1.3/manual.html)。计算适配器为本项目独立实现，未复制原项目Python代码。

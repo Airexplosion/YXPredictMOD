@@ -11,11 +11,14 @@ from ratings import build
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--seed',required=True);p.add_argument('--source-command',required=True);p.add_argument('--output',required=True)
-    p.add_argument('--history');p.add_argument('--uid-key-file');a=p.parse_args()
+    p.add_argument('--history');p.add_argument('--uid-key-file')
+    p.add_argument('--source-timeout',type=int,default=180,help='Export timeout in seconds (1 to 3600)')
+    a=p.parse_args()
+    if not 1<=a.source_timeout<=3600:p.error('Source timeout must be between 1 and 3600 seconds')
     if bool(a.history)!=bool(a.uid_key_file):p.error('History and private UID key must be configured together')
     command=json.loads(pathlib.Path(a.source_command).read_text())
     started=time.monotonic()
-    raw=subprocess.run(command,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=180).stdout
+    raw=subprocess.run(command,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=a.source_timeout).stdout
     if len(raw)>100*1024*1024:raise ValueError('Source export exceeds budget')
     source=json.loads(raw);del raw
     print(json.dumps({'phase':'source-loaded','games':len(source['games']),'seconds':round(time.monotonic()-started,2)}),flush=True)
